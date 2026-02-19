@@ -1,23 +1,20 @@
-# Load the necessary library
-#library(rvest)
-#library(ggplot2)
-#library(ggrepel)
-#library(stringr)
+## easy way to deploy app
+#rsconnect::deployApp()
 
+
+## load libraries
+library(DT)
 library(shiny)
 library(shinyjs)
 library(shinydashboard)
 library(shinyalert)
+library(shinycssloaders)
 library(dplyr)
 library(stringr)
 library(readr)
-library(lubridate)
 library(DBI)
-library(DT)
 library(RSQLite)
 library(leaflet)
-library(htmlwidgets)
-library(htmltools)
 library(here)
 library(sf)
 library(smoothr)
@@ -25,10 +22,9 @@ library(gt)
 library(geosphere)
 library(ggplot2)
 library(ggrepel)
+#library(plotly)
 
-# Link to icon
-#my_icon = "www/icons8-location-48.png"
-
+## query for getting data
 safe_query <- function(conn, query) {
   tryCatch({
     result <- dbGetQuery(conn, query)
@@ -40,6 +36,5 @@ safe_query <- function(conn, query) {
   })
 }
 
-
-
-
+## Link to icon
+#my_icon = "www/icons8-location-48.png"

@@ -19,3 +19,4 @@ UPDATE recruit_class_football
 SET lat = 41.232203, long =  -85.043118
 --select * from recruit_class_football
 where location LIKE '%Leo (Leo, IN)%'
+

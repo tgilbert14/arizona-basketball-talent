@@ -71,7 +71,7 @@ map <- leaflet(data_to_map) %>%
                    color = c4,
                    stroke = TRUE,
                    #fillOpacity = 0.6,
-                   label = lapply(labs, htmltools::HTML), # for hoover
+                   #label = lapply(labs, htmltools::HTML), # for hoover
                    popup = lapply(labs, htmltools::HTML), # for click
                    layerId = ~Name # for clicking summary table
                    ) %>%

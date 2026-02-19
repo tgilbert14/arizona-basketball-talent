@@ -45,16 +45,16 @@ ui <- dashboardPage(
                   footer = "This app allows you to visualize Big 12 football and
                   basketball recruiting classes from 2016 to 2025. You can explore
                   where recruits came from (their high schools) and how far they
-                  traveled to reach their college destinations or and view how 
-                  distance traveled by recruits has changed over time.",
+                  traveled to reach their college destinations or view how 
+                  distance traveled by recruits has changed over time!",
                   
                   ## first selections -->
                   selectInput(
                     "vizType", label = NULL,
-                    choices   = c("Distance Traveled by Recruits", "Distance Traveled Over Time"),
+                    choices = c("Distance Traveled by Recruits", "Distance Traveled Over Time"),
                     selectize = FALSE,
-                    width     = "100%",
-                    size      = 2
+                    width = "100%",
+                    size = 2
                   ),
                   actionButton(
                     inputId = "choose_sport",
@@ -79,6 +79,7 @@ ui <- dashboardPage(
                     "team", "Pick Big 12 Team",
                     choices = sort(team_selections$School),
                     selectize = FALSE,
+                    selected = T,
                     width = "100%",
                     size = 3
                   ),
@@ -90,7 +91,7 @@ ui <- dashboardPage(
                 box(
                   title = NULL,  status = "info",
                   background = "navy",
-                  solidHeader = T, width = 9, collapsed = T,
+                  solidHeader = T, width = 9, collapsed = F,
                   DTOutput("summary_preview", height = "400px")
                 )
               )
@@ -108,29 +109,33 @@ ui <- dashboardPage(
                            selectInput(
                              "team", "Check other schools",
                              choices = c("",sort(team_selections$School)),
-                             selectize = FALSE,
+                             selectize = F,
                              width = "100%")),
                     column(
                       width = 9,
                       actionButton(inputId = "switch_to_plot",
                                    label = 
                                      tagList(icon("chart-line"), "View change over time"),
-                                   class = "btn-warning", style = "margin-top: 20px; width: 100%; align: center;")
+                                   class = "btn-warning", style = "margin-top: 25px; width: 100%; align: center;")
                     )
                   ), # end of fluid row
                   title = "Click each dot to reveal more information about each recruit!",
                   footer = "This map shows where each recruit came from (High School) as well as player scores, rankings and other metadata. Data was scrapped from 247Sports as of July 2025.",
                   status = "info",
+                  background = "navy",
                   solidHeader = TRUE, width = 12,
-                  collapsed = T,
-                  leafletOutput("gridPlot", height = "300px")
+                  collapsible = T, collapsed = F,
+                  withSpinner(
+                    leafletOutput("gridPlot", height = "300px"), color = "orange"
+                  )
                 ),
                 
                 box(
-                  title = "Distance Traveled from High School to College (Farthest to Closest)",  status = "info",
-                  #background = "navy",
-                  solidHeader = T, width = 12, collapsed = F,
-                  collapsible = T,
+                  title = "Distance Traveled from High School to College (Farthest to Closest)",
+                  status = "primary",
+                  background = "aqua",
+                  solidHeader = T, width = 12,
+                  collapsible = T, collapsed = F,
                   DTOutput("summary_stats", height = "200px")
                 )
               )
@@ -153,16 +158,19 @@ ui <- dashboardPage(
                            actionButton(inputId = "switch_to_map",
                                         label = 
                                           tagList(icon("map"), "View map locations"),
-                                        class = "btn-warning", style = "margin-top: 20px; width: 100%; ; align: center;")
+                                        class = "btn-warning", style = "margin-top: 25px; width: 100%; ; align: center;")
                            )
                     ), # end of fluid row
                   title = "Compare recruiting classes across years to see how 
                   they stack up in terms of 247 player rankings scores (1-100+)",
                   footer = "Data was scrapped from 247Sports as of July 2025.",
                   status = "info",
+                  background = "navy",
                   solidHeader = TRUE, width = 12,
-                  collapsed = T,
-                  plotOutput("plot", height = "500px")
+                  collapsed = F,
+                  withSpinner(
+                    plotOutput("plot", height = "500px"), color = "orange"
+                  )
                 )
               )
       ) ## end of compare tab (tab 3)
@@ -208,6 +216,17 @@ server <- function(input, output, session) {
     
     removeModal()
     disable("choose_sport")
+    
+    ## alert
+    shinyalert(
+      title = "Sport Selected",
+      text = paste("You selected", input$sport_modal, "as your sport...
+                   Now pick a date range, team, then Create!"),
+      type = "success",
+      confirmButtonText = "Great!",
+      showCancelButton = FALSE,
+      timer = 6000
+    )
     
     # show hidden tabs
     shinyjs::show("year_range")
@@ -325,14 +344,14 @@ server <- function(input, output, session) {
 
       d <-  big12_data_wDis %>% 
         select(Name, miles_away, Location, University, School_City, Ranking, NationalRank,
-               Position, Height, Weight) %>%
+               Position, Height, Weight, Year) %>%
         #mutate("Measurements" = paste0("(",Position,") Height: ",Height," - Weight: ",Weight)) %>%
         arrange(desc(miles_away))
       
       d2 <- as.data.frame(d) %>% 
         datatable(
           colnames = c("Recruit", "Distance Traveled (miles)", "From", "To", "City",
-          "247Sports Ranking", "National Ranking", "Position", "Height", "Weight"),
+          "247Sports Ranking", "National Ranking", "Position", "Height", "Weight", "Year"),
           options = list(pageLength = 10,
                          #className = "dt-center",
                          lengthChange = FALSE),
@@ -374,11 +393,12 @@ server <- function(input, output, session) {
         cat("Error: Did not find 2 years to compare... \n")
       }
     })
-    
+
     ## render plot
-    output$plot <- renderPlot({
+    output$plot <- renderPlot ({
       source("scripts/plot.R", local = T)
       final_plot
+
     })
     
   })
