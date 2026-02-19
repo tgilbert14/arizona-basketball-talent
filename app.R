@@ -13,109 +13,176 @@ sport_selections <- union(sport_selections.1,sport_selections.2)
 
 ## UI -->
 ui <- dashboardPage(
-  dashboardHeader(title = "Recruit-Tracker"),
   
+  dashboardHeader(title = "Big 12 Recruits"),
+  #dashboardHeader(title = "Big 12 Recruiting Map"),
+  #skin = "yellow",
+ 
   dashboardSidebar(
     width = 120,
     collapsed = TRUE,
     
-    tags$head(
-      tags$style(HTML("
-        .box .control-label,
-        .shiny-input-container > label { color: black !important; }
-      "))
-    ),
     sidebarMenu(id = "tabs",
                 menuItem("Recruits",    tabName = "filters", icon = icon("filter")),
-                menuItem("Pipeline Map", tabName = "summary", icon = icon("chart-bar"))
+                menuItem("Pipeline Map", tabName = "summary", icon = icon("chart-bar")),
+                menuItem("Comparison", tabName = "compare", icon = icon("clock"))
     )
   ),
   
   dashboardBody(
     useShinyjs(),
-    
+  
     tabItems(
-      
-      # Filters tab
+      ## Filters tab
       tabItem(tabName = "filters",
               fluidRow(
                 box(
-                  #title = "Select a sport",
-                  status = "primary",
-                  solidHeader = TRUE,
-                  width = 4,
+                  title = "Where do Big 12 recruits come from?",
+                  status = "info",
+                  solidHeader = F,
+                  width = 3,
                   #background = "blue",
-                  #footer = "test text",
+                  footer = "This app allows you to visualize Big 12 football and
+                  basketball recruiting classes from 2016 to 2025. You can explore
+                  where recruits came from (their high schools) and how far they
+                  traveled to reach their college destinations or and view how 
+                  distance traveled by recruits has changed over time.",
                   
-                  #"Select a Sport",
+                  ## first selections -->
+                  selectInput(
+                    "vizType", label = NULL,
+                    choices   = c("Distance Traveled by Recruits", "Distance Traveled Over Time"),
+                    selectize = FALSE,
+                    width     = "100%",
+                    size      = 2
+                  ),
                   actionButton(
                     inputId = "choose_sport",
-                    label = "Select Sport",
-                    width   = "100%"
+                    label = "Select a Sport",
+                    width = "100%",
+                    class = "btn-warning"
                   ),
                   
-                  br(),br(),
-                  
+                  ## for distance traveled, show these filters -->
                   dateRangeInput(
-                    "year_range", "Select Class Date Range",
-                    start     = Sys.Date() - years(1),
-                    end       = Sys.Date(),
-                    format    = "yyyy",
+                    "year_range", "Pick Date Range",
+                    start = "2016-01-01",
+                    end = "2025-12-25",
+                    format = "yyyy",
                     startview = "year",
                     separator = " to ",
                     width = "100%",
                     min = "2016-01-01",
                     max = "2026-12-31"
                   ),
-                  
                   selectInput(
-                    "team", "Select Big 12 Team",
-                    choices   = sort(team_selections$School),
+                    "team", "Pick Big 12 Team",
+                    choices = sort(team_selections$School),
                     selectize = FALSE,
-                    width     = "100%",
-                    size      = 3
+                    width = "100%",
+                    size = 3
                   ),
-                  
                   actionButton(inputId = "make_map",
-                               label = tagList("Create Map", tags$span(style = "margin-left: 10px; color: green;", icon("map"))),
+                               label = tagList("Create", tags$span(style = "margin-left: 8px; color: orange;", icon("map"))),
                                width = "100%")
-                ),
-                
+
+                ), # end of selection box(s)
                 box(
-                  title = "You selected:", status = "success",
-                  solidHeader = TRUE, width = 8,
-                  verbatimTextOutput("selections")
-                ),
-                
-                box(
-                  title = "Recruit info:", status = "success",
-                  solidHeader = TRUE, width = 8,
+                  title = NULL,  status = "info",
+                  background = "navy",
+                  solidHeader = T, width = 9, collapsed = T,
                   DTOutput("summary_preview", height = "400px")
                 )
               )
-              
-      ),
+      ), ## end of filters tab (tab 1)
       
-      # Summary tab
+      ## Summary tab
       tabItem(tabName = "summary",
               
               fluidRow(
+                
                 box(
-                  title = "Click each blue dot to reveal recruit and where they are from!", status = "info",
+                  ## update selection options for map
+                  fluidRow(
+                    column(width = 3,
+                           selectInput(
+                             "team", "Check other schools",
+                             choices = c("",sort(team_selections$School)),
+                             selectize = FALSE,
+                             width = "100%")),
+                    column(
+                      width = 9,
+                      actionButton(inputId = "switch_to_plot",
+                                   label = 
+                                     tagList(icon("chart-line"), "View change over time"),
+                                   class = "btn-warning", style = "margin-top: 20px; width: 100%; align: center;")
+                    )
+                  ), # end of fluid row
+                  title = "Click each dot to reveal more information about each recruit!",
+                  footer = "This map shows where each recruit came from (High School) as well as player scores, rankings and other metadata. Data was scrapped from 247Sports as of July 2025.",
+                  status = "info",
                   solidHeader = TRUE, width = 12,
-                  leafletOutput("gridPlot", height = "600px")
+                  collapsed = T,
+                  leafletOutput("gridPlot", height = "300px")
+                ),
+                
+                box(
+                  title = "Distance Traveled from High School to College (Farthest to Closest)",  status = "info",
+                  #background = "navy",
+                  solidHeader = T, width = 12, collapsed = F,
+                  collapsible = T,
+                  DTOutput("summary_stats", height = "200px")
                 )
               )
-      )
-    )
-  )
+      ), ## end of summary tab (tab 2)
+      
+      ## Compare tab
+      tabItem(tabName = "compare",
+              
+              fluidRow(
+                box(
+                  ## update selection options
+                  fluidRow(
+                    column(width = 3,
+                           selectInput(
+                             "team", "Check other schools",
+                             choices = c("",sort(team_selections$School)),
+                             selectize = FALSE,
+                             width = "100%")),
+                    column(width = 9,
+                           actionButton(inputId = "switch_to_map",
+                                        label = 
+                                          tagList(icon("map"), "View map locations"),
+                                        class = "btn-warning", style = "margin-top: 20px; width: 100%; ; align: center;")
+                           )
+                    ), # end of fluid row
+                  title = "Compare recruiting classes across years to see how 
+                  they stack up in terms of 247 player rankings scores (1-100+)",
+                  footer = "Data was scrapped from 247Sports as of July 2025.",
+                  status = "info",
+                  solidHeader = TRUE, width = 12,
+                  collapsed = T,
+                  plotOutput("plot", height = "500px")
+                )
+              )
+      ) ## end of compare tab (tab 3)
+      
+    ) ## end of tab items
+  ) ## end of dashboard body
 )
 
 server <- function(input, output, session) {
-  # hold the one‐time sport choice
+  # hold the sport choice
   chosenSport <- reactiveVal(NULL)
+  chosenSchool <- reactiveVal(NULL)
+  chosenYearRange <- reactiveVal(NULL)
   
-  # launch modal on button click
+  # hide initial other tabs
+  shinyjs::hide("year_range")
+  shinyjs::hide("team")
+  shinyjs::hide("make_map")
+  
+  ## launch modal on button click
   observeEvent(input$choose_sport, {
     showModal(modalDialog(
       title = "Pick your sport",
@@ -131,15 +198,32 @@ server <- function(input, output, session) {
     ))
   })
   
-  # confirm & lock in choice
+  ## confirm & lock in choice
   observeEvent(input$confirm_sport, {
     req(input$sport_modal)
+    # save reactive values
     chosenSport(input$sport_modal)
+    chosenSchool(input$team)
+    chosenYearRange(input$year_range)
+    
     removeModal()
     disable("choose_sport")
+    
+    # show hidden tabs
+    shinyjs::show("year_range")
+    shinyjs::show("team")
+    shinyjs::show("make_map")
   })
   
-  # reactive filtering uses chosenSport()
+  ## switcher for moving between tabs
+  observeEvent(input$switch_to_plot, {
+    updateTabItems(session, "tabs", "compare")
+  })
+  observeEvent(input$switch_to_map, {
+    updateTabItems(session, "tabs", "summary")
+  })
+  
+  ## reactive filtering uses chosenSport()
   filtered_data <- reactive({
     req(chosenSport(), input$team, input$year_range)
     yrs <- as.integer(format(input$year_range, "%Y"))
@@ -158,12 +242,6 @@ server <- function(input, output, session) {
     
     all_data <- safe_query(conn, geting_data)
     
-    # all_data <- all_data %>%
-    #   mutate(
-    #     Height_in = str_extract(Height, "[0-9]+") %>% as.numeric() * 12 +
-    #       str_extract(Height, "(?<=-)[0-9.]+") %>% as.numeric()
-    #     )
-    
     all_data$lat <- as.numeric(all_data$lat)
     all_data$long <- as.numeric(all_data$long)
     all_data$college_lat <- as.numeric(all_data$college_lat)
@@ -172,49 +250,141 @@ server <- function(input, output, session) {
     all_data$NationalRank <- as.numeric(all_data$NationalRank)
     all_data$PositionRank <- as.numeric(all_data$PositionRank)
     all_data$StateRank <- as.numeric(all_data$PositionRank)
-    
-    all_data
-    
-  })
   
-  # render outputs
+    ## calculate miles away
+    big12_data <- all_data %>% 
+      mutate(disFromHS_m = 
+               distGeo(p1 = cbind(long, lat),
+                       p2 = cbind(college_long, college_lat)))
+    
+    ## lets change distance to miles instead of meters -->
+    meters_per_mile <- 1609.34
+    big12_data_wDis <- big12_data %>% 
+      mutate(miles_away = round(disFromHS_m / meters_per_mile,0))
+    
+    ## clean names
+    u_of_schools <- c("arizona","utah","kansas","houston",
+                      "colorado","cincinnati","central-florida")
+    
+    data_final <- big12_data_wDis %>%
+      mutate(University = ifelse(
+        nchar(School)==3,
+        yes = paste0(toupper(School)),
+        no = ifelse(School %in% c(u_of_schools),
+                    yes = paste0("University of ",str_to_title(School)),
+                    no = paste0(str_to_title(School)," University"))
+      ))
+    data_final
+  })
+
+  ## render outputs
   output$selections <- renderPrint({
     req(chosenSport())
-    cat(
-      "Selected recruiting classes from",
+    
+    cat("Selection preview of recruiting classes from",
       format(input$year_range[1], "%Y"),
-      "to", format(input$year_range[2], "%Y"),"\n",
-      "for", input$team, chosenSport()
-    )
+      "to", format(input$year_range[2], "%Y"),
+      "for", input$team, chosenSport(),"...\n")
+      cat("Update selections and hit action button to proceed! \n")
   })
   
-  output$summary_preview <- renderTable({
+  
+  output$summary_preview <- renderDT({
     
     if (nrow(filtered_data()) == 0) {
       return(data.frame(Message =
                           "No recruits found for the selected filters. Please adjust your selections."))
-      } else {
-        filtered_data() %>% 
-          arrange(desc(Ranking), NationalRank, StateRank, PositionRank, Name)
+    }
+    
+    if (nrow(filtered_data()) > 0) {
+      d <- filtered_data() %>% 
+        select(Name, Year, Position, Location, Ranking, NationalRank) %>%
+        arrange(desc(Ranking), NationalRank, Name)
+      d %>% 
+        datatable(
+          options = list(pageLength = 10,
+                         lengthChange = FALSE),
+          height = "400px", class = "stripe hover",
+          colnames = c("Recruit", "Class Year", "Position", "High School", "247Sports Ranking", "National Ranking"),
+          style = "bootstrap4",
+          caption = "247Sports Ranking (1-100+) graded to by 247Sports (100+ being the best).
+          National Ranking ranks top recruits in the country for each year (1 being the best).",
+          rownames = FALSE
+        )
     }
 
   })
   
-  # create map button
+  output$summary_stats <- renderDT({
+    if (nrow(filtered_data()) == 0) {
+      return(data.frame(Message =
+      "No recruits found for the selected filters. Please adjust your selections."))
+    } else {
+      
+      big12_data_wDis <- filtered_data()
+
+      d <-  big12_data_wDis %>% 
+        select(Name, miles_away, Location, University, School_City, Ranking, NationalRank,
+               Position, Height, Weight) %>%
+        #mutate("Measurements" = paste0("(",Position,") Height: ",Height," - Weight: ",Weight)) %>%
+        arrange(desc(miles_away))
+      
+      d2 <- as.data.frame(d) %>% 
+        datatable(
+          colnames = c("Recruit", "Distance Traveled (miles)", "From", "To", "City",
+          "247Sports Ranking", "National Ranking", "Position", "Height", "Weight"),
+          options = list(pageLength = 10,
+                         #className = "dt-center",
+                         lengthChange = FALSE),
+          rownames = FALSE)
+      d2
+    }
+  })
+
+  ## create map/plot -->
   observeEvent(input$make_map, {
     req(chosenSport(), input$team, input$year_range)
     
-    # move tabs
-    updateTabItems(session, "tabs", "summary")  # switch to Summary tab
+    ## expand sidebar menu
+    #shinyjs::removeClass(selector = "body", class = "sidebar-collapse")
     
-    # render plot
+    # move tabs based on selection
+    if (input$vizType == "Distance Traveled by Recruits") {
+      updateTabItems(session, "tabs", "summary")  # switch to summary tab
+    } else {
+      updateTabItems(session, "tabs", "compare")  # switch to compare tab
+    }
+    
+    # render map
     output$gridPlot <- renderLeaflet({
-  
       # sourced map code
       source("scripts/map.R", local = T)
       final_map
     })
+    
+    ## for plot
+    output$selections_map <- renderPrint({
+      
+      years <- sort(input$year_range)
+      
+      if(length(years) == 2){
+        cat("You selected to compare recruiting classes from",
+            years[1], "to", years[2], "for", input$team, chosenSport(),"...\n")
+      } else {
+        cat("Error: Did not find 2 years to compare... \n")
+      }
+    })
+    
+    ## render plot
+    output$plot <- renderPlot({
+      source("scripts/plot.R", local = T)
+      final_plot
+    })
+    
   })
+  
+ 
+
   
   output$summary <- renderTable({
     filtered_data()

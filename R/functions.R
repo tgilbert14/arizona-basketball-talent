@@ -7,7 +7,10 @@
 library(shiny)
 library(shinyjs)
 library(shinydashboard)
-library(tidyverse)
+library(shinyalert)
+library(dplyr)
+library(stringr)
+library(readr)
 library(lubridate)
 library(DBI)
 library(DT)
@@ -18,9 +21,13 @@ library(htmltools)
 library(here)
 library(sf)
 library(smoothr)
+library(gt)
+library(geosphere)
+library(ggplot2)
+library(ggrepel)
 
 # Link to icon
-my_icon = "www/icons8-location-48.png"
+#my_icon = "www/icons8-location-48.png"
 
 safe_query <- function(conn, query) {
   tryCatch({
