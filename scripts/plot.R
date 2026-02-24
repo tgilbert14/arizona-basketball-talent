@@ -44,6 +44,9 @@ if (outlier_status == "hide") {
   num_removed <- nrow(removed)
   showNotification(paste0(num_removed," outliers removed!"), type = "warning",
                    duration = 15, closeButton = TRUE)
+  Sys.sleep(1)
+  showNotification("Trend line recalculated.", type = "message",
+                   duration = 15, closeButton = TRUE)
 } else {
   num_removed <- 0
 }
