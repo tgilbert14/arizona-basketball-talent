@@ -1,9 +1,6 @@
-# get data
+# get data and other info
 rec_data <- filtered_data()
-
-# ## for testing
-# rec_data <<- rec_data
-# stop()
+outlier_status <- input$show_outliers
 
 college_label <- rec_data$University[1]
 
@@ -30,29 +27,6 @@ dot_sizes <- all_recruits %>%
 all_recruits <- all_recruits %>%
   left_join(dot_sizes, by = c("Year", "miles_away"))
 
-top_recruits <- all_recruits %>%
-  group_by(Year) %>%
-  arrange(desc(miles_away)) %>%
-  slice_max(order_by = miles_away, n = 1, with_ties = TRUE) %>%
-  ungroup() %>%
-  mutate(label = paste0(Name, "\n(", miles_away, " mi)"))
-
-bottom_recruits <- all_recruits %>%
-  group_by(Year) %>%
-  arrange(miles_away) %>%
-  slice_max(order_by = desc(miles_away), n = 1, with_ties = TRUE) %>%
-  ungroup() %>%
-  mutate(label = paste0(Name, "\n(", miles_away, " mi)"))
-
-# Add percentiles
-percentile_data <- all_recruits %>%
-  group_by(Year) %>%
-  summarize(
-    p25 = quantile(miles_away, 0.25, na.rm = TRUE),
-    p50 = quantile(miles_away, 0.50, na.rm = TRUE),
-    p75 = quantile(miles_away, 0.75, na.rm = TRUE)
-  )
-
 year_lines <- unique(all_recruits$Year)
 ## colors for plots and table
 
@@ -63,7 +37,45 @@ deep_orange <- "#D15E10"
 my_yellow <- "#F0E442"
 sport <- input$sport_modal
 
-#View(all_recruits)
+## outliers or no outliers
+if (outlier_status == "hide") {
+  all_recruits <- remove_Outliers(all_recruits)
+  removed <- get_Outliers(all_recruits)
+  num_removed <- nrow(removed)
+  showNotification(paste0(num_removed," outliers removed!"), type = "warning",
+                   duration = 15, closeButton = TRUE)
+} else {
+  num_removed <- 0
+}
+
+## then get meta data for plot labels
+top_recruits <- all_recruits %>%
+  group_by(Year) %>%
+  arrange(desc(miles_away)) %>%
+  slice_max(order_by = miles_away, n = 1, with_ties = TRUE) %>%
+  ungroup() %>%
+  mutate(label = paste0(Name, "\n(", miles_away, " mi)"))
+
+# ignore first year of top recruits to save space for other lines
+top_recruits <- top_recruits %>%
+  filter(Year != min(Year))
+
+bottom_recruits <- all_recruits %>%
+  group_by(Year) %>%
+  arrange(miles_away) %>%
+  slice_max(order_by = desc(miles_away), n = 1, with_ties = TRUE) %>%
+  ungroup() %>%
+  mutate(label = paste0(Name, "\n(", miles_away, " mi)"))
+
+# Add percentiles for bands
+percentile_data <- all_recruits %>%
+  group_by(Year) %>%
+  summarize(
+    p25 = quantile(miles_away, 0.25, na.rm = TRUE),
+    p50 = quantile(miles_away, 0.50, na.rm = TRUE),
+    p75 = quantile(miles_away, 0.75, na.rm = TRUE)
+  )
+
 
 base_plot <- ggplot(all_recruits, aes(x = Year, y = miles_away, color = Type))
 
@@ -120,23 +132,24 @@ final_plot <- base_plot +
     x = "Class Year",
     y = "Miles Away",
     subtitle =
-    "    *Yellow band = 25th-75th percentile range
-    *Orange line = yearly average distance
-    *Blue = Recruit(s) that traveled the farthest for each year
-    *Red dotted line = loess smoothed trend line",
-    color = "Recruit Type"
+    "Yellow band: 25th-75th percentile range, Orange line: yearly average distance, Blue labels: Recruits that traveled the farthest, Red dotted line: loess smoothed trend line",
+    color = "Recruit Type", caption = "Transfers not included in plot."
   ) + theme(
     plot.title = element_text(color = bold_blue,
                               face = "bold",
                               size = 18),
     plot.subtitle = element_text(color = light_blue,
-                                 face = "italic",
-                                 size = 14),
+                                 face = "bold",
+                                 size = 12),
     plot.caption = element_text(color = light_blue,
                                 face = "italic",
                                 size = 14),
     panel.background = element_rect(fill = "white"),
     legend.title = element_text(color = bold_blue),
-    axis.title.x = element_text(color = light_blue),
-    axis.title.y = element_text(color = light_blue)
+    axis.title.x = element_text(color = light_blue,
+                                face = "bold",
+                                size = 14),
+    axis.title.y = element_text(color = light_blue,
+                                face = "bold",
+                                size = 14)
   )

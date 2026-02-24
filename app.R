@@ -2,6 +2,7 @@
 db_path <- here("data", "recruiting.db")
 conn <- dbConnect(RSQLite::SQLite(), db_path)
 
+
 # Pre-compute your choices from database
 team_selections.1 <- safe_query(conn, "SELECT DISTINCT School FROM recruit_class_football")
 team_selections.2 <- safe_query(conn, "SELECT DISTINCT School FROM recruit_class_basketball")
@@ -16,7 +17,7 @@ ui <- dashboardPage(
   
   dashboardHeader(title = "Big 12 Recruits"),
   #dashboardHeader(title = "Big 12 Recruiting Map"),
-  #skin = "yellow",
+  skin = "yellow",
  
   dashboardSidebar(
     width = 120,
@@ -31,22 +32,35 @@ ui <- dashboardPage(
   
   dashboardBody(
     useShinyjs(),
+    
+    ## to center box titles for logos
+    tags$head(
+      tags$style(HTML("
+    .box-header .box-title {
+      width: 100%;
+      text-align: center;
+    }"))
+    ),
+    
   
     tabItems(
       ## Filters tab
       tabItem(tabName = "filters",
               fluidRow(
                 box(
-                  title = "Where do Big 12 recruits come from?",
+                  title = HTML("<b>Where do Big 12 recruits come from?</b>"),
                   status = "info",
                   solidHeader = F,
                   width = 3,
                   #background = "blue",
-                  footer = "This app allows you to visualize Big 12 football and
-                  basketball recruiting classes from 2016 to 2025. You can explore
-                  where recruits came from (their high schools) and how far they
-                  traveled to reach their college destinations or view how 
-                  distance traveled by recruits has changed over time!",
+                  
+                  footer = HTML('<strong>This app allows you to visualize Big 12 football
+                  and basketball recruiting classes from 2016 to 2026.</strong> You can explore
+                  where recruits came from (their high schools) to reach their college 
+                  destinations via a map by selecting <em>"Distance Traveled 
+                  by Recruits"</em>. This will also calculate distance traveled for each 
+                  recruit. <em>"Distance Traveled Over Time"</em> will create a scatter 
+                  plot showing distance traveled by recruits.'),
                   
                   ## first selections -->
                   selectInput(
@@ -56,18 +70,18 @@ ui <- dashboardPage(
                     width = "100%",
                     size = 2
                   ),
-                  actionButton(
-                    inputId = "choose_sport",
-                    label = "Select a Sport",
-                    width = "100%",
-                    class = "btn-warning"
-                  ),
+                  # actionButton(
+                  #   inputId = "choose_sport",
+                  #   label = "Select a Sport",
+                  #   width = "100%",
+                  #   class = "btn-warning"
+                  # ),
                   
                   ## for distance traveled, show these filters -->
                   dateRangeInput(
-                    "year_range", "Pick Date Range",
+                    "year_range", "Date Range",
                     start = "2016-01-01",
-                    end = "2025-12-25",
+                    end = "2026-01-31",
                     format = "yyyy",
                     startview = "year",
                     separator = " to ",
@@ -77,22 +91,165 @@ ui <- dashboardPage(
                   ),
                   selectInput(
                     "team", "Pick Big 12 Team",
-                    choices = sort(team_selections$School),
+                    choices = sort(c("",team_selections$School)),
                     selectize = FALSE,
-                    selected = T,
+                    selected = FALSE,
                     width = "100%",
                     size = 3
-                  ),
-                  actionButton(inputId = "make_map",
-                               label = tagList("Create", tags$span(style = "margin-left: 8px; color: orange;", icon("map"))),
-                               width = "100%")
-
-                ), # end of selection box(s)
+                  )#, # not using make_mape button anymore - using logo click
+                  # actionButton(inputId = "make_map",
+                  #              label = tagList("Create", tags$span(style = "margin-left: 8px; color: orange;", icon("map"))),
+                  #              width = "100%")
+                ), # end of selection box(s) for initial selections
+                
+                # selection summary
                 box(
                   title = NULL,  status = "info",
                   background = "navy",
                   solidHeader = T, width = 9, collapsed = F,
-                  DTOutput("summary_preview", height = "400px")
+                  
+                  ## render Big 12 school logos on condition no school is selected -->
+                  #conditionalPanel(condition = "input.team == ''", # got rid of condition...
+                                 actionButton(
+                                   inputId = "select_arizona",
+                                   label = div(
+                                     style = "text-align:center;",
+                                     img(src = "arizona.png", height = "80px")
+                                   ),
+                                   style = "background-color: transparent; border: none; width: 25%;"
+                                 ),
+                                 actionButton(
+                                   inputId = "select_arizona_state",
+                                   label = div(
+                                     style = "text-align:center;",
+                                     img(src = "arizona-state.png", height = "80px")
+                                   ),
+                                   style = "background-color: transparent; border: none; width: 25%;"
+                                 ),
+                                 actionButton(
+                                   inputId = "select_arizona",
+                                   label = div(
+                                     style = "text-align:center;",
+                                     img(src = "arizona.png", height = "80px")
+                                   ),
+                                   style = "background-color: transparent; border: none; width: 25%;"
+                                 ),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Arizona",
+                                     div(style = "text-align:center;",
+                                         img(src = "arizona.png",height = "60px"))),
+                            
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Arizona State",
+                                     div(style = "text-align:center;",
+                                         img(src = "arizona-state.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Baylor",
+                                     div(style = "text-align:center;",
+                                         img(src = "baylor.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "BYU",
+                                     div(style = "text-align:center;",
+                                         img(src = "byu.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Cincinnati",
+                                     div(style = "text-align:center;",
+                                         img(src = "cincinnati.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Colorado",
+                                     div(style = "text-align:center;",
+                                         img(src = "colorado.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Houston",
+                                     div(style = "text-align:center;",
+                                         img(src = "houston.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Iowa State",
+                                     div(style = "text-align:center;",
+                                         img(src = "iowa-state.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Kansas",
+                                     div(style = "text-align:center;",
+                                         img(src = "kansas.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Kansas State",
+                                     div(style = "text-align:center;",
+                                         img(src = "kansas-state.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Oklahoma State",
+                                     div(style = "text-align:center;",
+                                         img(src = "oklahoma-state.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "TCU",
+                                     div(style = "text-align:center;",
+                                         img(src = "tcu.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Texas Tech",
+                                     div(style = "text-align:center;",
+                                         img(src = "texas-tech.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "UCF",
+                                     div(style = "text-align:center;",
+                                         img(src = "ucf.png",height = "60px"))),
+                                 
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "Utah",
+                                     div(style = "text-align:center;",
+                                         img(src = "utah.png",height = "60px"))),
+
+                                 box(width = 3,
+                                     background = "navy",
+                                     solidHeader = TRUE,
+                                     title = "West Virginia",
+                                     div(style = "text-align:center;",
+                                         img(src = "west-virginia.png",height = "60px"))),
+                  #), # end of conditional panel
+                  
+                  ## team summary from selection - dont need anymore
+                  #DTOutput("summary_preview", height = "600px")
                 )
               )
       ), ## end of filters tab (tab 1)
@@ -110,23 +267,34 @@ ui <- dashboardPage(
                              "team", "Check other schools",
                              choices = c("",sort(team_selections$School)),
                              selectize = F,
+                             selected = F,
                              width = "100%")),
-                    column(
-                      width = 9,
+                    # column(width = 3,
+                    #        selectInput(
+                    #          "show_outliers", label = "Outliers",
+                    #          choices = c("Show" = "show", "Hide" = "hide"),
+                    #          selected = "show", width = "100%")
+                    # ),
+                    column(width = 9,
                       actionButton(inputId = "switch_to_plot",
-                                   label = 
+                                   label =
                                      tagList(icon("chart-line"), "View change over time"),
-                                   class = "btn-warning", style = "margin-top: 25px; width: 100%; align: center;")
+                                   class = "btn-warning",
+                                   style = "margin-top: 25px; width: 100%; align: center;")
                     )
                   ), # end of fluid row
                   title = "Click each dot to reveal more information about each recruit!",
-                  footer = "This map shows where each recruit came from (High School) as well as player scores, rankings and other metadata. Data was scrapped from 247Sports as of July 2025.",
+                  footer = HTML("<span style='color: #FFA500;'>
+                    <em>*Polygons grouped by State. Only commits with reported High Schools mapped (Transfers not included). 
+                    Data from 247Sports as of Jan 2026.</em>
+                                </span>"),
                   status = "info",
                   background = "navy",
                   solidHeader = TRUE, width = 12,
                   collapsible = T, collapsed = F,
+
                   withSpinner(
-                    leafletOutput("gridPlot", height = "300px"), color = "orange"
+                    leafletOutput("gridPlot", height = "320px"), color = "orange"
                   )
                 ),
                 
@@ -136,7 +304,7 @@ ui <- dashboardPage(
                   background = "aqua",
                   solidHeader = T, width = 12,
                   collapsible = T, collapsed = F,
-                  DTOutput("summary_stats", height = "200px")
+                  DTOutput("summary_stats", height = "230px")
                 )
               )
       ), ## end of summary tab (tab 2)
@@ -152,24 +320,33 @@ ui <- dashboardPage(
                            selectInput(
                              "team", "Check other schools",
                              choices = c("",sort(team_selections$School)),
+                             selected = FALSE,
                              selectize = FALSE,
                              width = "100%")),
-                    column(width = 9,
+                    column(width = 2,
+                           selectInput(
+                             "show_outliers", label = "Outliers",
+                             choices = c("Show" = "show", "Hide" = "hide"),
+                             selected = "show", width = "100%")
+                    ),
+                    column(width = 7,
                            actionButton(inputId = "switch_to_map",
                                         label = 
                                           tagList(icon("map"), "View map locations"),
-                                        class = "btn-warning", style = "margin-top: 25px; width: 100%; ; align: center;")
+                                        class = "btn-warning",
+                                        style = "margin-top: 25px; width: 100%; ; align: center;")
                            )
                     ), # end of fluid row
-                  title = "Compare recruiting classes across years to see how 
-                  they stack up in terms of 247 player rankings scores (1-100+)",
-                  footer = "Data was scrapped from 247Sports as of July 2025.",
+                  title = "Comparing Distance Traveled by Recruits Over Time",
+                  footer = HTML("<span style='color: #FFA500;'>
+                  Data was scrapped from 247Sports as of Jan 2026.
+                                </span>"),
                   status = "info",
                   background = "navy",
                   solidHeader = TRUE, width = 12,
                   collapsed = F,
                   withSpinner(
-                    plotOutput("plot", height = "500px"), color = "orange"
+                    plotOutput("plot", height = "450px"), color = "orange"
                   )
                 )
               )
@@ -181,14 +358,51 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   # hold the sport choice
-  chosenSport <- reactiveVal(NULL)
+  chosenSport <- reactiveVal('football')
   chosenSchool <- reactiveVal(NULL)
   chosenYearRange <- reactiveVal(NULL)
   
   # hide initial other tabs
-  shinyjs::hide("year_range")
+  #shinyjs::hide("year_range")
   shinyjs::hide("team")
   shinyjs::hide("make_map")
+  
+  ## update selections if click logo -->
+  observeEvent(input$select_arizona, {
+    req(chosenSport())
+    # update reactive value for team
+    chosenSchool("arizona")
+    updateSelectInput(session, "team", selected = "arizona")
+    # move tabs based on selection
+    if (input$vizType == "Distance Traveled by Recruits") {
+      updateTabItems(session, "tabs", "summary")  # switch to summary tab
+    } else {
+      updateTabItems(session, "tabs", "compare")  # switch to compare tab
+    }
+  })
+  observeEvent(input$select_arizona_state, {
+    req(chosenSport())
+    chosenSchool("arizona-state")
+    updateSelectInput(session, "team", selected = "arizona-state")
+    if (input$vizType == "Distance Traveled by Recruits") {
+      updateTabItems(session, "tabs", "summary")  # switch to summary tab
+    } else {
+      updateTabItems(session, "tabs", "compare")  # switch to compare tab
+    }
+  })
+  
+  
+  # ## info boxes
+  # output$az <- renderInfoBox({
+  #   d1 <- filtered_data()
+  #   infoBox(
+  #     title = "Average Miles away",
+  #     value = mean(d1$miles_away, na.rm = TRUE),
+  #     icon = icon("football"),
+  #     color = "blue",
+  #     fill = TRUE
+  #   )
+  # })
   
   ## launch modal on button click
   observeEvent(input$choose_sport, {
@@ -196,7 +410,7 @@ server <- function(input, output, session) {
       title = "Pick your sport",
       radioButtons(
         "sport_modal", NULL,
-        choices = sort(sport_selections$sport)
+        choices = sort(str_to_title(sport_selections$sport))
       ),
       footer = tagList(
         modalButton("Cancel"),
@@ -211,7 +425,7 @@ server <- function(input, output, session) {
     req(input$sport_modal)
     # save reactive values
     chosenSport(input$sport_modal)
-    chosenSchool(input$team)
+    #chosenSchool(input$team)
     chosenYearRange(input$year_range)
     
     removeModal()
@@ -219,9 +433,8 @@ server <- function(input, output, session) {
     
     ## alert
     shinyalert(
-      title = "Sport Selected",
-      text = paste("You selected", input$sport_modal, "as your sport...
-                   Now pick a date range, team, then Create!"),
+      title = paste0(str_to_title(input$sport_modal)," selected..."),
+      text = paste("Now select a date range, team, then create!"),
       type = "success",
       confirmButtonText = "Great!",
       showCancelButton = FALSE,
@@ -229,17 +442,23 @@ server <- function(input, output, session) {
     )
     
     # show hidden tabs
-    shinyjs::show("year_range")
+    #shinyjs::show("year_range")
     shinyjs::show("team")
     shinyjs::show("make_map")
   })
   
   ## switcher for moving between tabs
   observeEvent(input$switch_to_plot, {
+    chosenSchool(input$team)
+    updateSelectInput(session, "team", selected = chosenSchool())
     updateTabItems(session, "tabs", "compare")
+    
   })
   observeEvent(input$switch_to_map, {
+    chosenSchool(input$team)
+    updateSelectInput(session, "team", selected = chosenSchool())
     updateTabItems(session, "tabs", "summary")
+    
   })
   
   ## reactive filtering uses chosenSport()
@@ -247,15 +466,21 @@ server <- function(input, output, session) {
     req(chosenSport(), input$team, input$year_range)
     yrs <- as.integer(format(input$year_range, "%Y"))
     
+    ## update inputs when data changes
+    chosenSchool(input$team)
+    updateSelectInput(session, "team", selected = chosenSchool())
+    
+    sp <- tolower(chosenSport())
+    
     # set database based on sport ->
-    if (chosenSport() == "basketball") {
+    if (sp == "basketball") {
       db_table = "recruit_class_basketball"
     }
-    if (chosenSport() == "football") {
+    if (sp == "football") {
       db_table = "recruit_class_football"
     }
     
-    geting_data <- paste0("Select * from ",db_table," where sport = '",chosenSport(), 
+    geting_data <- paste0("Select * from ",db_table," where sport = '",sp, 
                           "' AND School = '",input$team,"' AND Year >= ",yrs[1]," AND Year <= ",yrs[2],
                           " ORDER BY Ranking, NationalRank desc, StateRank desc, PositionRank desc, Name")
     
@@ -280,6 +505,10 @@ server <- function(input, output, session) {
     meters_per_mile <- 1609.34
     big12_data_wDis <- big12_data %>% 
       mutate(miles_away = round(disFromHS_m / meters_per_mile,0))
+    
+    ## fix top 150 national ranks - usually only rank 150 so limit to 150
+    big12_data_wDis <- big12_data_wDis %>% 
+      mutate(NationalRank = ifelse(NationalRank > 150, NA, NationalRank))
     
     ## clean names
     u_of_schools <- c("arizona","utah","kansas","houston",
@@ -307,32 +536,29 @@ server <- function(input, output, session) {
       cat("Update selections and hit action button to proceed! \n")
   })
   
-  
-  output$summary_preview <- renderDT({
-    
-    if (nrow(filtered_data()) == 0) {
-      return(data.frame(Message =
-                          "No recruits found for the selected filters. Please adjust your selections."))
-    }
-    
-    if (nrow(filtered_data()) > 0) {
-      d <- filtered_data() %>% 
-        select(Name, Year, Position, Location, Ranking, NationalRank) %>%
-        arrange(desc(Ranking), NationalRank, Name)
-      d %>% 
-        datatable(
-          options = list(pageLength = 10,
-                         lengthChange = FALSE),
-          height = "400px", class = "stripe hover",
-          colnames = c("Recruit", "Class Year", "Position", "High School", "247Sports Ranking", "National Ranking"),
-          style = "bootstrap4",
-          caption = "247Sports Ranking (1-100+) graded to by 247Sports (100+ being the best).
-          National Ranking ranks top recruits in the country for each year (1 being the best).",
-          rownames = FALSE
-        )
-    }
-
-  })
+  ## not using summary preview anymore
+  # output$summary_preview <- renderDT({
+  #   if (nrow(filtered_data()) == 0) {
+  #     return(data.frame(Message =
+  #                         "No recruits found for the selected filters. Please adjust your selections."))
+  #   }
+  #   if (nrow(filtered_data()) > 0) {
+  #     d <- filtered_data() %>% 
+  #       select(Name, Year, Position, Location, Ranking, NationalRank) %>%
+  #       arrange(desc(Ranking), NationalRank, Name)
+  #     d %>% 
+  #       datatable(
+  #         options = list(pageLength = 10,
+  #                        lengthChange = FALSE),
+  #         height = "400px", class = "stripe hover",
+  #         colnames = c("Recruit", "Class Year", "Position", "High School", "247Sports Ranking", "National Ranking"),
+  #         style = "bootstrap4",
+  #         caption = '"247Sports Ranking" are player scores from 1 to 100 (100 being best).
+  #         "National Ranking" ranks top 150 recruits in the country each year (1 being the best).',
+  #         rownames = FALSE
+  #       )
+  #   }
+  # })
   
   output$summary_stats <- renderDT({
     if (nrow(filtered_data()) == 0) {
@@ -359,10 +585,16 @@ server <- function(input, output, session) {
       d2
     }
   })
+  
 
   ## create map/plot -->
-  observeEvent(input$make_map, {
-    req(chosenSport(), input$team, input$year_range)
+  #observeEvent(input$make_map, {
+  observe({
+    
+    req(chosenSport(),input$year_range, input$team)
+    
+    chosenSchool(input$team)
+    updateSelectInput(session, "team", selected = chosenSchool())
     
     ## expand sidebar menu
     #shinyjs::removeClass(selector = "body", class = "sidebar-collapse")
@@ -393,9 +625,11 @@ server <- function(input, output, session) {
         cat("Error: Did not find 2 years to compare... \n")
       }
     })
-
+    
     ## render plot
     output$plot <- renderPlot ({
+      req(input$show_outliers)
+      
       source("scripts/plot.R", local = T)
       final_plot
 

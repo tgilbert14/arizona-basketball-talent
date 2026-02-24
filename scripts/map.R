@@ -83,9 +83,9 @@ map <- leaflet(data_to_map) %>%
                    stroke = TRUE,
                    fillOpacity = 0.8,
                    label = ~paste(University)
-                   ) %>% 
+                   )
   ## add caption for map
-  addControl(html = tags$div("Polygons grouped by State. Transfers not mapped."), position = "bottomright")
+  #addControl(html = tags$div("Polygons grouped by State. Transfers not mapped."), position = "bottomright")
 
 # set view/zoom
 zoom_long <- data_to_map$college_long[data_to_map$School==input$team][1]
