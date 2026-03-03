@@ -84,18 +84,7 @@ map <- leaflet(data_to_map) %>%
                    fillColor = "blue",
                    fillOpacity = 0.6,
                    label = ~paste(University)
-                   ) %>% 
-  # mini map from leaflet.extras2
-  addMiniMap(
-    tiles = providers$Esri.WorldGrayCanvas,
-    toggleDisplay = TRUE,
-    position = "bottomright",
-    width = 100, height = 100
-  ) %>%
-  addScaleBar(position = "bottomright", options = scaleBarOptions(imperial = TRUE, metric = TRUE)) %>% 
-  addEasyButton(easyButton(icon="fa-globe", title="Reset View",
-                           onClick=JS("function(btn, map){ map.setView([39.8283, -98.5795], 4);
-                         }")))
+                   )
   
 # set view/zoom
 zoom_long <- data_to_map$college_long[data_to_map$School==input$team][1]
