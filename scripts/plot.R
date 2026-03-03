@@ -37,19 +37,25 @@ deep_orange <- "#D15E10"
 my_yellow <- "#F0E442"
 sport <- input$sport_modal
 
+
 ## outliers or no outliers
 if (outlier_status == "hide") {
-  all_recruits <- remove_Outliers(all_recruits)
+  ## see how many removed first, then remove
   removed <- get_Outliers(all_recruits)
   num_removed <- nrow(removed)
-  showNotification(paste0(num_removed," outliers removed!"), type = "warning",
-                   duration = 15, closeButton = TRUE)
-  Sys.sleep(1)
-  showNotification("Trend line recalculated.", type = "message",
-                   duration = 15, closeButton = TRUE)
-} else {
-  num_removed <- 0
-}
+  all_recruits <- remove_Outliers(all_recruits)
+  
+  if(num_removed > 0) {
+    showNotification(paste0(num_removed," outliers removed..."), type = "warning",
+                     duration = 15, closeButton = TRUE)
+    Sys.sleep(.5)
+    showNotification("Trend line recalculated.", type = "message",
+                     duration = 15, closeButton = TRUE)
+  } else{
+    showNotification("No outliers removed.", type = "message",
+                     duration = 15, closeButton = TRUE)
+  }
+} 
 
 ## then get meta data for plot labels
 top_recruits <- all_recruits %>%

@@ -268,19 +268,7 @@ ui <- dashboardPage(
                            actionButton("choose_sport", "Switch Sport",
                                         class = "btn-info", width = "100%",
                                         style = "margin-bottom: 10px; align: left; margin-right: 0;")),
-                           # selectInput(
-                           #   "team", "Check other schools",
-                           #   choices = c("",sort(team_selections$School)),
-                           #   selectize = F,
-                           #   selected = F,
-                           #   width = "100%")),
-                    # column(width = 3,
-                    #        selectInput(
-                    #          "show_outliers", label = "Outliers",
-                    #          choices = c("Show" = "show", "Hide" = "hide"),
-                    #          selected = "show", width = "100%")
-                    # ),
-                    #column(width = 7), # spacer
+
                     column(width = 6,
                       actionButton(inputId = "switch_to_plot",
                                    label =
@@ -329,12 +317,7 @@ ui <- dashboardPage(
                            actionButton("choose_sport", "Switch Sport",
                                         class = "btn-info", width = "100%",
                                         style = "margin-bottom: 10px; align: left; margin-right: 0;")),
-                           # selectInput(
-                           #   "team", "Check other schools",
-                           #   choices = c("",sort(team_selections$School)),
-                           #   selected = FALSE,
-                           #   selectize = FALSE,
-                           #   width = "100%")),
+
                     column(width = 3,
                            actionButton(inputId = "switch_to_map",
                                         label = 
@@ -385,6 +368,7 @@ server <- function(input, output, session) {
   ## for switching schools, takes back to 'teams' tab (filters)
   observeEvent(input$switch_school, {
     updateTabItems(session, "tabs", "filters")  # switch to filters tab
+
   })
   
   ## update selections if click logo ------------->

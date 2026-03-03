@@ -54,12 +54,11 @@ labs <- lapply(seq(nrow(data_to_map)), function(i) {
          '<em><a href="', data_to_map[i, "URL"], '" target="_blank">View Profile</a></em>')
 })
 
-#National Rank:",NationalRank
-
+# create map
 map <- leaflet(data_to_map) %>%
   addTiles() %>%
   #addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
-  # polygon layer...
+  # polygon layer
   addPolygons(
     data = smooth_h,
     weight = 2, color = c1, opacity = 0.8,
@@ -67,9 +66,10 @@ map <- leaflet(data_to_map) %>%
   # High School locations...
   addCircleMarkers(lng = ~long,
                    lat = ~lat,
-                   radius = 4.5,
+                   radius = 6,
                    color = c4,
                    stroke = TRUE,
+                   #fillColor = "orange",
                    #fillOpacity = 0.6,
                    #label = lapply(labs, htmltools::HTML), # for hoover
                    popup = lapply(labs, htmltools::HTML), # for click
@@ -81,12 +81,22 @@ map <- leaflet(data_to_map) %>%
                    radius = 6,
                    color = teal,
                    stroke = TRUE,
-                   fillOpacity = 0.8,
+                   fillColor = "blue",
+                   fillOpacity = 0.6,
                    label = ~paste(University)
-                   )
-  ## add caption for map
-  #addControl(html = tags$div("Polygons grouped by State. Transfers not mapped."), position = "bottomright")
-
+                   ) %>% 
+  # mini map from leaflet.extras2
+  addMiniMap(
+    tiles = providers$Esri.WorldGrayCanvas,
+    toggleDisplay = TRUE,
+    position = "bottomright",
+    width = 100, height = 100
+  ) %>%
+  addScaleBar(position = "bottomright", options = scaleBarOptions(imperial = TRUE, metric = TRUE)) %>% 
+  addEasyButton(easyButton(icon="fa-globe", title="Reset View",
+                           onClick=JS("function(btn, map){ map.setView([39.8283, -98.5795], 4);
+                         }")))
+  
 # set view/zoom
 zoom_long <- data_to_map$college_long[data_to_map$School==input$team][1]
 zoom_lat <- data_to_map$college_lat[data_to_map$School==input$team][1]
