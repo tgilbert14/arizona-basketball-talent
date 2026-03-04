@@ -83,6 +83,7 @@ ui <- dashboardPage(
                     "vizType", label = NULL,
                     choices = c("Distance Traveled by Recruits", "Distance Traveled Over Time"),
                     selectize = FALSE,
+                    selected = "Distance Traveled Over Time",
                     width = "100%",
                     size = 2
                   ),
@@ -339,10 +340,19 @@ ui <- dashboardPage(
                   status = "info",
                   background = "navy",
                   solidHeader = TRUE, width = 12,
+                  collapsible = T,
                   collapsed = F,
                   withSpinner(
                     plotOutput("plot", height = "450px"), color = "orange"
                   )
+                ),
+                box(
+                  title = "Distance Traveled from High School to College (Farthest to Closest)",
+                  status = "primary",
+                  background = "aqua",
+                  solidHeader = T, width = 12,
+                  collapsible = T, collapsed = F,
+                  DTOutput("summary_stats", height = "230px")
                 )
               )
       ) ## end of compare tab (tab 3)

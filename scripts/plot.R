@@ -12,24 +12,7 @@ all_recruits <- rec_data %>%
 
 all_recruits <- unique(all_recruits)
 
-# plot individual miles_aways with year on x-axis -->
-# compute average by year
-avg_dis <- all_recruits %>%
-  group_by(Year) %>%
-  summarize(Average_Distance = mean(miles_away, na.rm = TRUE))
-
-# Count recruits per miles-year combo
-dot_sizes <- all_recruits %>%
-  group_by(Year, miles_away) %>%
-  summarize(count = n(), .groups = "drop")
-
-# Merge with main data
-all_recruits <- all_recruits %>%
-  left_join(dot_sizes, by = c("Year", "miles_away"))
-
-year_lines <- unique(all_recruits$Year)
 ## colors for plots and table
-
 bold_blue <- "#0992B2"
 light_blue <- "#21B4E9"
 bold_dark <- "#111D14"
@@ -49,13 +32,30 @@ if (outlier_status == "hide") {
     showNotification(paste0(num_removed," outliers removed..."), type = "warning",
                      duration = 15, closeButton = TRUE)
     Sys.sleep(.5)
-    showNotification("Trend line recalculated.", type = "message",
+    showNotification("Trend line and stats recalculated.", type = "message",
                      duration = 15, closeButton = TRUE)
   } else{
     showNotification("No outliers removed.", type = "message",
                      duration = 15, closeButton = TRUE)
   }
 } 
+
+# plot individual miles_aways with year on x-axis -->
+# compute average by year
+avg_dis <- all_recruits %>%
+  group_by(Year) %>%
+  summarize(Average_Distance = mean(miles_away, na.rm = TRUE))
+
+# Count recruits per miles-year combo
+dot_sizes <- all_recruits %>%
+  group_by(Year, miles_away) %>%
+  summarize(count = n(), .groups = "drop")
+
+# Merge with main data
+all_recruits <- all_recruits %>%
+  left_join(dot_sizes, by = c("Year", "miles_away"))
+
+year_lines <- unique(all_recruits$Year)
 
 ## then get meta data for plot labels
 top_recruits <- all_recruits %>%
@@ -89,14 +89,15 @@ percentile_data <- all_recruits %>%
 base_plot <- ggplot(all_recruits, aes(x = Year, y = miles_away, color = Type))
 
 final_plot <- base_plot +
+  geom_smooth(method = "loess", se = F, color = "firebrick",
+              fill = "salmon", linetype = "dashed", alpha = 0.3) +
+  
   # ribbons with quartiles
   geom_ribbon(data = percentile_data, aes(x = Year, ymin = p25, ymax = p75),
               inherit.aes = FALSE, fill = my_yellow, alpha = 0.4) +
   # add year divider lines
   geom_vline(xintercept = year_lines, color = "gray90", linetype = "solid", size = 0.7) +
-  geom_smooth(method = "loess", se = F, color = "firebrick",
-              fill = "salmon", linetype = "dashed", alpha = 0.2) +
-  
+
   # median distance
   geom_hline(yintercept = median(all_recruits$miles_away), linetype = "dotted", color = "seagreen") +
   annotate("text", x = min(all_recruits$Year)-1.2, y = median(all_recruits$miles_away)+30,
@@ -121,7 +122,7 @@ final_plot <- base_plot +
              inherit.aes = FALSE, color = deep_orange, size = 3.5, alpha = .4) +
   
   # Recruit dots with jitter
-  geom_point(position = position_jitter(width = 0.12), alpha = 0.3, size = 3.5) +
+  geom_point(position = position_jitter(width = 0.12), alpha = 0.6, size = 3.5) +
   
   # Label recruits using ggrepel
   geom_text_repel(
@@ -146,19 +147,19 @@ final_plot <- base_plot +
   ) + theme(
     plot.title = element_text(color = bold_blue,
                               face = "bold",
-                              size = 18),
+                              size = 24),
     plot.subtitle = element_text(color = light_blue,
                                  face = "bold",
-                                 size = 12),
+                                 size = 14),
     plot.caption = element_text(color = light_blue,
                                 face = "italic",
-                                size = 14),
+                                size = 16),
     panel.background = element_rect(fill = "white"),
     legend.title = element_text(color = bold_blue),
     axis.title.x = element_text(color = light_blue,
                                 face = "bold",
-                                size = 14),
+                                size = 16),
     axis.title.y = element_text(color = light_blue,
                                 face = "bold",
-                                size = 14)
+                                size = 16)
   )
