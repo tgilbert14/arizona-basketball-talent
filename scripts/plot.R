@@ -100,15 +100,15 @@ final_plot <- base_plot +
 
   # median distance
   geom_hline(yintercept = median(all_recruits$miles_away), linetype = "dotted", color = "seagreen") +
-  annotate("text", x = min(all_recruits$Year)-1.2, y = median(all_recruits$miles_away)+30,
+  annotate("text", x = min(all_recruits$Year)-1.1,
+           y = median(all_recruits$miles_away)+0,
            label = paste0("Median (",round(median(all_recruits$miles_away),0)," mi)"),
-           hjust = 0, color = "seagreen", size = 4) +
-  # mean distance
-  geom_hline(yintercept = mean(all_recruits$miles_away), linetype = "dotted", color = "seagreen") +
-  annotate("text", x = min(all_recruits$Year)-1.2, y = mean(all_recruits$miles_away)+30,
-           label = paste0("Mean (",round(mean(all_recruits$miles_away),0)," mi)"),
-           hjust = 0, color = "seagreen", size = 4) +
-  
+           hjust = 0, color = "seagreen", size = 4.5) +
+  # # mean distance
+  # geom_hline(yintercept = mean(all_recruits$miles_away), linetype = "dotted", color = "seagreen") +
+  # annotate("text", x = min(all_recruits$Year)-1.2, y = mean(all_recruits$miles_away)+30,
+  #          label = paste0("Mean (",round(mean(all_recruits$miles_away),0)," mi)"),
+  #          hjust = 0, color = "seagreen", size = 4) +
   scale_color_manual(values = c("Commit" = bold_blue, "Transfer" = "firebrick")) +
   scale_size_continuous(range = c(2.5, 6), name = "Recruits at Rating") +
   scale_y_continuous(limits = c(min(all_recruits$miles_away)-1, max(all_recruits$miles_away)+1)) +

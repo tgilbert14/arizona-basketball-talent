@@ -328,7 +328,8 @@ ui <- dashboardPage(
                            ),
                     column(width = 4,
                            selectInput(
-                             "show_outliers", label = NULL,
+                             "show_outliers", label = NULL, selectize = FALSE,
+                             multiple = FALSE,
                              choices = c("Show Outliers" = "show", "Hide Outliers" = "hide"),
                              selected = "show", width = "100%")
                     )
