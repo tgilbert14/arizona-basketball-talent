@@ -103,18 +103,12 @@ ui <- dashboardPage(
                   )
                 ), # end of selection box(s) for initial selections
                 
-                # selection summary
+                ## LOGOs for front page
                 box(
                   title = NULL,  status = "info",
                   background = "navy",
                   solidHeader = T, width = 9, collapsed = F,
                   
-                  ## render Big 12 school logos on condition no school is selected -->
-                  #conditionalPanel(condition = "input.team == ''", # got rid of condition...
-                  
-                  ## add title to run across logos
-                  # box(width = 12, background = "light-blue", solidHeader = T,height = "40px",
-                  #     title = "Click a logo to start!"),
                   actionButton(
                     inputId = "select_arizona",
                     label = div(
@@ -139,7 +133,6 @@ ui <- dashboardPage(
                     ),
                     style = "background-color: transparent; border: none; width: 24%;"
                   ),
-                  
                   actionButton(
                     inputId = "select_byu",
                     label = div(
@@ -244,9 +237,6 @@ ui <- dashboardPage(
                     ),
                     style = "background-color: transparent; border: none; width: 24%;"
                   ),
-
-
-                  #), # end of conditional panel
                   
                   ## team summary from selection - dont need anymore
                   #DTOutput("summary_preview", height = "600px")
@@ -254,13 +244,10 @@ ui <- dashboardPage(
               )
       ), ## end of filters tab (tab 1)
       
-      ## Summary tab
+      ## Summary tab --> this is the map!
       tabItem(tabName = "summary",
-              
               fluidRow(
-                
-                box(
-                  ## update selection options for map
+                box( ## update selection headers for map / controls
                   fluidRow(
                     column(width = 3,
                            actionButton("switch_school", "Switch School",
@@ -269,30 +256,25 @@ ui <- dashboardPage(
                            actionButton("choose_sport", "Switch Sport",
                                         class = "btn-info", width = "100%",
                                         style = "margin-bottom: 10px; align: left; margin-right: 0;")),
-
                     column(width = 6,
                       actionButton(inputId = "switch_to_plot",
-                                   label =
-                                     tagList(icon("chart-line"), "View change over time"),
+                                   label = tagList(icon("chart-line"), "View change over time"),
                                    class = "btn-warning", width = "100%",
-                                   style = "margin-bottom: 10px; align: left; margin-right: 0;")
-                    )
-                  ), # end of fluid row
+                                   style = "margin-bottom: 10px; align: left; margin-right: 0;"))
+                  ), # end of fluid row / controls
+                  
                   title = "Click each dot to reveal more information about each recruit!",
                   footer = HTML("<span style='color: #FFA500;'>
-                    <em>*Polygons grouped by State. Only commits with reported High Schools mapped (Transfers not included). 
+                    <em>*Polygons grouped by State. Only commits with reported high schools mapped (Transfers not included). 
                     Data from 247Sports as of Jan 2026.</em>
                                 </span>"),
                   status = "info",
                   background = "navy",
                   solidHeader = TRUE, width = 12,
                   collapsible = T, collapsed = F,
-
-                  withSpinner(
-                    leafletOutput("gridPlot", height = "320px"), color = "orange"
-                  )
-                ),
-                
+                  withSpinner(leafletOutput("gridPlot", height = "320px"),
+                              color = "orange")),
+                ## data table
                 box(
                   title = "Distance Traveled from High School to College (Farthest to Closest)",
                   status = "primary",
@@ -301,15 +283,13 @@ ui <- dashboardPage(
                   collapsible = T, collapsed = F,
                   DTOutput("summary_stats", height = "230px")
                 )
-              )
-      ), ## end of summary tab (tab 2)
+              ) ##end of fluid row
+      ), ## end of summary tab
       
-      ## Compare tab
+      ## Compare tab --> this is the scatter plot!
       tabItem(tabName = "compare",
-              
               fluidRow(
-                box(
-                  ## update selection options
+                box( ## update selection headers for plot / controls
                   fluidRow(
                     column(width = 2,
                            actionButton("switch_school", "Switch School",
@@ -318,49 +298,44 @@ ui <- dashboardPage(
                            actionButton("choose_sport", "Switch Sport",
                                         class = "btn-info", width = "100%",
                                         style = "margin-bottom: 10px; align: left; margin-right: 0;")),
-
                     column(width = 3,
                            actionButton(inputId = "switch_to_map",
                                         label = 
                                           tagList(icon("map"), "View map locations"),
                                         class = "btn-warning", width = "100%",
-                                        style = "margin-bottom: 10px; align: left; margin-right: 0;")
-                           ),
+                                        style = "margin-bottom: 10px; align: left; margin-right: 0;")),
                     column(width = 4,
-                           selectInput(
-                             "show_outliers", label = NULL, selectize = FALSE,
-                             multiple = FALSE,
+                           selectInput("show_outliers", label = NULL,
+                             selectize = FALSE, multiple = FALSE,
                              choices = c("Show Outliers" = "show", "Hide Outliers" = "hide"),
-                             selected = "show", width = "100%")
-                    )
-                    ), # end of fluid row
+                             selected = "show", width = "100%"))
+                    ), # end of fluid row for controls
+                  
                   title = "Comparing Distance Traveled by Recruits Over Time",
                   footer = HTML("<span style='color: #FFA500;'>
-                  Data was scrapped from 247Sports as of Jan 2026.
-                                </span>"),
+                  Data was scrapped from 247Sports as of Jan 2026.</span>"),
                   status = "info",
                   background = "navy",
                   solidHeader = TRUE, width = 12,
-                  collapsible = T,
-                  collapsed = F,
+                  collapsible = T, collapsed = F,
                   withSpinner(
-                    plotOutput("plot", height = "450px"), color = "orange"
-                  )
-                ),
+                    plotOutput("plot", height = "450px"), color = "orange")),
+                ## data table
                 box(
-                  title = "Distance Traveled from High School to College (Farthest to Closest)",
+                  title = "Distance Traveled from High School to College (Box Plot)",
                   status = "primary",
                   background = "aqua",
                   solidHeader = T, width = 12,
                   collapsible = T, collapsed = F,
-                  DTOutput("summary_stats", height = "230px")
-                )
-              )
+                  footer = HTML("<span style='color: #FFA500;'>
+                  Transfers not included in plot.</span>"),
+                  plotOutput("box_plot", height = "230px"))
+              ) ## nd of fluid row
       ) ## end of compare tab (tab 3)
       
     ) ## end of tab items
   ) ## end of dashboard body
-)
+) ## end of UI
 
 server <- function(input, output, session) {
   # hold the sport choice
@@ -379,10 +354,9 @@ server <- function(input, output, session) {
   ## for switching schools, takes back to 'teams' tab (filters)
   observeEvent(input$switch_school, {
     updateTabItems(session, "tabs", "filters")  # switch to filters tab
-
   })
   
-  ## update selections if click logo ------------->
+  ## update selections if click logo for each school
   observeEvent(input$select_arizona, {
     req(chosenSport())
     # update reactive value for team
@@ -546,7 +520,7 @@ server <- function(input, output, session) {
     }
   })
   
-  ## launch modal on button click
+  ## launch modal on button click for changing sports
   observeEvent(input$choose_sport, {
     showModal(modalDialog(
       title = "Change Sport",
@@ -560,7 +534,6 @@ server <- function(input, output, session) {
       ),
       easyClose = FALSE
     ))
-
   })
   
   ## confirm & lock in choice
@@ -568,16 +541,8 @@ server <- function(input, output, session) {
     req(input$sport_modal)
     # save reactive values
     chosenSport(input$sport_modal)
-    #chosenSchool(input$team)
     chosenYearRange(input$year_range)
-    
     removeModal()
-    
-  
-    # show hidden tabs
-    #shinyjs::show("year_range")
-    #shinyjs::show("team")
-    #shinyjs::show("make_map")
   })
   
   observeEvent(input$team, {
@@ -588,16 +553,10 @@ server <- function(input, output, session) {
   
   ## switcher for moving between tabs
   observeEvent(input$switch_to_plot, {
-    #chosenSchool(input$team)
-    #updateSelectInput(session, "team", selected = chosenSchool())
     updateTabItems(session, "tabs", "compare")
-    
   })
   observeEvent(input$switch_to_map, {
-    #chosenSchool(input$team)
-    #updateSelectInput(session, "team", selected = chosenSchool())
     updateTabItems(session, "tabs", "summary")
-    
   })
   
   ## reactive filtering uses chosenSport()
@@ -660,7 +619,7 @@ server <- function(input, output, session) {
     data_final
   })
 
-  ## render outputs
+  ## render date selections for testing
   output$selections <- renderPrint({
     req(chosenSport())
     
@@ -670,56 +629,33 @@ server <- function(input, output, session) {
       "for", input$team, chosenSport(),"...\n")
       cat("Update selections and hit action button to proceed! \n")
   })
+
   
-  ## not using summary preview anymore
-  # output$summary_preview <- renderDT({
+  # output$summary_stats <- renderDT({
   #   if (nrow(filtered_data()) == 0) {
   #     return(data.frame(Message =
-  #                         "No recruits found for the selected filters. Please adjust your selections."))
-  #   }
-  #   if (nrow(filtered_data()) > 0) {
-  #     d <- filtered_data() %>% 
-  #       select(Name, Year, Position, Location, Ranking, NationalRank) %>%
-  #       arrange(desc(Ranking), NationalRank, Name)
-  #     d %>% 
+  #     "No recruits found for the selected filters. Please adjust your selections."))
+  #   } else {
+  #     
+  #     big12_data_wDis <- filtered_data()
+  # 
+  #     d <-  big12_data_wDis %>% 
+  #       select(Name, miles_away, Location, University, School_City, Ranking, NationalRank,
+  #              Position, Height, Weight, Year) %>%
+  #       #mutate("Measurements" = paste0("(",Position,") Height: ",Height," - Weight: ",Weight)) %>%
+  #       arrange(desc(miles_away))
+  #     
+  #     d2 <- as.data.frame(d) %>% 
   #       datatable(
+  #         colnames = c("Recruit", "Distance Traveled (miles)", "From", "To", "City",
+  #         "247Sports Ranking", "National Ranking", "Position", "Height", "Weight", "Year"),
   #         options = list(pageLength = 10,
+  #                        #className = "dt-center",
   #                        lengthChange = FALSE),
-  #         height = "400px", class = "stripe hover",
-  #         colnames = c("Recruit", "Class Year", "Position", "High School", "247Sports Ranking", "National Ranking"),
-  #         style = "bootstrap4",
-  #         caption = '"247Sports Ranking" are player scores from 1 to 100 (100 being best).
-  #         "National Ranking" ranks top 150 recruits in the country each year (1 being the best).',
-  #         rownames = FALSE
-  #       )
+  #         rownames = FALSE)
+  #     d2
   #   }
   # })
-  
-  output$summary_stats <- renderDT({
-    if (nrow(filtered_data()) == 0) {
-      return(data.frame(Message =
-      "No recruits found for the selected filters. Please adjust your selections."))
-    } else {
-      
-      big12_data_wDis <- filtered_data()
-
-      d <-  big12_data_wDis %>% 
-        select(Name, miles_away, Location, University, School_City, Ranking, NationalRank,
-               Position, Height, Weight, Year) %>%
-        #mutate("Measurements" = paste0("(",Position,") Height: ",Height," - Weight: ",Weight)) %>%
-        arrange(desc(miles_away))
-      
-      d2 <- as.data.frame(d) %>% 
-        datatable(
-          colnames = c("Recruit", "Distance Traveled (miles)", "From", "To", "City",
-          "247Sports Ranking", "National Ranking", "Position", "Height", "Weight", "Year"),
-          options = list(pageLength = 10,
-                         #className = "dt-center",
-                         lengthChange = FALSE),
-          rownames = FALSE)
-      d2
-    }
-  })
   
 
   ## create map/plot -->
@@ -743,9 +679,24 @@ server <- function(input, output, session) {
     
     # render map
     output$gridPlot <- renderLeaflet({
+      sp <- chosenSport()
       # sourced map code
       source("scripts/map.R", local = T)
       final_map
+    })
+    # render box plot
+    output$box_plot <- renderPlot({
+      sp <- chosenSport()
+      # sourced box plot code
+      source("scripts/box_plot.R", local = T)
+      my_box_plot
+    })
+    ## render scatter plot
+    output$plot <- renderPlot ({
+      req(input$show_outliers)
+      sp <- chosenSport()
+      source("scripts/plot.R", local = T)
+      final_plot
     })
     
     ## for plot
@@ -759,25 +710,41 @@ server <- function(input, output, session) {
         cat("Error: Did not find 2 years to compare... \n")
       }
     })
-    ## render plot
-    output$plot <- renderPlot ({
-      req(input$show_outliers)
-      
-      source("scripts/plot.R", local = T)
-      final_plot
+
+    
+    ## render data table
+    output$summary_stats <- renderDT({
+      if (nrow(filtered_data()) == 0) {
+        return(data.frame(Message =
+                            "No recruits found for the selected filters. Please adjust your selections."))
+      } else {
+        
+        big12_data_wDis <- filtered_data()
+        
+        d <-  big12_data_wDis %>% 
+          select(Name, miles_away, Location, University, School_City, Ranking, NationalRank,
+                 Position, Height, Weight, Year) %>%
+          #mutate("Measurements" = paste0("(",Position,") Height: ",Height," - Weight: ",Weight)) %>%
+          arrange(desc(miles_away))
+        
+        d2 <- as.data.frame(d) %>% 
+          datatable(
+            colnames = c("Recruit", "Distance Traveled (miles)", "From", "To", "City",
+                         "247Sports Ranking", "National Ranking", "Position", "Height", "Weight", "Year"),
+            options = list(pageLength = 10,
+                           #className = "dt-center",
+                           lengthChange = FALSE),
+            rownames = FALSE)
+        d2
+      }
     })
-  })
+    
+  }) ## end of observe
+  
+  
   output$summary <- renderTable({
     filtered_data()
   })
-  
-  # # Close connection when app stops
-  # session$onStop(function() {
-  #   if (dbIsValid(conn)) {
-  #     dbDisconnect(conn)
-  #     cat("Database connection closed.\n")
-  #   }
-  # })
   
 }
 

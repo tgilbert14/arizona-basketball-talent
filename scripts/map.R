@@ -17,12 +17,11 @@ while (i < nrow(data_to_map)) {
 }
 #View(data_to_map)
 
-sport <- input$sport_modal
 # create URLs for each player search
 # e.g., https://247sports.com/season/2023-basketball/recruits/?&Player.FullName=conrad%20martinez
 data_to_map <- data_to_map %>% 
   mutate(URL = paste0("https://247sports.com/season/",Year,
-                      "-",sport,"/recruits/?&Player.FullName=", 
+                      "-",sp,"/recruits/?&Player.FullName=", 
                       str_replace_all(Name, " ", "%20")))
 ## colors
 c1 <- "#0072B2"
@@ -56,8 +55,8 @@ labs <- lapply(seq(nrow(data_to_map)), function(i) {
 
 # create map
 map <- leaflet(data_to_map) %>%
-  addTiles() %>%
-  #addProviderTiles(providers$Esri.WorldGrayCanvas) %>% 
+  #addTiles() %>%
+  addProviderTiles(providers$Esri.WorldStreetMap) %>% 
   # polygon layer
   addPolygons(
     data = smooth_h,

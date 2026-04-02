@@ -22,6 +22,7 @@ library(gt)
 library(geosphere)
 library(ggplot2)
 library(ggrepel)
+library(ggtext)
 #library(plotly)
 
 ## query for getting data
@@ -51,11 +52,6 @@ remove_Outliers <- function(data) {
     filter(miles_away >= lower_bound & miles_away <= upper_bound) %>% 
     arrange(miles_away)
   
-  # ## look at only outlier data
-  # possible_outliers <- data %>% 
-  #   filter(miles_away < lower_bound | miles_away > upper_bound) %>% 
-  #   arrange(desc(miles_away))
-
   return(clean_data)
 }
 

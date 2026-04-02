@@ -18,8 +18,6 @@ light_blue <- "#21B4E9"
 bold_dark <- "#111D14"
 deep_orange <- "#D15E10"
 my_yellow <- "#F0E442"
-sport <- input$sport_modal
-
 
 ## outliers or no outliers
 if (outlier_status == "hide") {
@@ -138,7 +136,7 @@ final_plot <- base_plot +
   ) +
   #geom_smooth(method = "lm", se = T, color = my_yellow) +
   labs(
-    title = paste0(college_label, " ", str_to_title(sport), " Commits Distance Traveled (", min(all_recruits$Year), "–", max(all_recruits$Year), ")"),
+    title = paste0(college_label, " ", str_to_title(sp), " Commits Distance Traveled (", min(all_recruits$Year), "–", max(all_recruits$Year), ")"),
     x = "Class Year",
     y = "Miles Away",
     subtitle =
