@@ -55,13 +55,16 @@ all_recruits <- all_recruits %>%
 
 year_lines <- unique(all_recruits$Year)
 
+# test <<- all_recruits
+# View(test)
+# stop()
 ## then get meta data for plot labels
 top_recruits <- all_recruits %>%
   group_by(Year) %>%
   arrange(desc(miles_away)) %>%
   slice_max(order_by = miles_away, n = 1, with_ties = TRUE) %>%
   ungroup() %>%
-  mutate(label = paste0(Name, "\n(", miles_away, " mi)"))
+  mutate(label = paste0(Name," (",Position,")\n(", miles_away, " mi)"))
 
 # ignore first year of top recruits to save space for other lines
 top_recruits <- top_recruits %>%

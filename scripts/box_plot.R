@@ -130,6 +130,8 @@ logo_df <- data.frame(
 
 logo_labels <- setNames(paste0("<img src='",logo_df$logo,"' width='42'/>"),
                         logo_df$University)
+oki_colors <- c("#0992B2","#D15E10","#F0E442","#21B4E9","#111D14",
+                "#E69F00","#56B4E9","#009E73","#000000","#0072B2")
 
 ## label states in this range
 state_labels <- the_data %>% 
@@ -139,14 +141,20 @@ state_labels <- the_data %>%
 
 my_box_plot <- ggplot(the_data, aes(x = University, y = miles_away))+
   labs(x = "", y = "Miles Away",
-       title = paste0(college_label," ",str_to_title(sp)," Recruiting Patterns"),
-       subtitle = paste0("Historic (",his_range,") vs Most Current (",curr_year,")"))+
-  geom_boxplot(aes(fill=University), alpha = .7, width = .5,
-               outliers = F, median.linewidth = 3, show.legend = F)+
-  geom_point(data = the_data,
-             aes(color = `Time span`),
+       title = paste0(college_label," ",str_to_title(sp)," by Position"),
+       subtitle = paste0("○ Historic (",his_range,") vs Most Current (",curr_year,") ●"))+
+  geom_boxplot(aes(fill=University), alpha = .3, width = 1, color = oki_colors[5],
+               fill = oki_colors[4], outliers = F, median.linewidth = 3, show.legend = T)+
+  # historical range
+  geom_point(data = the_data %>% filter(`Time span` == his_range),
+             color = oki_colors[10], shape = 1,
+             position = position_jitter(width = .3),
+             size = 7, alpha = .8)+
+  # most recent year
+  geom_point(data = the_data %>% filter(`Time span` == curr_year),
+             color = "red", shape = 16,
              position = position_jitter(width = .25),
-             size = 6, alpha = .9)+
+             size = 6, alpha = 1)+
   coord_flip()+
   scale_x_discrete(labels = logo_labels)+
   theme(

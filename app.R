@@ -616,6 +616,8 @@ server <- function(input, output, session) {
                     yes = paste0("University of ",str_to_title(School)),
                     no = paste0(str_to_title(School)," University"))
       ))
+    # sub out extra dashes
+    data_final$University <- str_replace_all(data_final$University, "-"," ")
     data_final
   })
 
