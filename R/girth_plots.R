@@ -5,6 +5,12 @@
 ## All builders take data prepared by prep_size_data().
 ## ---------------------------------------------------------------------------
 
+## hometown display: 'From: NA' looks broken on a card -- show a dash for
+## players whose location hasn't been scraped/geocoded yet
+loc_dash <- function(loc) {
+  ifelse(is.na(loc) | loc == "" | loc == "NA", "—", loc)
+}
+
 ## a player name that opens the holographic PLAYER CARD when its hover card
 ## is pinned (the app's JS listens for taps on .pc-open and asks the server
 ## for the full player record)
@@ -110,7 +116,7 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
     mutate(tip = glue(
       "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
       "{HeightLabel} • {Weight} lbs • {LbsPerInch} lbs/in<br/>",
-      "From: {Location}<br/>247 Rating: {Ranking}"
+      "From: {loc_dash(Location)}<br/>247 Rating: {Ranking}"
     ))
 
   ## corner tags relative to conference medians (fan-friendly quadrants);
@@ -1057,7 +1063,7 @@ plot_distance_lab <- function(size_data, team_slug, sport,
     mutate(
       tip = glue(
         "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
-        "{miles_away} miles from campus<br/>From: {Location}<br/>",
+        "{miles_away} miles from campus<br/>From: {loc_dash(Location)}<br/>",
         "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
         '<a href="https://247sports.com/season/{Year}-{tolower(sport)}',
         '/recruits/?&Player.FullName={str_replace_all(Name, " ", "%20")}" ',
@@ -1116,7 +1122,7 @@ plot_distance_box <- function(size_data, team_slug, sport) {
       era = ifelse(Year == yr_max, paste0(yr_max, " class"), his_rng),
       tip = glue(
         "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
-        "{miles_away} miles from campus<br/>From: {Location}<br/>",
+        "{miles_away} miles from campus<br/>From: {loc_dash(Location)}<br/>",
         "247 Rating: {round(Ranking, 0)}<br/>",
         "<em>Tap the dot to pin this card</em>"))
 

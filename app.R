@@ -454,6 +454,17 @@ ui <- dashboardPage(
       .pinned-card .pin-hint { margin-top: 8px; padding-top: 6px;
         border-top: 1px solid rgba(255,255,255,0.2); color: #FFD200;
         font-size: 11px; font-style: italic; }
+      /* cards scale from their top-left so they stay where you put them */
+      .pinned-card { transform-origin: top left; }
+      .pinned-card .pin-resize { position: absolute; right: 2px; bottom: 2px;
+        width: 22px; height: 22px; cursor: nwse-resize; touch-action: none;
+        opacity: 0.6;
+        background:
+          linear-gradient(135deg, transparent 52%, #FFD200 54%, #FFD200 60%,
+            transparent 62%, transparent 70%, #FFD200 72%, #FFD200 78%,
+            transparent 80%);
+        border-bottom-right-radius: 8px; }
+      .pinned-card .pin-resize:hover { opacity: 1; }
 
       /* ---- showcase polish: depth, motion, calm ---- */
       .content-wrapper { background:
@@ -662,6 +673,38 @@ ui <- dashboardPage(
               hint.innerHTML = '&#9656; tap a highlighted name to open the player card';
               pin.appendChild(hint);
             }
+            /* corner grip: drag to scale the card (text scales with it);
+               double-tap the grip to reset to the default size */
+            var grip = document.createElement('div');
+            grip.className = 'pin-resize';
+            grip.title = 'Drag to resize · double-tap to reset';
+            pin.appendChild(grip);
+            grip.addEventListener('pointerdown', function(ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              try { grip.setPointerCapture(ev.pointerId); } catch (err) {}
+              var startX = ev.pageX;
+              var startScale = pin.__scale || 1;
+              var baseW = pin.getBoundingClientRect().width / startScale;
+              function mv(em) {
+                var s = Math.min(2.4, Math.max(0.4,
+                  startScale + (em.pageX - startX) / baseW));
+                pin.__scale = s;
+                pin.style.transform = 'scale(' + s + ')';
+                updateLine(pin);
+              }
+              function up() {
+                grip.removeEventListener('pointermove', mv);
+                grip.removeEventListener('pointerup', up);
+              }
+              grip.addEventListener('pointermove', mv);
+              grip.addEventListener('pointerup', up);
+            });
+            grip.addEventListener('dblclick', function() {
+              pin.__scale = 1;
+              pin.style.transform = '';
+              updateLine(pin);
+            });
             var ax = e.pageX, ay = e.pageY;
             var x = Math.min(ax + 30, window.scrollX + window.innerWidth - 340);
             pin.style.left = Math.max(x, 8) + 'px';
@@ -689,9 +732,9 @@ ui <- dashboardPage(
             pin.addEventListener('pointerdown', function(ev) {
               /* player-name chips + links must keep their clicks -- a
                  cancelled pointerdown suppresses the click event entirely */
-              if (ev.target.closest('a, .pin-close, .pc-open')) return;
+              if (ev.target.closest('a, .pin-close, .pc-open, .pin-resize')) return;
               ev.preventDefault();
-              pin.setPointerCapture(ev.pointerId);
+              try { pin.setPointerCapture(ev.pointerId); } catch (err) {}
               var sx = ev.pageX - pin.offsetLeft, sy = ev.pageY - pin.offsetTop;
               function mv(em) {
                 pin.style.left = (em.pageX - sx) + 'px';
@@ -706,6 +749,34 @@ ui <- dashboardPage(
               pin.addEventListener('pointerup', up);
             });
           });
+          /* chart download buttons: ggiraph's native exporter only sees the
+             SVG, so when pinned cards are on screen we capture the chart's
+             page region instead (cards + leader lines included). No pins ->
+             native crisp export as usual. Capture phase beats girafe's own
+             handler. */
+          document.addEventListener('click', function(e) {
+            var icon = e.target.closest('.ggiraph-toolbar-icon');
+            if (!icon) return;
+            var t = (icon.getAttribute('title') || '').toLowerCase();
+            if (t.indexOf('png') === -1 && t.indexOf('download') === -1) return;
+            if (!document.querySelector('.pinned-card')) return;
+            if (typeof html2canvas === 'undefined') return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            var box = icon.closest('.box') || icon.closest('.girafe');
+            var r = box.getBoundingClientRect();
+            html2canvas(document.body, {
+              x: r.left + window.scrollX, y: r.top + window.scrollY,
+              width: r.width, height: r.height,
+              useCORS: true, backgroundColor: '#ffffff'
+            }).then(function(canvas) {
+              var a = document.createElement('a');
+              a.download = window.__snapName().replace('-view.png', '-pinned.png');
+              window.__lastChartSnap = a.download;
+              a.href = canvas.toDataURL('image/png');
+              a.click();
+            });
+          }, true);
           /* viewport snapshot: what you see (charts, pins, lines) -> PNG.
              The filename carries team-sport-page-years so snapshots of
              different pages or settings never overwrite each other. */
