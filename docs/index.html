@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Big 12 Girth Index — recruiting size analytics by Desert Data Labs</title>
+  <meta name="description" content="Every Big 12 recruit's height, weight, and rating, 2016–2026 — interactive body maps, beef boards, coach-era breakdowns, a 3-3-5 war room, and talent-vs-results analytics. Free.">
+
+  <!-- social share cards -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Big 12 Girth Index">
+  <meta property="og:description" content="Who has the biggest bodies in the Big 12? Interactive recruiting size analytics: body maps, beef boards, coach eras, the 3-3-5 war room, and talent vs results. 2016–2026, football + basketball.">
+  <meta property="og:url" content="https://girthindex.desertdatalab.com/">
+  <meta property="og:image" content="https://girthindex.desertdatalab.com/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://girthindex.desertdatalab.com/assets/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="assets/ua.png">
+
+  <style>
+    :root {
+      --navy: #0C234B; --navy2: #16386e; --cardinal: #AB0520;
+      --gold: #FFD200; --ink: #1c2733; --muted: #6b7a89;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Rubik', 'Helvetica Neue', sans-serif; color: var(--ink);
+      background: #f4f7fb; line-height: 1.55; }
+
+    .hero { background:
+        radial-gradient(110% 90% at 85% 0%, rgba(255,210,0,0.12), transparent 55%),
+        linear-gradient(155deg, var(--navy) 0%, var(--navy2) 60%, #1d4587 100%);
+      color: white; padding: 64px 20px 56px 20px; text-align: center; }
+    .hero h1 { font-size: clamp(30px, 6vw, 52px); font-weight: 800;
+      letter-spacing: -0.5px; }
+    .hero h1 span { color: var(--gold); }
+    .hero p.tag { max-width: 640px; margin: 14px auto 0 auto;
+      font-size: clamp(15px, 2.4vw, 18px); opacity: 0.92; }
+    .launch { display: inline-block; margin-top: 28px; background: var(--gold);
+      color: var(--navy); font-weight: 800; font-size: 18px;
+      padding: 14px 38px; border-radius: 10px; text-decoration: none;
+      box-shadow: 0 10px 30px rgba(255,210,0,0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .launch:hover { transform: translateY(-2px);
+      box-shadow: 0 14px 36px rgba(255,210,0,0.45); }
+    .hero .sub { margin-top: 12px; font-size: 12.5px; opacity: 0.65; }
+
+    .shot { max-width: 980px; margin: -34px auto 0 auto; padding: 0 16px; }
+    .shot img { width: 100%; border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(12,35,75,0.28); border: 1px solid #dfe7f0; }
+
+    section { max-width: 980px; margin: 0 auto; padding: 52px 20px; }
+    h2 { font-size: clamp(22px, 4vw, 30px); font-weight: 800; color: var(--navy);
+      text-align: center; margin-bottom: 8px; }
+    .lede { text-align: center; color: var(--muted); max-width: 620px;
+      margin: 0 auto 34px auto; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px; }
+    .card { background: white; border-radius: 14px; padding: 22px;
+      box-shadow: 0 3px 14px rgba(12,35,75,0.07); border-top: 3px solid var(--cardinal);
+      transition: transform 0.18s ease, box-shadow 0.18s ease; }
+    .card:hover { transform: translateY(-4px);
+      box-shadow: 0 12px 26px rgba(12,35,75,0.13); }
+    .card .emoji { font-size: 26px; }
+    .card h3 { color: var(--navy); font-size: 17px; margin: 8px 0 6px 0; }
+    .card p { font-size: 14px; color: #4d5d6d; }
+
+    .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 18px; align-items: center; }
+    .two img { width: 100%; border-radius: 12px; border: 1px solid #e2e9f1;
+      box-shadow: 0 6px 20px rgba(12,35,75,0.10); }
+
+    .sources { background: white; border-radius: 14px; padding: 24px 26px;
+      font-size: 13.5px; color: #4d5d6d; border-left: 4px solid var(--gold); }
+    .sources strong { color: var(--navy); }
+
+    .cta { background: linear-gradient(155deg, var(--navy), var(--navy2));
+      border-radius: 16px; color: white; text-align: center; padding: 40px 24px; }
+    .cta h2 { color: white; }
+    .cta p { opacity: 0.9; max-width: 560px; margin: 8px auto 20px auto; }
+    .cta a.mail { display: inline-block; background: white; color: var(--navy);
+      font-weight: 800; padding: 12px 28px; border-radius: 10px;
+      text-decoration: none; }
+    .cta a.mail:hover { background: var(--gold); }
+
+    footer { text-align: center; color: var(--muted); font-size: 12.5px;
+      padding: 26px 16px 38px 16px; }
+    footer a { color: var(--cardinal); font-weight: 600; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <h1>The Big 12 <span>Girth Index</span></h1>
+    <p class="tag">Who has the biggest bodies in the Big 12? Every recruit's
+      height, weight, and rating — 2016 to 2026, football and basketball,
+      all 16 programs — turned into interactive charts a fan can read and an
+      analyst can defend.</p>
+    <a class="launch" id="launch"
+       href="https://019eb854-79ca-079b-a1d7-f5b7e4f673b0.share.connect.posit.cloud/">
+       Launch the app &rarr;</a>
+    <div class="sub">Free · no sign-up · works on your phone</div>
+  </div>
+
+  <div class="shot">
+    <img src="assets/bodymap.png"
+         alt="The Body Map: every Big 12 player by height and weight, with Arizona highlighted by position">
+  </div>
+
+  <section>
+    <h2>What's inside</h2>
+    <p class="lede">Nine interactive views, one control bar. Pick your team
+      once — the app remembers it.</p>
+    <div class="grid">
+      <div class="card"><div class="emoji">🗺️</div><h3>The Body Map</h3>
+        <p>Every player in the conference plotted by height × weight, your
+        team highlighted by position. Tap any dot for the recruit's card.</p></div>
+      <div class="card"><div class="emoji">🥩</div><h3>Conference Beef</h3>
+        <p>Leaderboards for weight, height, and pounds-per-inch — commit
+        classes or current rosters, with a Trenches filter.</p></div>
+      <div class="card"><div class="emoji">🃏</div><h3>Player Cards</h3>
+        <p>Tap a name in any pinned card and a holographic player card spins
+        in — size, rating, hometown, miles from campus, and their 247 link.</p></div>
+      <div class="card"><div class="emoji">🛡️</div><h3>The War Room</h3>
+        <p>Every defensive body mapped onto Arizona's 3-3-5 odd-stack roles —
+        two-deep targets, incoming adds at projected weights, auto-written brief.</p></div>
+      <div class="card"><div class="emoji">🏆</div><h3>Talent vs Results</h3>
+        <p>Recruiting composites joined to real season records and SP+ —
+        who outplays their talent, and who wastes it.</p></div>
+      <div class="card"><div class="emoji">📈</div><h3>Coach Eras</h3>
+        <p>Every head coach's recruiting fingerprint: ratings, blue-chips,
+        size, footprint — era by era, class by class.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Built to be argued with</h2>
+    <p class="lede">Pin cards to a chart, drag them where you want, and save
+      the whole annotated view as a PNG — receipts included.</p>
+    <div class="two">
+      <img src="assets/h2h.png" alt="Head-to-head weigh-in: Arizona vs Arizona State by position group">
+      <img src="assets/scoreboard.png" alt="Arizona scoreboard: wins per season vs talent on hand">
+    </div>
+  </section>
+
+  <section>
+    <div class="sources">
+      <strong>Data &amp; transparency.</strong> Recruiting classes and rosters
+      from 247Sports (2016–2026, portal transfers included from 2021); season
+      records and SP+ from CollegeFootballData. Heights and weights are as
+      reported by programs — treat them as directional, not lab-measured.
+      Every chart in the app states its player pool and source, and every
+      metric has a methods note. Found a data error?
+      <a href="mailto:desertdatalabs@gmail.com?subject=Girth%20Index%20data">Tell us</a>
+      — data validity outranks everything else here.
+    </div>
+  </section>
+
+  <section>
+    <div class="cta">
+      <h2>✋ Want one for your team?</h2>
+      <p>The War Room is tuned to Arizona's 3-3-5. Desert Data Labs builds
+        custom recruiting dashboards, scrapers, and analytics for programs,
+        conferences, podcasts, and businesses — tuned to your scheme and
+        your questions.</p>
+      <a class="mail"
+         href="mailto:desertdatalabs@gmail.com?subject=Custom%20build">
+         desertdatalabs@gmail.com</a>
+    </div>
+  </section>
+
+  <footer>
+    Built by <a href="mailto:desertdatalabs@gmail.com">Desert Data Labs</a>
+    · Tucson, AZ · Data: 247Sports &amp; CollegeFootballData ·
+    Not affiliated with the University of Arizona or the Big 12 Conference.
+  </footer>
+
+  <script>
+    /* pre-warm the app while the visitor reads this page */
+    fetch(document.getElementById('launch').href, { mode: 'no-cors' })
+      .catch(function() {});
+  </script>
+</body>
+</html>
