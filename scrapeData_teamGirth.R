@@ -3,9 +3,11 @@
 #https://247sports.com/college/arizona/Team/Arizona-Wildcats-Football-146/Roster/
 
 library(rvest)
+library(tidyverse)
+
 
 sport <- "football"
-call <- paste0("https://247sports.com/college/arizona/Team/Arizona-Wildcats-Football-146/Roster/")
+call <- paste0("https://247sports.com/college/arizona/Team/Arizona-Wildcats-Football-146/Roster/?year=2026")
 page <- read_html(call)
 
 scores <- page %>%
@@ -83,11 +85,11 @@ while(i <= playeNamesEnd-1) {
 
 store_data
 
+write_csv()
 
 
-
-
-
-
+lsf.str("package:dplyr")
+lsf.str("package:purrr")
+sql
 
 

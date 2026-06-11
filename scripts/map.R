@@ -85,9 +85,9 @@ map <- leaflet(data_to_map) %>%
                    label = ~paste(University)
                    )
   
-# set view/zoom
-zoom_long <- data_to_map$college_long[data_to_map$School==input$team][1]
-zoom_lat <- data_to_map$college_lat[data_to_map$School==input$team][1]
+# set view/zoom (sel_team is provided by the calling render in app.R)
+zoom_long <- data_to_map$college_long[data_to_map$School==sel_team][1]
+zoom_lat <- data_to_map$college_lat[data_to_map$School==sel_team][1]
 
 final_map <- map %>% 
   setView(lng = zoom_long, lat = zoom_lat, zoom = 4.5) %>% 

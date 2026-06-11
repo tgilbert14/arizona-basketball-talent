@@ -19,6 +19,12 @@ bold_dark <- "#111D14"
 deep_orange <- "#D15E10"
 my_yellow <- "#F0E442"
 
+## v3: the calling render provides sel_color (the team's primary color);
+## fall back to the original blue when run standalone
+if (exists("sel_color")) {
+  bold_blue <- sel_color
+}
+
 ## outliers or no outliers
 if (outlier_status == "hide") {
   ## see how many removed first, then remove

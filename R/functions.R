@@ -16,13 +16,16 @@ library(DBI)
 library(RSQLite)
 library(leaflet)
 library(here)
-library(sf)
-library(smoothr)
-library(gt)
+## sf + smoothr are NOT loaded eagerly: only the Recruiting Map's state
+## hulls use them (namespaced in build_pipeline_map), and keeping them off
+## the startup path saves ~100MB on the deployed 1GB worker
 library(geosphere)
 library(ggplot2)
 library(ggrepel)
 library(ggtext)
+library(ggiraph)
+library(glue)
+library(tidyr)
 #library(plotly)
 
 ## query for getting data
