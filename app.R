@@ -80,6 +80,18 @@ spin <- function(out, color = "#0C234B") {
   shinycssloaders::withSpinner(out, color = color, hide.ui = FALSE)
 }
 
+## a context note: a methodology caveat shown under a chart (on by default;
+## the control-bar 'Context notes' checkbox hides them all for clean exports)
+ctx_note <- function(...) {
+  conditionalPanel(
+    condition = "input.show_context",
+    div(class = "ctx-note", icon("circle-info"), tags$span(...)))
+}
+
+## public app: visitors see a generic error message, never raw R errors
+## (full errors still reach the server logs for debugging)
+options(shiny.sanitize.errors = TRUE)
+
 ## render cache: flipping back to settings you've already viewed is instant.
 ## disk (not memory) so it survives across sessions within a worker -- on
 ## hosted tiers the worker restarts after sleep, which wipes a memory cache
@@ -366,17 +378,46 @@ ui <- dashboardPage(
       svg.pin-lines { position: absolute; top: 0; left: 0;
         width: 100%; height: 100%; z-index: 1400;
         pointer-events: none; overflow: visible; }
-      /* pins are children of the chart box; the box anchors them */
+      /* pins are children of the chart box; the box anchors them.
+         box-body anchors the interactive badge (footer-safe). */
       .box { position: relative; }
+      .box .box-body { position: relative; }
       /* a fullscreened box becomes a workbench: pin, drag, resize, download */
       .box:fullscreen { overflow: auto; background: white; padding: 26px; }
 
-      /* 'this chart is interactive' badge, bottom-left of each chart box */
+      /* home value boxes navigate -- make them feel like buttons */
+      .vb-link { cursor: pointer; }
+      .vb-link .small-box { transition: transform 0.15s ease,
+        box-shadow 0.15s ease; }
+      .vb-link:hover .small-box { transform: translateY(-3px);
+        box-shadow: 0 10px 22px rgba(12,35,75,0.22); }
+
+      /* the 'make your own graphic' how-to strip on Home */
+      .howto-strip { display: flex; flex-wrap: wrap; gap: 8px;
+        align-items: center; background: #fff;
+        border: 1.5px dashed #FFD200; border-radius: 10px;
+        padding: 9px 14px; margin-bottom: 16px; }
+      .howto-title { font-weight: 800; color: #0C234B; font-size: 13px;
+        text-transform: uppercase; letter-spacing: 0.6px; }
+      .howto-step { background: #f2f5f9; border-radius: 14px;
+        padding: 3px 11px; font-size: 12.5px; color: #41546a; }
+      .howto-step b { color: #AB0520; margin-right: 3px; }
+
+      /* understated 'interactive' tag, bottom-left of each chart box
+         (JS lifts it above the footer when one exists) */
       .tap-badge { position: absolute; left: 10px; bottom: 8px; z-index: 900;
-        background: rgba(12, 35, 75, 0.07); color: #5a6b7d;
-        border: 1px solid rgba(12, 35, 75, 0.12); border-radius: 12px;
-        font-size: 10.5px; font-weight: 600; padding: 2px 9px;
+        color: #93a3b3; border-left: 2px solid #c9d4df;
+        font-size: 10px; font-weight: 600; letter-spacing: 0.8px;
+        text-transform: uppercase; padding: 1px 0 1px 7px;
         pointer-events: none; }
+
+      /* context notes: methodology caveats users can hide for clean
+         exports via the control-bar checkbox */
+      .ctx-note { display: flex; gap: 8px; align-items: flex-start;
+        background: #FFF8E6; border-left: 3px solid #e6b800;
+        border-radius: 6px; padding: 7px 11px; margin-top: 10px;
+        font-size: 12.5px; color: #6b5d33; line-height: 1.45; }
+      .ctx-note .fa-circle-info { margin-top: 2px; color: #c9a300; }
 
       /* toast for slow renders (image capture etc.) */
       .gi-toast { position: fixed; left: 50%; bottom: 22px;
@@ -711,8 +752,10 @@ ui <- dashboardPage(
               if (!box || box.querySelector('.tap-badge')) return;
               var b = document.createElement('div');
               b.className = 'tap-badge';
-              b.innerHTML = '\\ud83d\\udc46 interactive \\u2014 tap to pin player cards';
-              box.appendChild(b);
+              b.textContent = 'interactive \\u00b7 tap to pin';
+              /* anchor inside the box BODY -- the footer lives outside it,
+                 so overlap is structurally impossible */
+              (box.querySelector('.box-body') || box).appendChild(b);
             });
           }
           /* head scripts run before <body> exists -- defer the observer */
@@ -913,11 +956,27 @@ ui <- dashboardPage(
             var txt = Array.from(src.querySelectorAll('li'))
               .map(function(li) { return '• ' + li.innerText.trim(); })
               .join('\\n') || src.innerText.trim();
-            navigator.clipboard.writeText(txt).then(function() {
+            function flash(label) {
               var old = btn.innerHTML;
-              btn.innerHTML = '✓ copied';
+              btn.innerHTML = label;
               setTimeout(function() { btn.innerHTML = old; }, 1400);
-            });
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(txt)
+                .then(function() { flash('✓ copied'); })
+                .catch(function() { flash('✗ blocked'); });
+            } else {
+              /* http / older webviews: textarea + execCommand fallback */
+              var f = document.createElement('textarea');
+              f.value = txt;
+              document.body.appendChild(f);
+              f.select();
+              try {
+                document.execCommand('copy');
+                flash('✓ copied');
+              } catch (err) { flash('✗ blocked'); }
+              f.remove();
+            }
           });
         })();
       "))),
@@ -970,7 +1029,9 @@ ui <- dashboardPage(
                                   choices = c("HS commits" = "commit",
                                               "Commits + transfers" = "both",
                                               "Transfers only" = "transfer"),
-                                  selected = "both"))
+                                  selected = "both"),
+                     checkboxInput("show_context", "Context notes",
+                                   value = TRUE))
             ))),
 
     tabItems(
@@ -994,15 +1055,41 @@ ui <- dashboardPage(
                                class = "btn-default")
               ),
               fluidRow(
-                valueBoxOutput("vb_home_rank", width = 4),
-                valueBoxOutput("vb_home_class", width = 4),
-                valueBoxOutput("vb_home_dev", width = 4)
+                ## each status number is a door into the tab behind it
+                column(width = 4, div(
+                  class = "vb-link", title = "Open Conference Beef",
+                  onclick = "document.querySelector('a[href=\"#shiny-tab-beef\"]').click()",
+                  valueBoxOutput("vb_home_rank", width = NULL))),
+                column(width = 4, div(
+                  class = "vb-link", title = "Open Coach Eras",
+                  onclick = "document.querySelector('a[href=\"#shiny-tab-eras\"]').click()",
+                  valueBoxOutput("vb_home_class", width = NULL))),
+                column(width = 4, div(
+                  class = "vb-link", title = "Open the Weight Room",
+                  onclick = "document.querySelector('a[href=\"#shiny-tab-weightroom\"]').click()",
+                  valueBoxOutput("vb_home_dev", width = NULL)))
+              ),
+              fluidRow(
+                column(width = 12, div(class = "howto-strip",
+                  tags$span(class = "howto-title", "Build your own graphic:"),
+                  tags$span(class = "howto-step",
+                            HTML("<b>1</b> tap a chart point to pin its card")),
+                  tags$span(class = "howto-step",
+                            HTML("<b>2</b> drag to place &middot; corner grip to resize")),
+                  tags$span(class = "howto-step",
+                            HTML("<b>3</b> tap a highlighted name for the full player card")),
+                  tags$span(class = "howto-step",
+                            HTML("<b>4</b> download from the chart &mdash; pinned cards included"))
+                ))
               ),
               fluidRow(
                 box(
                   title = textOutput("class_snap_title"),
                   status = "danger", solidHeader = TRUE, width = 5,
                   htmlOutput("class_snap"),
+                  ctx_note("The newest cycle stays open through signing day —
+                    counts and average ratings move as commits land and
+                    247 re-ranks."),
                   footer = HTML("<em style='color:#888;'>The newest class in
                     your selected window vs the three classes before it.</em>")
                 ),
@@ -1116,7 +1203,11 @@ ui <- dashboardPage(
                          status = "primary", solidHeader = TRUE,
                          width = NULL, collapsible = TRUE,
                          spin(girafeOutput("beef_board", height = "640px"),
-                                     color = "#0C234B")
+                                     color = "#0C234B"),
+                         ctx_note("'Big 12' means today's 16 members, applied
+                           retroactively — Arizona, ASU, Colorado, and Utah
+                           joined in 2024, so their earlier classes were
+                           signed in the Pac-12.")
                        )),
                 column(width = 7,
                        box(
@@ -1124,7 +1215,10 @@ ui <- dashboardPage(
                          status = "primary", solidHeader = TRUE,
                          width = NULL, collapsible = TRUE,
                          spin(girafeOutput("size_trend", height = "300px"),
-                                     color = "#0C234B")
+                                     color = "#0C234B"),
+                         ctx_note("Portal transfers exist in the data from 2021",
+                                  " on — with 'Commits + transfers' selected,",
+                                  " earlier years show HS classes only.")
                        ),
                        box(
                          title = "Head to Head: Position-Group Weigh-In",
@@ -1226,7 +1320,13 @@ ui <- dashboardPage(
                   status = "primary", solidHeader = TRUE,
                   width = 12, collapsible = TRUE,
                   spin(girafeOutput("era_timeline", height = "440px"),
-                              color = "#0C234B")
+                              color = "#0C234B"),
+                  ctx_note("Classes belong to the staff that ran their December",
+                           " signing window, so after a January change (Fisch →",
+                           " Brennan, Jan 2024) the outgoing staff's final class",
+                           " largely signed before the new coach arrived. The",
+                           " newest cycle is still open — ratings re-rank and",
+                           " players keep committing through signing day.")
                 )
               ),
               fluidRow(
@@ -1355,6 +1455,9 @@ ui <- dashboardPage(
                   width = 12, collapsible = TRUE,
                   spin(girafeOutput("talent_quadrant", height = "520px"),
                               color = "#0C234B"),
+                  ctx_note("2020 was the COVID season — most programs played
+                    5–10 games, so windows that include 2020 mix shortened
+                    seasons into the win percentages."),
                   footer = HTML("<em style='color:#888;'>Follows the class-year
                     window in the control bar (completed seasons only).</em>")
                 )
@@ -1366,6 +1469,9 @@ ui <- dashboardPage(
                   width = 12, collapsible = TRUE,
                   spin(girafeOutput("team_scoreboard", height = "380px"),
                               color = "#0C234B"),
+                  ctx_note("2020 win totals are not comparable to other
+                    seasons — the COVID year cut most schedules to 5–10
+                    games (Arizona played just 5)."),
                   footer = HTML("<em style='color:#888;'>When the bars beat the
                     dashed line's trajectory, the staff is outcoaching its
                     talent — Arizona 2025 under the new defense is the case
@@ -1577,7 +1683,7 @@ server <- function(input, output, session) {
   }
 
   ## ---- PLAYER CARD: tap a name in any pinned card -> holographic card ----
-  observeEvent(input$pc_request, {
+  observeEvent(input$pc_request, tryCatch({
     req(input$pc_request$name)
     nm <- input$pc_request$name
     sch <- input$pc_request$school %||% ""
@@ -1632,7 +1738,10 @@ server <- function(input, output, session) {
                         "Find their 247Sports profile →",
                         "Full 247Sports profile →"),
       src = "Size + rating as listed by 247Sports at commitment"))
-  })
+  }, error = function(e) {
+    ## a malformed request must never take the session down
+    message("player card lookup failed: ", conditionMessage(e))
+  }))
 
   ## ---- TEAM MEMORY: restore the saved team, or ask once ------------------
   observeEvent(input$stored_team, once = TRUE, {
@@ -1780,7 +1889,8 @@ server <- function(input, output, session) {
   ## keep position-group filter in sync with the sport
   observeEvent(input$g_sport, {
     updateSelectInput(session, "size_pos",
-                      choices = pos_choices(input$g_sport), selected = "All")
+                      choices = as.list(pos_choices(input$g_sport)),
+                      selected = "All")
   })
 
   ## ---- navigation -------------------------------------------------------------
@@ -1956,9 +2066,11 @@ server <- function(input, output, session) {
   ## position isolation buttons above the Body Map (per sport)
   observeEvent(input$g_sport, {
     groups <- setdiff(position_levels(input$g_sport), "Other")
+    ## as.list: named vectors trip jsonlite's keep_vec_names warning on
+    ## every update (named lists serialize cleanly)
     updateRadioButtons(session, "body_pos",
-                       choices = c("All positions" = "All",
-                                   setNames(groups, groups)),
+                       choices = as.list(c("All positions" = "All",
+                                           setNames(groups, groups))),
                        selected = "All", inline = TRUE)
   })
 
@@ -2369,6 +2481,9 @@ server <- function(input, output, session) {
   ## ---- LEGACY: filtered data + map + distance plots ---------------------------------------
   filtered_data <- reactive({
     req(input$g_team, input$g_years)
+    ## inputs reach this SQL as strings -- accept only known values
+    ## (a forged websocket message must not become a query fragment)
+    validate(need(input$g_team %in% TEAM_CONFIG$slug, "Unknown team."))
     sp <- g_sport()
     db_table <- if (sp == "basketball") "recruit_class_basketball" else "recruit_class_football"
 
@@ -2380,10 +2495,12 @@ server <- function(input, output, session) {
     geting_data <- paste0(
       "Select * from ", db_table, " where sport = '", sp,
       "' AND School = '", input$g_team, "'", type_clause,
-      " AND Year >= ", input$g_years[1], " AND Year <= ", input$g_years[2],
+      " AND Year >= ", as.integer(input$g_years[1]),
+      " AND Year <= ", as.integer(input$g_years[2]),
       " ORDER BY Ranking, NationalRank desc, StateRank desc, PositionRank desc, Name")
 
     all_data <- safe_query(conn, geting_data)
+    validate(need(nrow(all_data) > 0, "No players in this window."))
 
     all_data$lat <- as.numeric(all_data$lat)
     all_data$long <- as.numeric(all_data$long)

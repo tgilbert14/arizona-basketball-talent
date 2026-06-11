@@ -68,12 +68,15 @@ top_players_tip <- function(d, value_col, n = 3,
     arrange(if (desc) dplyr::desc(.data[[value_col]]) else .data[[value_col]]) %>%
     slice_head(n = n)
   if (nrow(d2) == 0) return(header %||% "")
-  ## group_modify drops grouping cols, so School may be absent here -- the
-  ## server-side card lookup falls back to name-only
+  ## group_modify drops grouping cols, so School/Year may be absent here.
+  ## Year especially: a missing column returns NULL, and paste0 with a
+  ## zero-length vector silently EMPTIES every line -- guard both.
   sch <- if ("School" %in% names(d2)) d2$School else ""
+  yr_part <- if ("Year" %in% names(d2)) {
+    paste0(", '", substr(d2$Year, 3, 4))
+  } else ""
   lines <- paste0(seq_len(nrow(d2)), ". ",
-                  pc_link(d2$Name, sch), " (", d2$Position,
-                  ", '", substr(d2$Year, 3, 4), ") — ",
+                  pc_link(d2$Name, sch), " (", d2$Position, yr_part, ") — ",
                   vapply(d2[[value_col]], function(v) as.character(fmt(v)),
                          character(1)))
   ## the app's pin JS appends a universal "tap a name" hint to any pinned
