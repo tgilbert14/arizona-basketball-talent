@@ -44,6 +44,11 @@ invisible(gc())
 
 SIZE_YEARS <- range(c(size_football$Year, size_basketball$Year))
 
+## the default window = the 4-class "roster window": those classes supply
+## ~92% of current Big 12 rosters in the portal era (the 5th year back adds
+## only ~4%), and the smaller default keeps first renders fast
+DEFAULT_YEARS <- c(SIZE_YEARS[2] - 3, SIZE_YEARS[2])
+
 ## named choices for team pickers (slug values, pretty labels)
 team_choices <- setNames(TEAM_CONFIG$slug, TEAM_CONFIG$team_name)
 
@@ -273,8 +278,12 @@ ui <- dashboardPage(
       /* boxes: rounded, soft shadow, sporty headers */
       .box { border-radius: 10px; box-shadow: 0 2px 8px rgba(12,35,75,0.08);
         border-top-width: 3px; }
-      .box-header .box-title { width: 100%; text-align: center;
+      /* leave room for the collapse/tools buttons -- a full-width centered
+         title overlaps them and steals their clicks */
+      .box-header .box-title { display: block; width: calc(100% - 84px);
+        margin: 0 42px; text-align: center;
         font-family: 'Rubik', sans-serif; font-weight: 600; }
+      .box-header .box-tools { z-index: 5; }
 
       /* scoreboard-style value boxes */
       .small-box { border-radius: 10px; }
@@ -352,9 +361,32 @@ ui <- dashboardPage(
         float: right; background: transparent; border: none; color: #9fb0c1;
         font-size: 17px; line-height: 1; cursor: pointer; margin-left: 8px; }
       .pinned-card .pin-close:hover { color: white; }
-      /* gold leader lines tying each card to its data point */
-      #pin-lines { position: absolute; top: 0; left: 0; z-index: 1400;
+      /* gold leader lines tying each card to its data point -- one svg
+         overlay per chart box, so downloads + fullscreen include them */
+      svg.pin-lines { position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%; z-index: 1400;
         pointer-events: none; overflow: visible; }
+      /* pins are children of the chart box; the box anchors them */
+      .box { position: relative; }
+      /* a fullscreened box becomes a workbench: pin, drag, resize, download */
+      .box:fullscreen { overflow: auto; background: white; padding: 26px; }
+
+      /* 'this chart is interactive' badge, bottom-left of each chart box */
+      .tap-badge { position: absolute; left: 10px; bottom: 8px; z-index: 900;
+        background: rgba(12, 35, 75, 0.07); color: #5a6b7d;
+        border: 1px solid rgba(12, 35, 75, 0.12); border-radius: 12px;
+        font-size: 10.5px; font-weight: 600; padding: 2px 9px;
+        pointer-events: none; }
+
+      /* toast for slow renders (image capture etc.) */
+      .gi-toast { position: fixed; left: 50%; bottom: 22px;
+        transform: translateX(-50%) translateY(20px); z-index: 4000;
+        background: #0C234B; color: white; border: 1.5px solid #FFD200;
+        border-radius: 10px; padding: 10px 18px; font-size: 13.5px;
+        font-weight: 600; opacity: 0; pointer-events: none;
+        transition: opacity 0.25s ease, transform 0.25s ease;
+        box-shadow: 0 8px 26px rgba(0,0,0,0.35); }
+      .gi-toast.show { opacity: 1; transform: translateX(-50%); }
 
       /* camera button in the control-bar strip */
       .snap-btn { background: #f2f5f9; border: 1px solid #d8e0ea;
@@ -564,10 +596,12 @@ ui <- dashboardPage(
                    (p.miles ? ' · ' + p.miles : '') + '</div>' +
               (p.coach ? '<div class=\"pc-coach\">Recruited under ' + p.coach + '</div>' : '') +
               (p.url ? '<a class=\"pc-247\" target=\"_blank\" href=\"' + p.url +
-                   '\">Full 247Sports profile &rarr;</a>' : '') +
+                   '\">' + (p.urlLabel || 'Full 247Sports profile &rarr;') + '</a>' : '') +
               '  <div class=\"pc-src\">' + p.src + '</div>' +
               '</div>';
-            document.body.appendChild(bd);
+            /* append inside a fullscreened box if one is active, so the
+               card shows in fullscreen mode too */
+            (document.fullscreenElement || document.body).appendChild(bd);
             var card = bd.querySelector('.pc-card');
             bd.addEventListener('click', function(ev) {
               if (ev.target === bd || ev.target.closest('.pc-close')) bd.remove();
@@ -621,36 +655,74 @@ ui <- dashboardPage(
           });
         });
       ")),
-      ## html2canvas powers the 'save this view' snapshot (charts + pins)
-      tags$script(src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"),
-      ## PIN CARDS v2: tap a chart element to pin its card, tied to the data
-      ## point by a gold leader line; drag the card anywhere; pins clear when
-      ## you switch tabs; the camera button saves the whole view as a PNG
+      ## html-to-image powers all snapshots (handles the resized cards' CSS
+      ## transforms correctly -- html2canvas smeared them -- and exports at
+      ## 2x resolution for editing quality)
+      tags$script(src = "https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"),
+      ## PIN CARDS v3: pins + leader lines live INSIDE the chart's box, so
+      ## chart downloads, fullscreen mode, and tab layout all see them.
+      ## Tap a chart element to pin; drag to move; grip to resize; pins
+      ## clear on tab switch. Toasts announce slow renders.
       tags$script(HTML("
         (function() {
           var svgNS = 'http://www.w3.org/2000/svg';
-          function linesLayer() {
-            var s = document.getElementById('pin-lines');
+          function host() { return document.fullscreenElement || document.body; }
+          window.giToast = function(msg) {
+            var t = document.querySelector('.gi-toast');
+            if (!t) {
+              t = document.createElement('div');
+              t.className = 'gi-toast';
+            }
+            host().appendChild(t);
+            t.textContent = msg;
+            t.classList.add('show');
+            return {
+              done: function(m) {
+                t.textContent = m;
+                setTimeout(function() { t.classList.remove('show'); }, 2000);
+              }
+            };
+          };
+          function linesLayer(box) {
+            var s = box.querySelector(':scope > svg.pin-lines');
             if (!s) {
               s = document.createElementNS(svgNS, 'svg');
-              s.id = 'pin-lines';
-              document.body.appendChild(s);
+              s.setAttribute('class', 'pin-lines');
+              box.appendChild(s);
             }
-            s.style.width = document.documentElement.scrollWidth + 'px';
-            s.style.height = document.documentElement.scrollHeight + 'px';
             return s;
           }
           function updateLine(pin) {
             if (!pin.__line) return;
             var r = pin.getBoundingClientRect();
-            pin.__line.setAttribute('x2', r.left + window.scrollX + r.width / 2);
-            pin.__line.setAttribute('y2', r.top + window.scrollY + r.height / 2);
+            var b = pin.__box.getBoundingClientRect();
+            pin.__line.setAttribute('x2', r.left - b.left + r.width / 2);
+            pin.__line.setAttribute('y2', r.top - b.top + r.height / 2);
           }
           window.clearPins = function() {
             document.querySelectorAll('.pinned-card').forEach(function(p) { p.remove(); });
-            var s = document.getElementById('pin-lines');
-            if (s) s.innerHTML = '';
+            document.querySelectorAll('svg.pin-lines').forEach(function(s) { s.innerHTML = ''; });
           };
+          /* every interactive chart gets a small 'tap to pin' badge so the
+             feature is discoverable (excluded from image exports) */
+          function badgeCharts() {
+            document.querySelectorAll('.girafe').forEach(function(g) {
+              var box = g.closest('.box');
+              if (!box || box.querySelector('.tap-badge')) return;
+              var b = document.createElement('div');
+              b.className = 'tap-badge';
+              b.innerHTML = '\\ud83d\\udc46 interactive \\u2014 tap to pin player cards';
+              box.appendChild(b);
+            });
+          }
+          /* head scripts run before <body> exists -- defer the observer */
+          document.addEventListener('DOMContentLoaded', function() {
+            badgeCharts();
+            new MutationObserver(function() {
+              clearTimeout(window.__bT);
+              window.__bT = setTimeout(badgeCharts, 400);
+            }).observe(document.body, { childList: true, subtree: true });
+          });
           document.addEventListener('click', function(e) {
             if (e.target.closest('.sidebar-menu a[href^=\"#shiny-tab-\"]')) {
               window.clearPins();
@@ -661,20 +733,29 @@ ui <- dashboardPage(
             if (!el || !el.closest('.girafe')) return;
             var t = el.getAttribute('title');
             if (!t) return;
+            var box = el.closest('.box') || document.body;
+            var bR = box.getBoundingClientRect();
             var ta = document.createElement('textarea');
             ta.innerHTML = t;
             var pin = document.createElement('div');
             pin.className = 'pinned-card';
+            pin.__box = box;
             pin.innerHTML = \"<button class='pin-close' title='Close'>&times;</button>\" + ta.value;
-            /* if this card names players, say how to open their cards */
+            /* the 'tap to pin' hint has done its job once pinned -- strip
+               it (and its line break) so cards stay compact for exports */
+            pin.querySelectorAll('em').forEach(function(em) {
+              if (/pin (this card|it)/i.test(em.textContent)) {
+                var prev = em.previousSibling;
+                if (prev && prev.nodeName === 'BR') prev.remove();
+                em.remove();
+              }
+            });
             if (pin.querySelector('.pc-open')) {
               var hint = document.createElement('div');
               hint.className = 'pin-hint';
               hint.innerHTML = '&#9656; tap a highlighted name to open the player card';
               pin.appendChild(hint);
             }
-            /* corner grip: drag to scale the card (text scales with it);
-               double-tap the grip to reset to the default size */
             var grip = document.createElement('div');
             grip.className = 'pin-resize';
             grip.title = 'Drag to resize · double-tap to reset';
@@ -705,12 +786,12 @@ ui <- dashboardPage(
               pin.style.transform = '';
               updateLine(pin);
             });
-            var ax = e.pageX, ay = e.pageY;
-            var x = Math.min(ax + 30, window.scrollX + window.innerWidth - 340);
-            pin.style.left = Math.max(x, 8) + 'px';
+            /* anchor + card position in BOX coordinates */
+            var ax = e.clientX - bR.left, ay = e.clientY - bR.top;
+            pin.style.left = Math.max(Math.min(ax + 30, bR.width - 340), 4) + 'px';
             pin.style.top = (ay + 18) + 'px';
-            document.body.appendChild(pin);
-            var layer = linesLayer();
+            box.appendChild(pin);
+            var layer = linesLayer(box);
             var ln = document.createElementNS(svgNS, 'line');
             ln.setAttribute('x1', ax); ln.setAttribute('y1', ay);
             ln.setAttribute('stroke', '#FFD200');
@@ -730,15 +811,15 @@ ui <- dashboardPage(
               ln.remove(); dot.remove(); pin.remove();
             });
             pin.addEventListener('pointerdown', function(ev) {
-              /* player-name chips + links must keep their clicks -- a
-                 cancelled pointerdown suppresses the click event entirely */
+              /* chips + links keep their clicks -- a cancelled pointerdown
+                 suppresses the click event entirely */
               if (ev.target.closest('a, .pin-close, .pc-open, .pin-resize')) return;
               ev.preventDefault();
               try { pin.setPointerCapture(ev.pointerId); } catch (err) {}
-              var sx = ev.pageX - pin.offsetLeft, sy = ev.pageY - pin.offsetTop;
+              var sx = ev.clientX - pin.offsetLeft, sy = ev.clientY - pin.offsetTop;
               function mv(em) {
-                pin.style.left = (em.pageX - sx) + 'px';
-                pin.style.top = (em.pageY - sy) + 'px';
+                pin.style.left = (em.clientX - sx) + 'px';
+                pin.style.top = (em.clientY - sy) + 'px';
                 updateLine(pin);
               }
               function up() {
@@ -749,37 +830,53 @@ ui <- dashboardPage(
               pin.addEventListener('pointerup', up);
             });
           });
-          /* chart download buttons: ggiraph's native exporter only sees the
-             SVG, so when pinned cards are on screen we capture the chart's
-             page region instead (cards + leader lines included). No pins ->
-             native crisp export as usual. Capture phase beats girafe's own
-             handler. */
+          function downloadPng(node, name, bg, toastMsg) {
+            var tt = window.giToast(toastMsg || '\\ud83d\\udcf8 Rendering image\\u2026 a few seconds');
+            htmlToImage.toPng(node, {
+              pixelRatio: 2, backgroundColor: bg || '#ffffff',
+              filter: function(n) {
+                return !(n.classList && (n.classList.contains('gi-toast') ||
+                                         n.classList.contains('tap-badge')));
+              }
+            }).then(function(dataUrl) {
+              var a = document.createElement('a');
+              a.download = name;
+              window.__lastChartSnap = name;
+              a.href = dataUrl;
+              a.click();
+              tt.done('\\u2705 Saved ' + name);
+            }).catch(function() {
+              tt.done('\\u26a0\\ufe0f Image render failed \\u2014 try again');
+            });
+          }
+          /* chart download button: with pins in this chart's box, capture
+             the whole box (cards + lines, 2x res); otherwise native export */
           document.addEventListener('click', function(e) {
             var icon = e.target.closest('.ggiraph-toolbar-icon');
             if (!icon) return;
             var t = (icon.getAttribute('title') || '').toLowerCase();
+            var box = icon.closest('.box') || icon.closest('.girafe');
+            /* fullscreen icon -> fullscreen the BOX so pins keep working */
+            if (t.indexOf('full') !== -1) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              if (document.fullscreenElement) { document.exitFullscreen(); }
+              else if (box && box.requestFullscreen) { box.requestFullscreen(); }
+              return;
+            }
             if (t.indexOf('png') === -1 && t.indexOf('download') === -1) return;
-            if (!document.querySelector('.pinned-card')) return;
-            if (typeof html2canvas === 'undefined') return;
+            if (!box || !box.querySelector('.pinned-card')) {
+              window.giToast('\\ud83d\\udcf8 Preparing download\\u2026').done(
+                '\\u2705 Check your downloads');
+              return; /* no pins -> let girafe's native export run */
+            }
+            if (typeof htmlToImage === 'undefined') return;
             e.preventDefault();
             e.stopImmediatePropagation();
-            var box = icon.closest('.box') || icon.closest('.girafe');
-            var r = box.getBoundingClientRect();
-            html2canvas(document.body, {
-              x: r.left + window.scrollX, y: r.top + window.scrollY,
-              width: r.width, height: r.height,
-              useCORS: true, backgroundColor: '#ffffff'
-            }).then(function(canvas) {
-              var a = document.createElement('a');
-              a.download = window.__snapName().replace('-view.png', '-pinned.png');
-              window.__lastChartSnap = a.download;
-              a.href = canvas.toDataURL('image/png');
-              a.click();
-            });
+            downloadPng(box,
+              window.__snapName().replace('-view.png', '-pinned.png'),
+              '#ffffff');
           }, true);
-          /* viewport snapshot: what you see (charts, pins, lines) -> PNG.
-             The filename carries team-sport-page-years so snapshots of
-             different pages or settings never overwrite each other. */
           window.__snapName = function() {
             var slug = function(s) {
               return (s || '').toLowerCase().trim()
@@ -799,19 +896,13 @@ ui <- dashboardPage(
             return [team, sport, page, yrs].filter(Boolean).join('-') +
               '-view.png';
           };
+          /* camera button: the whole current page (all charts + pins) */
           document.addEventListener('click', function(e) {
             if (!e.target.closest('#snap_view')) return;
-            if (typeof html2canvas === 'undefined') return;
-            html2canvas(document.body, {
-              x: window.scrollX, y: window.scrollY,
-              width: window.innerWidth, height: window.innerHeight,
-              useCORS: true, backgroundColor: '#ecf0f5'
-            }).then(function(canvas) {
-              var a = document.createElement('a');
-              a.download = window.__snapName();
-              a.href = canvas.toDataURL('image/png');
-              a.click();
-            });
+            if (typeof htmlToImage === 'undefined') return;
+            var pane = document.querySelector('.tab-pane.active') || document.body;
+            downloadPng(pane, window.__snapName(), '#ecf0f5',
+              '\\ud83d\\udcf8 Rendering the full page\\u2026 a few seconds');
           });
           /* one-tap copy for the talking-point / brief boxes */
           document.addEventListener('click', function(e) {
@@ -861,15 +952,16 @@ ui <- dashboardPage(
                                               "Basketball" = "basketball"),
                                   selected = "football", inline = TRUE)),
               column(width = 3,
-                     ## default = the 5-year eligibility window (players can
-                     ## stay 5 years, matching the current roster's vintage)
+                     ## default = the 4-class "roster window": in the portal
+                     ## era those classes supply ~92% of current rosters (the
+                     ## 5th year back contributes ~4%)
                      sliderInput("g_years", "Class years",
                                  min = SIZE_YEARS[1], max = SIZE_YEARS[2],
-                                 value = c(SIZE_YEARS[2] - 4, SIZE_YEARS[2]),
+                                 value = c(SIZE_YEARS[2] - 3, SIZE_YEARS[2]),
                                  step = 1, sep = "", width = "100%"),
                      div(class = "year-presets",
                          actionButton("preset_all", "All years", class = "btn-xs"),
-                         actionButton("preset_recent", "Last 5", class = "btn-xs"),
+                         actionButton("preset_recent", "Last 4", class = "btn-xs"),
                          actionButton("preset_now",
                                       paste0("'", SIZE_YEARS[2] %% 100, " class"),
                                       class = "btn-xs"))),
@@ -1450,32 +1542,31 @@ ui <- dashboardPage(
 ## SERVER =====================================================================
 server <- function(input, output, session) {
 
-  ## shared girafe wrapper (tooltip/hover styling in one place)
-  ## offset + mouseout delay keep the tooltip readable while the cursor moves.
-  ## selection is OFF so clicks reach the pin-card handler cleanly.
-  ## `name` becomes the toolbar download's PNG filename.
+  ## shared girafe wrapper -- delegates to girafe_build() (R/girth_functions)
+  ## so live renders and deploy-time precomputed objects are identical.
   ## On phones (client width < 700px) the SVG canvas shrinks so text and tap
   ## targets render ~60% larger after the browser scales it to the screen.
+  is_phone <- function() isTRUE((input$client_w %||% 1200) < 700)
   girafe_wrap <- function(p, w = 11.5, h = 6.5, name = "big12-girth-index") {
-    cw <- input$client_w %||% 1200
-    if (isTRUE(cw < 700)) {
-      scale <- 7 / w
-      h <- max(4, h * scale * 1.25)
-      w <- 7
-    }
-    girafe(
-      ggobj = p, width_svg = w, height_svg = h,
-      options = list(
-        opts_tooltip(css = paste0(
-          "background-color:#0C234B;color:white;padding:8px;",
-          "border-radius:6px;font-size:13px;"),
-          offx = 25, offy = -20, delay_mouseout = 1200),
-        opts_hover(css = "stroke:#0C234B;stroke-width:2px;cursor:pointer;"),
-        opts_selection(type = "none"),
-        opts_selection_key(type = "none"),
-        opts_toolbar(saveaspng = TRUE, pngname = name)
-      )
-    )
+    girafe_build(p, w = w, h = h, name = name, phone = is_phone())
+  }
+
+  ## deploy-time precomputed renders of the DEFAULT view (see
+  ## scripts/precomputeDefaults.R) -- the first Size Lab paint costs a
+  ## readRDS instead of a 3-second ggplot/SVG build
+  PRE <- tryCatch({
+    files <- list.files("precomputed", pattern = "\\.rds$", full.names = TRUE)
+    setNames(lapply(files, readRDS),
+             tools::file_path_sans_ext(basename(files)))
+  }, error = function(e) list())
+
+  ## TRUE only when every control sits at its startup default
+  at_defaults <- function(pos_input = NULL) {
+    identical(input$g_team, "arizona") &&
+      g_sport() == "football" &&
+      identical(as.integer(input$g_years), as.integer(DEFAULT_YEARS)) &&
+      identical(input$g_type %||% "both", "both") &&
+      (is.null(pos_input) || pos_input == "All")
   }
 
   ## chart export filename: team + sport + chart + window, e.g.
@@ -1536,8 +1627,10 @@ server <- function(input, output, session) {
                      paste0(format(hit$miles_away[1], big.mark = ","),
                             " mi from campus")),
       coach = ifelse(is.na(hit$Coach[1]), "", hit$Coach[1]),
-      url = glue("https://247sports.com/season/{hit$Year[1]}-{g_sport()}",
-                 "/recruits/?&Player.FullName={URLencode(hit$Name[1])}"),
+      url = p247_url(hit$Name[1], hit$Year[1], g_sport(), hit$Type[1]),
+      urlLabel = ifelse(identical(hit$Type[1], "Transfer"),
+                        "Find their 247Sports profile →",
+                        "Full 247Sports profile →"),
       src = "Size + rating as listed by 247Sports at commitment"))
   })
 
@@ -1713,9 +1806,8 @@ server <- function(input, output, session) {
     updateSliderInput(session, "g_years", value = SIZE_YEARS)
   })
   observeEvent(input$preset_recent, {
-    ## the 5-year eligibility window (matches the current roster's vintage)
-    updateSliderInput(session, "g_years",
-                      value = c(SIZE_YEARS[2] - 4, SIZE_YEARS[2]))
+    ## the 4-class roster window (the default)
+    updateSliderInput(session, "g_years", value = DEFAULT_YEARS)
   })
   observeEvent(input$preset_now, {
     updateSliderInput(session, "g_years",
@@ -1872,6 +1964,14 @@ server <- function(input, output, session) {
 
   output$body_map <- renderGirafe({
     req(input$g_team)
+    ## the default view ships precomputed -- first paint is a readRDS
+    if (at_defaults(input$body_pos)) {
+      key <- paste0("body_map_", ifelse(is_phone(), "phone", "desktop"))
+      if (!is.null(PRE[[key]])) {
+        message("serving precomputed ", key)
+        return(PRE[[key]])
+      }
+    }
     validate(need(nrow(size_window()) > 0, "No commits in this window."))
     keep <- if (is.null(input$body_pos) || input$body_pos == "All") {
       NULL
@@ -1886,6 +1986,13 @@ server <- function(input, output, session) {
                    input$body_pos, (input$client_w %||% 1200) < 700)
 
   output$dna_plot <- renderGirafe({
+    if (at_defaults()) {
+      key <- paste0("dna_", ifelse(is_phone(), "phone", "desktop"))
+      if (!is.null(PRE[[key]])) {
+        message("serving precomputed ", key)
+        return(PRE[[key]])
+      }
+    }
     validate(need(nrow(team_rows()) > 0,
                   "No commits for this team in this window."))
     girafe_wrap(

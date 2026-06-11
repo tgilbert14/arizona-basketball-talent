@@ -88,6 +88,11 @@ if (!"no-records" %in% skip) {
     results["records"] <- run_step("season records", "fetchOutcomes.R")
   }
 }
+## refresh the deploy-time default-view renders so they match the new data
+if (!"no-precompute" %in% skip) {
+  results["precompute"] <- run_step("precompute defaults",
+                                    "precomputeDefaults.R")
+}
 
 after <- table_counts()
 

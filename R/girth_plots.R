@@ -11,6 +11,22 @@ loc_dash <- function(loc) {
   ifelse(is.na(loc) | loc == "" | loc == "NA", "—", loc)
 }
 
+## 247Sports link per player. HS commits live on their class-year recruits
+## page, so the season search works; TRANSFERS don't (they're filed under
+## their original HS class, not the portal year), and 247's portal pages
+## ignore name filters -- a site-scoped Google search reliably lands their
+## profile instead. Real profile URLs need a scraper upgrade (roadmap).
+p247_url <- function(name, year, sport, type = "Commit") {
+  enc <- vapply(as.character(name),
+                function(n) utils::URLencode(n, reserved = TRUE),
+                character(1), USE.NAMES = FALSE)
+  ifelse(type == "Transfer",
+         paste0("https://www.google.com/search?q=site%3A247sports.com+%22",
+                enc, "%22"),
+         paste0("https://247sports.com/season/", year, "-", tolower(sport),
+                "/recruits/?&Player.FullName=", enc))
+}
+
 ## a player name that opens the holographic PLAYER CARD when its hover card
 ## is pinned (the app's JS listens for taps on .pc-open and asks the server
 ## for the full player record)
@@ -422,8 +438,7 @@ plot_position_dna <- function(size_data, team_slug, sport,
     mutate(tip = glue(
       "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
       "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
-      '<a href="https://247sports.com/season/{Year}-{tolower(sport)}',
-      '/recruits/?&Player.FullName={str_replace_all(Name, " ", "%20")}" ',
+      '<a href="{p247_url(Name, Year, sport, Type)}" ',
       'target="_blank">Open on 247Sports →</a><br/>',
       "<em>Tap the dot to pin this card</em>"))
 
@@ -832,8 +847,7 @@ plot_weight_room_players <- function(wr_data, team_slug, sport, top_n = 18,
              "<b>{pc_link(Name, School)}</b> ({Position}, {Year} class)<br/>",
              "Commit day: {Weight} lbs → roster: {RosterWeight} lbs ",
              "({gain_lab} lbs)<br/>",
-             '<a href="https://247sports.com/season/{Year}-{tolower(sport)}',
-             '/recruits/?&Player.FullName={str_replace_all(Name, " ", "%20")}" ',
+             '<a href="{p247_url(Name, Year, sport, Type)}" ',
              'target="_blank">Open on 247Sports →</a><br/>',
              "<em>Tap the dot to pin this card</em>"))
 
@@ -1065,8 +1079,7 @@ plot_distance_lab <- function(size_data, team_slug, sport,
         "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
         "{miles_away} miles from campus<br/>From: {loc_dash(Location)}<br/>",
         "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
-        '<a href="https://247sports.com/season/{Year}-{tolower(sport)}',
-        '/recruits/?&Player.FullName={str_replace_all(Name, " ", "%20")}" ',
+        '<a href="{p247_url(Name, Year, sport, Type)}" ',
         'target="_blank">Open on 247Sports →</a><br/>',
         "<em>Tap the dot to pin this card</em>")
     )
@@ -1223,9 +1236,7 @@ build_pipeline_map <- function(size_data, team_slug, sport,
       mutate(lat = ifelse(n() > 1, jitter(lat, amount = 0.012), lat),
              long = ifelse(n() > 1, jitter(long, amount = 0.012), long)) %>%
       ungroup() %>%
-      mutate(URL = paste0("https://247sports.com/season/", Year, "-",
-                          tolower(sport), "/recruits/?&Player.FullName=",
-                          str_replace_all(Name, " ", "%20")),
+      mutate(URL = p247_url(Name, Year, sport, Type),
              popup = paste0(
                "<strong>", Name, "</strong> (", Position, ", ", Year, ")<br/>",
                HeightLabel, " • ", Weight, " lbs • 247 Rating: ", Ranking,

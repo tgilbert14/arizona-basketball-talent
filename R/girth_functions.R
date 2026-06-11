@@ -169,6 +169,33 @@ team_size_summary <- function(size_data) {
 }
 
 ## ---------------------------------------------------------------------------
+## shared girafe builder -- used by BOTH the app's girafe_wrap() and
+## scripts/precomputeDefaults.R, so precomputed objects can't drift from
+## live-rendered ones. `phone` mirrors the app's <700px canvas shrink.
+## ---------------------------------------------------------------------------
+girafe_build <- function(p, w = 11.5, h = 6.5, name = "big12-girth-index",
+                         phone = FALSE) {
+  if (isTRUE(phone)) {
+    scale <- 7 / w
+    h <- max(4, h * scale * 1.25)
+    w <- 7
+  }
+  ggiraph::girafe(
+    ggobj = p, width_svg = w, height_svg = h,
+    options = list(
+      ggiraph::opts_tooltip(css = paste0(
+        "background-color:#0C234B;color:white;padding:8px;",
+        "border-radius:6px;font-size:13px;"),
+        offx = 25, offy = -20, delay_mouseout = 1200),
+      ggiraph::opts_hover(css = "stroke:#0C234B;stroke-width:2px;cursor:pointer;"),
+      ggiraph::opts_selection(type = "none"),
+      ggiraph::opts_selection_key(type = "none"),
+      ggiraph::opts_toolbar(saveaspng = TRUE, pngname = name)
+    )
+  )
+}
+
+## ---------------------------------------------------------------------------
 ## shared ggplot theme for the Size Lab
 ## ---------------------------------------------------------------------------
 theme_girth <- function(base_size = 14) {

@@ -3894,10 +3894,22 @@
   },
   "files": {
     "app.R": {
-      "checksum": "8868a7cb8344cd15646dbfd2c57ad9d7"
+      "checksum": "e0e5b33d202129dbeb0a69e8ff72c6b4"
     },
     "data/recruiting.db": {
       "checksum": "76ce029caad659e14eab9fae269e75ea"
+    },
+    "precomputed/body_map_desktop.rds": {
+      "checksum": "45c3e58b2b056f7ae71ee92f72da9ee4"
+    },
+    "precomputed/body_map_phone.rds": {
+      "checksum": "893e13619eb59616f1aa4c865372f98f"
+    },
+    "precomputed/dna_desktop.rds": {
+      "checksum": "d586754d2de6aaf3144dc0e97cd284e1"
+    },
+    "precomputed/dna_phone.rds": {
+      "checksum": "2f963da1c558d843c050b6a249c08a2c"
     },
     "R/coach_eras.R": {
       "checksum": "b559c52b0e9d9d20312c2b1e1b9bd763"
@@ -3906,10 +3918,10 @@
       "checksum": "eb80dba1119e5dc2431f19deea22a5d1"
     },
     "R/girth_functions.R": {
-      "checksum": "1cbc110c0ccfd1b469fd796b09971ebb"
+      "checksum": "50152d6a2f837700c7bf1e4e473abf46"
     },
     "R/girth_plots.R": {
-      "checksum": "886c4095a555e9b2c0e4059ec1507ab2"
+      "checksum": "5dc53e17afa78f778105ef89528f163d"
     },
     "R/team_config.R": {
       "checksum": "d2cfbb4ee3ec7ca7a8408a6409051e08"
