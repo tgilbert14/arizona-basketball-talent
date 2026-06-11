@@ -39,8 +39,7 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-# pkgdown site
-docs/
+# (docs/ holds the project roadmap, not a pkgdown site -- keep tracked)
 
 # translation temp files
 po/*~

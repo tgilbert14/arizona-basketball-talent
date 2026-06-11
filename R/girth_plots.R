@@ -5,6 +5,14 @@
 ## All builders take data prepared by prep_size_data().
 ## ---------------------------------------------------------------------------
 
+## a player name that opens the holographic PLAYER CARD when its hover card
+## is pinned (the app's JS listens for taps on .pc-open and asks the server
+## for the full player record)
+pc_link <- function(name, school) {
+  paste0("<span class=\"pc-open\" data-pname=\"", name,
+         "\" data-pschool=\"", school, "\">", name, " &#9656;</span>")
+}
+
 ## standard player-scope line appended to chart captions so every plot says
 ## which player pool it shows (HS commits / + transfers / transfers only)
 scope_note <- function(players_note) {
@@ -38,10 +46,16 @@ top_players_tip <- function(d, value_col, n = 3,
     arrange(if (desc) dplyr::desc(.data[[value_col]]) else .data[[value_col]]) %>%
     slice_head(n = n)
   if (nrow(d2) == 0) return(header %||% "")
-  lines <- paste0(seq_len(nrow(d2)), ". ", d2$Name, " (", d2$Position,
+  ## group_modify drops grouping cols, so School may be absent here -- the
+  ## server-side card lookup falls back to name-only
+  sch <- if ("School" %in% names(d2)) d2$School else ""
+  lines <- paste0(seq_len(nrow(d2)), ". ",
+                  pc_link(d2$Name, sch), " (", d2$Position,
                   ", '", substr(d2$Year, 3, 4), ") — ",
                   vapply(d2[[value_col]], function(v) as.character(fmt(v)),
                          character(1)))
+  ## the app's pin JS appends a universal "tap a name" hint to any pinned
+  ## card containing player links, so no per-tip hint needed here
   paste(c(header, lines), collapse = "<br/>")
 }
 
@@ -94,7 +108,7 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
   ## hover text for the interactive version
   team_data <- team_data %>%
     mutate(tip = glue(
-      "<b>{Name}</b> ({Position}, {Year})<br/>",
+      "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
       "{HeightLabel} • {Weight} lbs • {LbsPerInch} lbs/in<br/>",
       "From: {Location}<br/>247 Rating: {Ranking}"
     ))
@@ -400,7 +414,7 @@ plot_position_dna <- function(size_data, team_slug, sport,
 
   team_data <- team_data %>%
     mutate(tip = glue(
-      "<b>{Name}</b> ({Position}, {Year})<br/>",
+      "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
       "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
       '<a href="https://247sports.com/season/{Year}-{tolower(sport)}',
       '/recruits/?&Player.FullName={str_replace_all(Name, " ", "%20")}" ',
@@ -809,7 +823,7 @@ plot_weight_room_players <- function(wr_data, team_slug, sport, top_n = 18,
            player_lab = factor(player_lab, levels = player_lab),
            gain_lab = glue("{ifelse(WeightGain >= 0, '+', '')}{WeightGain}"),
            tip = glue(
-             "<b>{Name}</b> ({Position}, {Year} class)<br/>",
+             "<b>{pc_link(Name, School)}</b> ({Position}, {Year} class)<br/>",
              "Commit day: {Weight} lbs → roster: {RosterWeight} lbs ",
              "({gain_lab} lbs)<br/>",
              '<a href="https://247sports.com/season/{Year}-{tolower(sport)}',
@@ -1042,7 +1056,7 @@ plot_distance_lab <- function(size_data, team_slug, sport,
   d <- d %>%
     mutate(
       tip = glue(
-        "<b>{Name}</b> ({Position}, {Year})<br/>",
+        "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
         "{miles_away} miles from campus<br/>From: {Location}<br/>",
         "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
         '<a href="https://247sports.com/season/{Year}-{tolower(sport)}',
@@ -1101,7 +1115,7 @@ plot_distance_box <- function(size_data, team_slug, sport) {
     mutate(
       era = ifelse(Year == yr_max, paste0(yr_max, " class"), his_rng),
       tip = glue(
-        "<b>{Name}</b> ({Position}, {Year})<br/>",
+        "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
         "{miles_away} miles from campus<br/>From: {Location}<br/>",
         "247 Rating: {round(Ranking, 0)}<br/>",
         "<em>Tap the dot to pin this card</em>"))
@@ -1443,7 +1457,7 @@ plot_def_size_profile <- function(roster_size_data, team_slug,
   team_rd <- rd %>%
     filter(School == team_slug) %>%
     mutate(tip = glue(
-      "<b>{Name}</b> ({Position}, {Class})<br/>",
+      "<b>{pc_link(Name, School)}</b> ({Position}, {Class})<br/>",
       "{HeightLabel} • {Weight} lbs<br/>",
       "<em>Tap to pin this card</em>"))
 
@@ -1467,7 +1481,7 @@ plot_def_size_profile <- function(roster_size_data, team_slug,
       filter(!is.na(Role), !is.na(Weight)) %>%
       mutate(Role = factor(Role, levels = ROLE_335_LEVELS),
              tip = glue(
-               "<b>{Name}</b> — INCOMING ({Position}, {Year})<br/>",
+               "<b>{pc_link(Name, School)}</b> — INCOMING ({Position}, {Year})<br/>",
                "{Weight} lbs at arrival → ~{ProjWeight} projected<br/>",
                "247 rating {round(Ranking, 0)}<br/>",
                "<em>Tap to pin this card</em>"),

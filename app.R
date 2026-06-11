@@ -75,9 +75,12 @@ spin <- function(out, color = "#0C234B") {
   shinycssloaders::withSpinner(out, color = color, hide.ui = FALSE)
 }
 
-## render cache: flipping back to settings you've already viewed is instant
-## (per-worker memory cache; cleared on restart)
-shinyOptions(cache = cachem::cache_mem(max_size = 60 * 1024^2))
+## render cache: flipping back to settings you've already viewed is instant.
+## disk (not memory) so it survives across sessions within a worker -- on
+## hosted tiers the worker restarts after sleep, which wipes a memory cache
+## before most visitors ever benefit from it
+shinyOptions(cache = cachem::cache_disk(
+  file.path(dirname(tempdir()), "girth-cache"), max_size = 120 * 1024^2))
 
 ## the sources & methods copy behind each info button (kept out of the UI
 ## so the boxes stay clean -- the user opens these only when curious)
@@ -256,6 +259,10 @@ ui <- dashboardPage(
     useShinyjs(),
 
     tags$head(
+      tags$link(rel = "preconnect", href = "https://fonts.googleapis.com"),
+      tags$link(rel = "preconnect", href = "https://fonts.gstatic.com",
+                crossorigin = "anonymous"),
+      tags$link(rel = "preconnect", href = "https://cdn.jsdelivr.net"),
       tags$link(rel = "stylesheet",
                 href = "https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&display=swap"),
       tags$style(HTML("
@@ -364,6 +371,114 @@ ui <- dashboardPage(
         padding: 18px 10px 10px 10px; }
       .ddl-footer a { color: #AB0520; font-weight: 600; }
 
+      /* ---- THE PLAYER CARD: spins in like a foil pull ---- */
+      .pc-backdrop { position: fixed; inset: 0; z-index: 3000;
+        background: rgba(8, 18, 38, 0.72);
+        display: flex; align-items: center; justify-content: center;
+        perspective: 1200px; animation: pcFade 0.3s ease; }
+      @keyframes pcFade { from { opacity: 0; } to { opacity: 1; } }
+      .pc-card { position: relative; width: 320px; max-width: 88vw;
+        border-radius: 18px; padding: 18px 20px 16px 20px;
+        color: white; text-align: center; overflow: hidden;
+        transform-style: preserve-3d; will-change: transform;
+        background:
+          radial-gradient(120% 90% at 80% 0%, rgba(255,255,255,0.16), transparent 50%),
+          linear-gradient(158deg, var(--c2) 0%, #142d52 55%, var(--c1) 130%);
+        border: 3px solid rgba(255, 210, 0, 0.85);
+        box-shadow: 0 24px 70px rgba(0,0,0,0.55),
+                    0 0 40px rgba(255, 210, 0, 0.18);
+        animation: pcSpin 1.05s cubic-bezier(0.18, 0.8, 0.25, 1);
+        transition: transform 0.15s ease; }
+      @keyframes pcSpin {
+        0%   { transform: rotateY(900deg) scale(0.2); opacity: 0; }
+        45%  { opacity: 1; }
+        100% { transform: rotateY(0deg) scale(1); } }
+      /* the holographic sheen sweeping across the foil */
+      .pc-holo { position: absolute; inset: 0; pointer-events: none;
+        background: linear-gradient(112deg,
+          transparent 32%,
+          rgba(255, 255, 255, 0.28) 44%,
+          rgba(140, 255, 220, 0.22) 50%,
+          rgba(255, 180, 240, 0.22) 56%,
+          transparent 68%);
+        background-size: 280% 280%;
+        mix-blend-mode: screen;
+        animation: pcSheen 3.2s ease-in-out infinite; }
+      @keyframes pcSheen {
+        0%   { background-position: 120% 120%; }
+        55%  { background-position: -20% -20%; }
+        100% { background-position: 120% 120%; } }
+      .pc-close { position: absolute; top: 8px; right: 12px; z-index: 2;
+        background: transparent; border: none; color: rgba(255,255,255,0.75);
+        font-size: 24px; cursor: pointer; }
+      .pc-close:hover { color: #FFD200; }
+      .pc-head { display: flex; align-items: center; justify-content: center;
+        gap: 8px; font-weight: 700; letter-spacing: 1.5px;
+        text-transform: uppercase; font-size: 12px; opacity: 0.92; }
+      .pc-head img { height: 30px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }
+      .pc-avatar { width: 92px; height: 92px; margin: 14px auto 8px auto;
+        border-radius: 50%; display: flex; align-items: center;
+        justify-content: center; font-size: 34px; font-weight: 800;
+        font-family: 'Rubik', sans-serif;
+        background: radial-gradient(circle at 30% 25%,
+          rgba(255,255,255,0.32), rgba(255,255,255,0.08));
+        border: 2.5px solid rgba(255, 210, 0, 0.9);
+        text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
+      .pc-name { font-size: 22px; font-weight: 800;
+        font-family: 'Rubik', sans-serif; line-height: 1.15;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.4); }
+      .pc-sub { font-size: 12.5px; opacity: 0.85; margin: 3px 0 12px 0; }
+      .pc-stats { display: flex; justify-content: center; gap: 8px;
+        margin-bottom: 12px; }
+      .pc-stats > div { flex: 1; background: rgba(255,255,255,0.10);
+        border-radius: 10px; padding: 8px 4px;
+        border: 1px solid rgba(255,255,255,0.14); }
+      .pc-stats b { display: block; font-size: 18px;
+        font-family: 'Rubik', sans-serif; }
+      .pc-stats span { font-size: 9.5px; text-transform: uppercase;
+        letter-spacing: 1px; opacity: 0.7; }
+      .pc-from { font-size: 12.5px; opacity: 0.85; }
+      .pc-coach { font-size: 12px; opacity: 0.75; margin-top: 3px; }
+      .pc-247 { display: inline-block; margin-top: 10px; color: #FFD200;
+        font-weight: 700; font-size: 13px; }
+      .pc-src { margin-top: 10px; font-size: 10px; opacity: 0.55;
+        border-top: 1px solid rgba(255,255,255,0.18); padding-top: 7px; }
+      /* names inside pinned cards that open the player card -- styled as
+         tappable chips so nobody has to guess */
+      .pinned-card .pc-open { color: #7FD8FF; cursor: pointer;
+        font-weight: 600; background: rgba(127, 216, 255, 0.14);
+        padding: 0 5px; border-radius: 5px;
+        border-bottom: 1px dotted #7FD8FF; }
+      .pinned-card .pc-open:hover { color: #0C234B; background: #FFD200;
+        border-bottom-color: #FFD200; }
+      .pinned-card .pin-hint { margin-top: 8px; padding-top: 6px;
+        border-top: 1px solid rgba(255,255,255,0.2); color: #FFD200;
+        font-size: 11px; font-style: italic; }
+
+      /* ---- showcase polish: depth, motion, calm ---- */
+      .content-wrapper { background:
+        linear-gradient(180deg, #eef2f8 0%, #e7edf5 100%); }
+      .box { transition: box-shadow 0.2s ease, transform 0.2s ease; }
+      .box:hover { box-shadow: 0 6px 20px rgba(12,35,75,0.13); }
+      .tab-pane.active { animation: tabIn 0.28s ease; }
+      @keyframes tabIn { from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: none; } }
+      .main-header .navbar, .main-header .logo {
+        background: linear-gradient(90deg, #0C234B 0%, #16386e 100%) !important; }
+      .skin-blue .main-sidebar { background-color: #0e1d36; }
+      .skin-blue .sidebar-menu > li.active > a,
+      .skin-blue .sidebar-menu > li:hover > a {
+        background: #15294d; border-left-color: #FFD200; }
+
+      /* the raised-hand custom-build CTA (War Room) */
+      .custom-cta { display: inline-flex; align-items: center; gap: 8px;
+        background: #FFF8E1; border: 1.5px solid #FFD200; color: #0C234B;
+        font-weight: 700; font-size: 13px; padding: 6px 12px;
+        border-radius: 8px; margin-top: 8px; }
+      .custom-cta:hover { background: #FFD200; color: #0C234B;
+        text-decoration: none; }
+      .custom-cta .fa-hand { font-size: 16px; color: #AB0520; }
+
       /* class snapshot card */
       .snap-stat { text-align: center; padding: 6px 2px; }
       .snap-stat .num { font-size: 26px; font-weight: 800;
@@ -392,7 +507,8 @@ ui <- dashboardPage(
         .pinned-card { max-width: 86vw; }
       }
     ")),
-      ## report the window width so charts can render larger text on phones
+      ## report the window width so charts can render larger text on phones;
+      ## also restore the device's saved team (or trigger the first-visit ask)
       tags$script(HTML("
         function reportClientW() {
           if (window.Shiny && Shiny.setInputValue) {
@@ -403,7 +519,70 @@ ui <- dashboardPage(
           clearTimeout(window.__cwT);
           window.__cwT = setTimeout(reportClientW, 350);
         });
-        document.addEventListener('shiny:connected', reportClientW);
+        /* shiny:connected is jQuery-triggered -- native listeners miss it */
+        $(document).on('shiny:connected', function() {
+          reportClientW();
+          var saved = 'none';
+          try { saved = localStorage.getItem('gi_team') || 'none'; } catch (e) {}
+          Shiny.setInputValue('stored_team', saved);
+          Shiny.addCustomMessageHandler('saveTeam', function(slug) {
+            try { localStorage.setItem('gi_team', slug); } catch (e) {}
+          });
+          /* PLAYER CARD: server sends the record; we spin up the card */
+          Shiny.addCustomMessageHandler('playerCard', function(p) {
+            document.querySelectorAll('.pc-backdrop').forEach(function(b) { b.remove(); });
+            var initials = p.name.split(/\\s+/).map(function(w) {
+              return w[0] || ''; }).slice(0, 2).join('').toUpperCase();
+            var bd = document.createElement('div');
+            bd.className = 'pc-backdrop';
+            bd.innerHTML =
+              '<div class=\"pc-card\" style=\"--c1:' + p.c1 + ';--c2:' + p.c2 + '\">' +
+              '  <div class=\"pc-holo\"></div>' +
+              '  <button class=\"pc-close\">&times;</button>' +
+              '  <div class=\"pc-head\"><img src=\"' + p.logo + '\"/>' +
+              '    <span>' + p.team + '</span></div>' +
+              '  <div class=\"pc-avatar\">' + initials + '</div>' +
+              '  <div class=\"pc-name\">' + p.name + '</div>' +
+              '  <div class=\"pc-sub\">' + p.pos + ' · ' + p.yr + ' · ' + p.type + '</div>' +
+              '  <div class=\"pc-stats\">' +
+              '    <div><b>' + p.ht + '</b><span>height</span></div>' +
+              '    <div><b>' + p.wt + '</b><span>weight</span></div>' +
+              '    <div><b>' + p.rating + '</b><span>247 rating</span></div>' +
+              '  </div>' +
+              '  <div class=\"pc-from\">' + p.from +
+                   (p.miles ? ' · ' + p.miles : '') + '</div>' +
+              (p.coach ? '<div class=\"pc-coach\">Recruited under ' + p.coach + '</div>' : '') +
+              (p.url ? '<a class=\"pc-247\" target=\"_blank\" href=\"' + p.url +
+                   '\">Full 247Sports profile &rarr;</a>' : '') +
+              '  <div class=\"pc-src\">' + p.src + '</div>' +
+              '</div>';
+            document.body.appendChild(bd);
+            var card = bd.querySelector('.pc-card');
+            bd.addEventListener('click', function(ev) {
+              if (ev.target === bd || ev.target.closest('.pc-close')) bd.remove();
+            });
+            /* gentle tilt-follow once the spin settles */
+            card.addEventListener('pointermove', function(ev) {
+              var r = card.getBoundingClientRect();
+              var rx = ((ev.clientY - r.top) / r.height - 0.5) * -10;
+              var ry = ((ev.clientX - r.left) / r.width - 0.5) * 14;
+              card.style.transform =
+                'rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)';
+            });
+            card.addEventListener('pointerleave', function() {
+              card.style.transform = '';
+            });
+          });
+        });
+        /* taps on player names inside pinned cards ask for the card */
+        document.addEventListener('click', function(e) {
+          var el = e.target.closest('.pc-open');
+          if (!el || !window.Shiny) return;
+          Shiny.setInputValue('pc_request', {
+            name: el.getAttribute('data-pname'),
+            school: el.getAttribute('data-pschool')
+          }, {priority: 'event'});
+        });
       ")),
       ## on phones the sidebar is a full overlay -- close it after a nav
       ## tap so the selected tab is actually visible
@@ -476,6 +655,13 @@ ui <- dashboardPage(
             var pin = document.createElement('div');
             pin.className = 'pinned-card';
             pin.innerHTML = \"<button class='pin-close' title='Close'>&times;</button>\" + ta.value;
+            /* if this card names players, say how to open their cards */
+            if (pin.querySelector('.pc-open')) {
+              var hint = document.createElement('div');
+              hint.className = 'pin-hint';
+              hint.innerHTML = '&#9656; tap a highlighted name to open the player card';
+              pin.appendChild(hint);
+            }
             var ax = e.pageX, ay = e.pageY;
             var x = Math.min(ax + 30, window.scrollX + window.innerWidth - 340);
             pin.style.left = Math.max(x, 8) + 'px';
@@ -501,7 +687,9 @@ ui <- dashboardPage(
               ln.remove(); dot.remove(); pin.remove();
             });
             pin.addEventListener('pointerdown', function(ev) {
-              if (ev.target.closest('a, .pin-close')) return;
+              /* player-name chips + links must keep their clicks -- a
+                 cancelled pointerdown suppresses the click event entirely */
+              if (ev.target.closest('a, .pin-close, .pc-open')) return;
               ev.preventDefault();
               pin.setPointerCapture(ev.pointerId);
               var sx = ev.pageX - pin.offsetLeft, sy = ev.pageY - pin.offsetTop;
@@ -909,7 +1097,18 @@ ui <- dashboardPage(
                     Nose, long rangy Ends, multi-role Stack LBs, and a hybrid
                     S/LB patrolling the middle. This room maps the selected
                     team's bodies onto those roles, finds the thin rooms, and
-                    writes the brief — all from the control-bar settings.</p>")
+                    writes the brief — all from the control-bar settings.</p>
+                    <p style='font-size:12.5px; color:#999; margin:8px 0 0 0;'>
+                    <em>Note: the role bands here are specialized for
+                    Arizona's 3-3-5 (Rocky Long / Gonzales tree) — they're a
+                    lens, not a universal depth chart. Other teams' bodies are
+                    shown through the same lens for comparison.</em></p>
+                    <a class='custom-cta'
+                       href='mailto:desertdatalabs@gmail.com?subject=Custom%20war%20room%20for%20my%20team'>
+                      <i class='fa fa-hand'></i>
+                      Run a different scheme? We'll build a war room tuned to
+                      YOUR team — get in touch
+                    </a>")
                 )
               ),
               fluidRow(
@@ -1214,6 +1413,102 @@ server <- function(input, output, session) {
     glue("{input$g_team}-{g_sport()}-{chart}-",
          "{input$g_years[1]}-{input$g_years[2]}")
   }
+
+  ## ---- PLAYER CARD: tap a name in any pinned card -> holographic card ----
+  observeEvent(input$pc_request, {
+    req(input$pc_request$name)
+    nm <- input$pc_request$name
+    sch <- input$pc_request$school %||% ""
+    src <- if (g_sport() == "football") size_football else size_basketball
+
+    hit <- src %>%
+      filter(Name == nm, sch == "" | School == sch) %>%
+      arrange(desc(Year)) %>%
+      slice_head(n = 1)
+
+    ## roster fallback for players who only exist on a roster page
+    if (nrow(hit) == 0 && !is.null(roster_now())) {
+      r <- roster_now() %>%
+        filter(Name == nm, sch == "" | School == sch) %>%
+        slice_head(n = 1)
+      if (nrow(r) == 0) return(invisible(NULL))
+      slug <- r$School[1]
+      session$sendCustomMessage("playerCard", list(
+        name = r$Name[1], team = team_label(slug),
+        logo = TEAM_CONFIG$logo[match(slug, TEAM_CONFIG$slug)],
+        c1 = team_color(slug), c2 = TEAM_CONFIG$secondary[
+          match(slug, TEAM_CONFIG$slug)] %||% "#0C234B",
+        pos = r$Position[1], yr = paste("Roster", r$RosterYear[1]),
+        type = paste0("Class: ", r$Class[1]),
+        ht = r$Height[1], wt = paste0(r$Weight[1], " lbs"),
+        rating = "—", from = "—", miles = "",
+        coach = "", url = "",
+        src = "Current 247Sports roster listing"))
+      return(invisible(NULL))
+    }
+    req(nrow(hit) == 1)
+    slug <- hit$School[1]
+    session$sendCustomMessage("playerCard", list(
+      name = hit$Name[1], team = team_label(slug),
+      logo = TEAM_CONFIG$logo[match(slug, TEAM_CONFIG$slug)],
+      c1 = team_color(slug), c2 = TEAM_CONFIG$secondary[
+        match(slug, TEAM_CONFIG$slug)] %||% "#0C234B",
+      pos = hit$Position[1], yr = paste("Class of", hit$Year[1]),
+      type = ifelse(identical(hit$Type[1], "Transfer"),
+                    "Portal transfer", "HS commit"),
+      ht = hit$HeightLabel[1], wt = paste0(hit$Weight[1], " lbs"),
+      rating = ifelse(is.na(hit$Ranking[1]), "NR",
+                      format(round(hit$Ranking[1], 1))),
+      from = ifelse(is.na(hit$Location[1]) | hit$Location[1] == "",
+                    "—", hit$Location[1]),
+      miles = ifelse(is.na(hit$miles_away[1]), "",
+                     paste0(format(hit$miles_away[1], big.mark = ","),
+                            " mi from campus")),
+      coach = ifelse(is.na(hit$Coach[1]), "", hit$Coach[1]),
+      url = glue("https://247sports.com/season/{hit$Year[1]}-{g_sport()}",
+                 "/recruits/?&Player.FullName={URLencode(hit$Name[1])}"),
+      src = "Size + rating as listed by 247Sports at commitment"))
+  })
+
+  ## ---- TEAM MEMORY: restore the saved team, or ask once ------------------
+  observeEvent(input$stored_team, once = TRUE, {
+    st <- input$stored_team
+    if (!is.null(st) && st %in% TEAM_CONFIG$slug) {
+      updateSelectInput(session, "g_team", selected = st)
+    } else if (identical(st, "none")) {
+      showModal(modalDialog(
+        title = NULL, easyClose = TRUE, footer = NULL, size = "l",
+        div(style = "text-align:center;",
+            h2("Who's your team?",
+               style = "font-weight:800; color:#0C234B; margin-top:4px;"),
+            p("Saved on this device — change it any time in the bar up top.",
+              style = "color:#888;"),
+            div(style = "display:flex; flex-wrap:wrap; gap:6px;
+                         justify-content:center;",
+                lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
+                  actionButton(
+                    paste0("pick_", gsub("-", "_", TEAM_CONFIG$slug[i])),
+                    label = tagList(
+                      img(src = TEAM_CONFIG$logo[i], height = "34px"),
+                      div(TEAM_CONFIG$team_name[i],
+                          style = "font-size:11px; font-weight:600;")),
+                    class = "btn-default",
+                    style = "width:108px; padding:8px 2px;")
+                })))
+      ))
+    }
+  })
+  lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
+    slug <- TEAM_CONFIG$slug[i]
+    observeEvent(input[[paste0("pick_", gsub("-", "_", slug))]], {
+      updateSelectInput(session, "g_team", selected = slug)
+      removeModal()
+    })
+  })
+  ## persist every team change to the device
+  observeEvent(input$g_team, {
+    session$sendCustomMessage("saveTeam", input$g_team)
+  })
 
   ## info buttons -> sources & methods modals
   lapply(names(INFO_MODALS), function(id) {
