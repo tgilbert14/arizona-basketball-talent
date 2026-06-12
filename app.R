@@ -758,7 +758,10 @@ ui <- dashboardPage(
               (box.querySelector('.box-body') || box).appendChild(b);
             });
           }
-          /* head scripts run before <body> exists -- defer the observer */
+          /* head scripts run before the document body exists (NEVER write
+             a literal body tag here -- the shinyapps proxy injects its
+             scripts after the first one it finds, even inside a comment,
+             and shatters this script block) -- defer the observer */
           document.addEventListener('DOMContentLoaded', function() {
             badgeCharts();
             new MutationObserver(function() {
