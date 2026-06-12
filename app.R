@@ -368,6 +368,12 @@ ui <- dashboardPage(
         box-shadow: 0 6px 18px rgba(0,0,0,0.35);
         border-left: 4px solid #FFD200; cursor: grab; touch-action: none; }
       .pinned-card:active { cursor: grabbing; }
+      /* re-tapping an already-pinned dot pulses its card */
+      @keyframes pinPulse {
+        0%, 100% { box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+        50% { box-shadow: 0 0 0 4px rgba(255,210,0,0.65),
+                          0 6px 18px rgba(0,0,0,0.35); } }
+      .pinned-card.pulse { animation: pinPulse 0.45s ease 2; }
       .pinned-card a { color: #FFD200; font-weight: 600; }
       .pinned-card .pin-close {
         float: right; background: transparent; border: none; color: #9fb0c1;
@@ -781,11 +787,25 @@ ui <- dashboardPage(
             if (!t) return;
             var box = el.closest('.box') || document.body;
             var bR = box.getBoundingClientRect();
+            /* one card per element per chart: re-tapping a dot pulses the
+               existing card instead of stacking duplicates */
+            var pid = ((el.closest('.girafe') || {}).id || '') + '::' +
+              (el.getAttribute('data-id') || '');
+            var dup = Array.prototype.find.call(
+              document.querySelectorAll('.pinned-card'),
+              function(p) { return p.__pid === pid; });
+            if (dup) {
+              dup.classList.remove('pulse');
+              void dup.offsetWidth;
+              dup.classList.add('pulse');
+              return;
+            }
             var ta = document.createElement('textarea');
             ta.innerHTML = t;
             var pin = document.createElement('div');
             pin.className = 'pinned-card';
             pin.__box = box;
+            pin.__pid = pid;
             pin.innerHTML = \"<button class='pin-close' title='Close'>&times;</button>\" + ta.value;
             /* the 'tap to pin' hint has done its job once pinned -- strip
                it (and its line break) so cards stay compact for exports */
