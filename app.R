@@ -1705,6 +1705,25 @@ server <- function(input, output, session) {
     objs[!vapply(objs, is.null, logical(1))]
   })
 
+  ## transient render failures (cold-start font/memory hiccups on hosted
+  ## containers) must not surface as scary sanitized errors -- show a calm
+  ## retry chart instead, and log the real condition for the server logs.
+  ## Changing any control makes a new cache key, so the retry works.
+  girafe_try <- function(expr, what = "chart") {
+    tryCatch(expr, error = function(e) {
+      message("render failed (", what, "): ", conditionMessage(e))
+      girafe_build(
+        ggplot2::ggplot() +
+          ggplot2::annotate(
+            "text", x = 0, y = 0, size = 5.2, color = "#46535E",
+            label = paste0("This view hit a temporary rendering snag.\n",
+                           "Nudge any control (year, metric, team) to",
+                           " reload it.")) +
+          ggplot2::theme_void(),
+        w = 8, h = 4, name = "render-retry")
+    })
+  }
+
   ## TRUE only when every control sits at its startup default
   at_defaults <- function(pos_input = NULL) {
     identical(input$g_team, "arizona") &&
@@ -2127,12 +2146,12 @@ server <- function(input, output, session) {
     keep <- if (is.null(input$body_pos) || input$body_pos == "All") {
       NULL
     } else input$body_pos
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_body_map(size_window(), input$g_team, g_sport(), pos_keep = keep, players_note = players_lab(),
                     logo_path = file.path(
                       "www", TEAM_CONFIG$logo[match(input$g_team,
                                                     TEAM_CONFIG$slug)])),
-      h = 7, name = png_name("body-map"))
+      h = 7, name = png_name("body-map")), "body map")
   }) %>% bindCache(input$g_team, g_sport(), g_years_d(), input$g_type,
                    input$body_pos, (input$client_w %||% 1200) < 700)
 
@@ -2146,10 +2165,10 @@ server <- function(input, output, session) {
     }
     validate(need(nrow(team_rows()) > 0,
                   "No commits for this team in this window."))
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_position_dna(size_window(), input$g_team, g_sport(),
                         compare_slug = g_cmp(), players_note = players_lab()),
-      w = 9.5, h = 6, name = png_name("position-dna"))
+      w = 9.5, h = 6, name = png_name("position-dna")), "position dna")
   }) %>% bindCache(input$g_team, g_sport(), g_years_d(), input$g_type,
                    g_cmp(), (input$client_w %||% 1200) < 700)
 
@@ -2186,14 +2205,14 @@ server <- function(input, output, session) {
     req(input$size_metric, input$size_pos, input$size_source)
     validate(need(nrow(filter_pos(beef_source_data(), input$size_pos)) > 0,
                   "No players for this position filter."))
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_beef_board(beef_source_data(), input$g_team, g_sport(),
                       metric = input$size_metric, pos_filter = input$size_pos,
                       compare_slug = g_cmp(),
                       source_label = beef_source_label(),
                       players_note = players_lab()),
       w = 8, h = 9,
-      name = png_name(glue("beef-board-{input$size_source}")))
+      name = png_name(glue("beef-board-{input$size_source}"))), "beef board")
   }) %>% bindCache(input$g_team, g_sport(), g_years_d(), input$g_type,
                    g_cmp(), input$size_metric, input$size_pos,
                    input$size_source, (input$client_w %||% 1200) < 700)
@@ -2359,11 +2378,11 @@ server <- function(input, output, session) {
   output$era_timeline <- renderGirafe({
     req(input$era_metric)
     validate(need(nrow(era_data()) > 0, "No commits for this team."))
-    girafe_wrap(plot_era_timeline(size_all(), input$g_team, g_sport(),
+    girafe_try(girafe_wrap(plot_era_timeline(size_all(), input$g_team, g_sport(),
                                   metric = input$era_metric,
                                   players_note = players_lab()), h = 6,
                 name = glue("{input$g_team}-{g_sport()}-coach-eras-",
-                            "{input$era_metric}"))
+                            "{input$era_metric}")), "era timeline")
   }) %>% bindCache(input$g_team, g_sport(), input$g_type,
                    input$era_metric, (input$client_w %||% 1200) < 700)
 
