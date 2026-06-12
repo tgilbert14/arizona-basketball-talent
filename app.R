@@ -1659,12 +1659,28 @@ server <- function(input, output, session) {
 
   ## deploy-time precomputed renders of the DEFAULT view (see
   ## scripts/precomputeDefaults.R) -- the first Size Lab paint costs a
-  ## readRDS instead of a 3-second ggplot/SVG build
-  PRE <- tryCatch({
+  ## readRDS instead of a 3-second ggplot/SVG build.
+  ## CRITICAL: the rds was serialized on the dev machine, and htmlwidget
+  ## objects embed dependency file paths from THAT machine's R library --
+  ## they must be rebuilt against this machine's library or the widget
+  ## silently fails to render on the server. Any unloadable file is
+  ## dropped (the app just renders live instead).
+  PRE <- local({
     files <- list.files("precomputed", pattern = "\\.rds$", full.names = TRUE)
-    setNames(lapply(files, readRDS),
-             tools::file_path_sans_ext(basename(files)))
-  }, error = function(e) list())
+    objs <- lapply(files, function(f) {
+      tryCatch({
+        g <- readRDS(f)
+        g$dependencies <- htmlwidgets::getDependency("girafe", "ggiraph")
+        g
+      }, error = function(e) {
+        message("precomputed ", basename(f), " unusable: ",
+                conditionMessage(e))
+        NULL
+      })
+    })
+    objs <- setNames(objs, tools::file_path_sans_ext(basename(files)))
+    objs[!vapply(objs, is.null, logical(1))]
+  })
 
   ## TRUE only when every control sits at its startup default
   at_defaults <- function(pos_input = NULL) {
