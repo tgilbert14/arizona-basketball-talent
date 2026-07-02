@@ -61,17 +61,20 @@ metric_player_col <- c(AvgWeight = "Weight", AvgHeight = "Height_in",
 ## "1. Name (POS, '24) — 320 lbs" hover-card lines for any dot/bar
 top_players_tip <- function(d, value_col, n = 3,
                             fmt = function(v) paste0(round(v), " lbs"),
-                            desc = TRUE, header = NULL) {
+                            desc = TRUE, header = NULL, school = NULL) {
   if (is.null(d) || nrow(d) == 0) return(header %||% "")
-  d2 <- d %>%
-    filter(!is.na(.data[[value_col]])) %>%
+  pool <- d %>% filter(!is.na(.data[[value_col]]))
+  d2 <- pool %>%
     arrange(if (desc) dplyr::desc(.data[[value_col]]) else .data[[value_col]]) %>%
     slice_head(n = n)
   if (nrow(d2) == 0) return(header %||% "")
   ## group_modify drops grouping cols, so School/Year may be absent here.
   ## Year especially: a missing column returns NULL, and paste0 with a
   ## zero-length vector silently EMPTIES every line -- guard both.
-  sch <- if ("School" %in% names(d2)) d2$School else ""
+  ## `school` lets group_modify callers pass their group key (.y$School) so
+  ## player-card lookups stay school-scoped on conference-wide boards --
+  ## a name-only lookup can open the wrong school's player.
+  sch <- school %||% (if ("School" %in% names(d2)) d2$School else "")
   yr_part <- if ("Year" %in% names(d2)) {
     paste0(", '", substr(d2$Year, 3, 4))
   } else ""
@@ -79,9 +82,17 @@ top_players_tip <- function(d, value_col, n = 3,
                   pc_link(d2$Name, sch), " (", d2$Position, yr_part, ") — ",
                   vapply(d2[[value_col]], function(v) as.character(fmt(v)),
                          character(1)))
+  ## receipts carry their sample size: "top 3 of 27" tells the reader how
+  ## deep the pool behind this aggregate really is (and "all 2 shown"
+  ## flags a thin one)
+  n_note <- if (nrow(pool) > nrow(d2)) {
+    paste0("<em>top ", nrow(d2), " of ", nrow(pool), "</em>")
+  } else if (nrow(pool) > 0 && !is.null(header)) {
+    paste0("<em>all ", nrow(pool), " shown</em>")
+  }
   ## the app's pin JS appends a universal "tap a name" hint to any pinned
   ## card containing player links, so no per-tip hint needed here
-  paste(c(header, lines), collapse = "<br/>")
+  paste(c(header, lines, n_note), collapse = "<br/>")
 }
 
 ## filter helper shared by leaderboard/trend: "All", "Trenches", or a group
@@ -135,7 +146,10 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
     mutate(tip = glue(
       "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
       "{HeightLabel} • {Weight} lbs • {LbsPerInch} lbs/in<br/>",
-      "From: {loc_dash(Location)}<br/>247 Rating: {Ranking}"
+      "From: {loc_dash(Location)}<br/>",
+      "247 Rating: {ifelse(is.na(Ranking), 'unrated', round(Ranking, 0))}<br/>",
+      "<a href=\"{p247_url(Name, Year, sport, Type)}\" target=\"_blank\">",
+      "Open on 247Sports →</a>"
     ))
 
   ## corner tags relative to conference medians (fan-friendly quadrants);
@@ -246,7 +260,7 @@ plot_beef_board <- function(size_data, team_slug, sport,
   tips <- size_data %>%
     group_by(School) %>%
     group_modify(~ data.frame(tip = top_players_tip(
-      .x, pcol, n = 3, fmt = m$fmt,
+      .x, pcol, n = 3, fmt = m$fmt, school = .y$School,
       header = glue("<b>{team_label(.y$School)} — top 3, ",
                     "{tolower(pos_filter_label(pos_filter))}</b>")))) %>%
     ungroup()
@@ -330,12 +344,19 @@ plot_size_trend <- function(size_data, team_slug, sport,
   hl <- highlight_colors(team_slug, compare_slug)
   has_cmp <- !is.na(hl["compare"])
 
+  ## band = the middle half of TEAM class averages, so it lives on the same
+  ## scale as the team lines drawn over it. (A player-level band mixes
+  ## units -- individual spread vs team means -- and makes every team look
+  ## mid-pack; the era timeline already does this correctly.)
   conf_band <- size_data %>%
+    group_by(School, Year) %>%
+    summarize(team_val = mean(.data[[metric_col]], na.rm = TRUE),
+              .groups = "drop") %>%
     group_by(Year) %>%
     summarize(
-      p25 = quantile(.data[[metric_col]], 0.25, na.rm = TRUE),
-      p50 = median(.data[[metric_col]], na.rm = TRUE),
-      p75 = quantile(.data[[metric_col]], 0.75, na.rm = TRUE),
+      p25 = quantile(team_val, 0.25, na.rm = TRUE),
+      p50 = median(team_val, na.rm = TRUE),
+      p75 = quantile(team_val, 0.75, na.rm = TRUE),
       .groups = "drop"
     )
 
@@ -352,7 +373,7 @@ plot_size_trend <- function(size_data, team_slug, sport,
     filter(School %in% team_slugs) %>%
     group_by(School, Year) %>%
     group_modify(~ data.frame(tip = top_players_tip(
-      .x, metric_col, n = 3, fmt = m_fmt,
+      .x, metric_col, n = 3, fmt = m_fmt, school = .y$School,
       header = glue("<b>{team_label(.y$School)} {.y$Year} — top 3</b>")))) %>%
     ungroup()
   team_lines <- team_lines %>% left_join(line_tips, by = c("School", "Year"))
@@ -385,7 +406,7 @@ plot_size_trend <- function(size_data, team_slug, sport,
       title = wrap_title(glue("{t_lab}: {m$label} by Recruiting Class"), 58),
       subtitle = wrap_title(glue(
         "{pos_filter_label(pos_filter)} — {str_to_title(sport)} vs the Big 12 middle ",
-        "(yellow band = conference 25th–75th percentile, dashed = median)"), 84),
+        "(yellow band = middle half of team class averages, dashed = median team)"), 84),
       x = "Class Year", y = m$label,
       caption = paste0("Dot size = players added that class. Coach labels = era of the highlighted team. Data: 247Sports.", scope_note(players_note))
     ) +
@@ -508,7 +529,7 @@ plot_head_to_head <- function(size_data, team1, team2, sport,
     filter(School %in% c(team1, team2)) %>%
     group_by(School, PosGroup) %>%
     group_modify(~ data.frame(tip = top_players_tip(
-      .x, "Weight", n = 3,
+      .x, "Weight", n = 3, school = .y$School,
       header = glue("<b>{team_label(.y$School)} {.y$PosGroup} — heaviest</b>")))) %>%
     ungroup()
 
@@ -746,7 +767,7 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
   tips <- tips_src %>%
     group_by(School) %>%
     group_modify(~ data.frame(tip = top_players_tip(
-      .x, "GainPerYr", n = 3, fmt = gain_fmt,
+      .x, "GainPerYr", n = 3, fmt = gain_fmt, school = .y$School,
       desc = (direction == "gain"),
       header = glue("<b>{team_label(.y$School)} — ",
                     "{ifelse(direction == 'gain', 'top gainers',
@@ -969,7 +990,8 @@ plot_era_timeline <- function(size_data, team_slug, sport,
     arrange(desc(Ranking), .by_group = TRUE) %>%
     mutate(.rk = row_number()) %>%
     filter(.rk <= 5) %>%
-    summarize(top_list = paste0(.rk, ". ", Name, " (", Position, ", ",
+    summarize(top_list = paste0(.rk, ". ", pc_link(Name, School),
+                                " (", Position, ", ",
                                 round(Ranking, 0), ")", collapse = "<br/>"),
               .groups = "drop")
   team_yrs <- team_yrs %>%
@@ -1091,14 +1113,14 @@ plot_distance_lab <- function(size_data, team_slug, sport,
     geom_ribbon(data = band, aes(x = Year, ymin = p25, ymax = p75),
                 fill = "#F0E442", alpha = 0.45) +
     geom_hline(yintercept = med_all, linetype = "dotted",
-               color = "seagreen") +
+               color = "#009E73") +
     annotate("text", x = min(d$Year), y = med_all,
              label = glue("Median ({round(med_all, 0)} mi)"),
-             hjust = 0, vjust = -0.6, color = "seagreen", size = 3.6) +
+             hjust = 0, vjust = -0.6, color = "#009E73", size = 3.6) +
     geom_line(data = band, aes(x = Year, y = avg),
-              color = "#D15E10", linewidth = 1.3, alpha = 0.5) +
+              color = "#D55E00", linewidth = 1.3, alpha = 0.5) +
     geom_point(data = band, aes(x = Year, y = avg),
-               color = "#D15E10", size = 3, alpha = 0.5) +
+               color = "#D55E00", size = 3, alpha = 0.5) +
     geom_point_interactive(
       data = d,
       aes(x = Year, y = miles_away, tooltip = tip, data_id = Name),
@@ -1192,7 +1214,7 @@ plot_era_position_mix <- function(size_data, team_slug, sport, players_note = NU
       tip = paste0("<b>", first(Coach), " — ", first(PosGroup), " (", n(),
                    ")</b><br/>",
                    top_players_tip(pick(Name, Position, Year, Ranking),
-                                   "Ranking", n = 3,
+                                   "Ranking", n = 3, school = team_slug,
                                    fmt = function(v) glue("rating {round(v)}"))),
       .groups = "drop") %>%
     group_by(era_lab) %>%
@@ -1203,10 +1225,17 @@ plot_era_position_mix <- function(size_data, team_slug, sport, players_note = NU
     geom_col_interactive(aes(tooltip = tip,
                              data_id = paste(era_lab, PosGroup)),
                          width = 0.7, color = "white", linewidth = 0.3) +
-    geom_text(data = mix %>% filter(pct >= 6),
-              aes(label = paste0(round(pct), "%")),
+    ## label color follows each slice's fill luminance -- hardcoded white
+    ## was unreadable on the yellow TE slice and weak on the grey DB one
+    geom_text(data = mix %>% filter(pct >= 6) %>%
+                mutate(.lab_col = ifelse(
+                  colSums(col2rgb(pos_group_palette(sport)[
+                    as.character(PosGroup)]) * c(0.299, 0.587, 0.114)) > 150,
+                  "#1a2733", "white")),
+              aes(label = paste0(round(pct), "%"), color = .lab_col),
               position = position_stack(vjust = 0.5),
-              size = 3.1, color = "white", fontface = "bold") +
+              size = 3.1, fontface = "bold") +
+    scale_color_identity(guide = "none") +
     scale_fill_manual(values = pos_group_palette(sport), name = NULL) +
     labs(
       title = wrap_title(glue("{t_lab}: What Each Coach Spends Their Classes On"), 44),
@@ -1240,10 +1269,14 @@ build_pipeline_map <- function(size_data, team_slug, sport,
              long = ifelse(n() > 1, jitter(long, amount = 0.012), long)) %>%
       ungroup() %>%
       mutate(URL = p247_url(Name, Year, sport, Type),
+             ## pc_link works in leaflet popups too -- the app's .pc-open
+             ## listener is document-level, so map names open player cards
              popup = paste0(
-               "<strong>", Name, "</strong> (", Position, ", ", Year, ")<br/>",
-               HeightLabel, " • ", Weight, " lbs • 247 Rating: ", Ranking,
-               "<br/>From: ", Location, "<br/>",
+               "<strong>", pc_link(Name, School), "</strong> (", Position,
+               ", ", Year, ")<br/>",
+               HeightLabel, " • ", Weight, " lbs • 247 Rating: ",
+               ifelse(is.na(Ranking), "unrated", round(Ranking, 0)),
+               "<br/>From: ", loc_dash(Location), "<br/>",
                miles_away, " miles from campus<br/>",
                "<em><a href='", URL, "' target='_blank'>View profile</a></em>"))
   }
@@ -1419,7 +1452,8 @@ plot_roster_335 <- function(roster_data, team_slug, incoming = NULL,
       n = n(),
       tip = paste0("<b>", first(Role), " — ", first(Class), " (", n(),
                    ")</b><br/>",
-                   paste(paste0(Name, " (", round(Weight), ")"),
+                   paste(paste0(pc_link(Name, team_slug), " (",
+                                round(Weight), ")"),
                          collapse = "<br/>")),
       .groups = "drop")
 
@@ -1619,7 +1653,8 @@ plot_roster_construction <- function(roster_data, team_slug, sport) {
       n = n(),
       tip = paste0("<b>", first(PosGroup), " — ", first(Class), " (", n(),
                    ")</b><br/>",
-                   paste(head(Name, 8), collapse = "<br/>"),
+                   paste(head(pc_link(Name, team_slug), 8),
+                         collapse = "<br/>"),
                    ifelse(n() > 8, paste0("<br/>+", n() - 8, " more"), "")),
       .groups = "drop")
   ramp <- colorRampPalette(c("#D7DEE8", team_color(team_slug)))(4)
@@ -1673,6 +1708,7 @@ plot_state_retention <- function(size_data, team_slug, sport,
     group_by(School) %>%
     group_modify(~ data.frame(tip = top_players_tip(
       .x, "Ranking", n = 3, fmt = function(v) glue("rating {round(v)}"),
+      school = .y$School,
       header = glue("<b>{team_label(.y$School)} — top {st} signees</b>")))) %>%
     ungroup()
 
@@ -1754,12 +1790,15 @@ analyst_notes <- function(size_data, roster_data, team_slug, sport,
 
   snap <- class_snapshot(size_data, team_slug)
   if (!is.null(snap)) {
+    ## "additions" not "signees/commits" -- under the default player pool
+    ## this count includes portal transfers, and the copy must stay honest
+    ## for every pool the global radio can select
     notes <- c(notes, glue(
-      "The {snap$year} class: {snap$n} commits at a {snap$avg_rating} average ",
+      "The {snap$year} class: {snap$n} additions at a {snap$avg_rating} average ",
       "247 rating ({ifelse(is.na(snap$d_rating), 'n/a',
         paste0(ifelse(snap$d_rating >= 0, '+', ''), snap$d_rating))} vs the ",
-      "prior three classes) with {snap$blue} blue-chip signee",
-      "{ifelse(snap$blue == 1, '', 's')}. Headliner: {snap$top_name} ",
+      "prior three classes) with {snap$blue} blue-chip addition",
+      "{ifelse(snap$blue == 1, '', 's')} (90+). Headliner: {snap$top_name} ",
       "({snap$top_pos}, {snap$top_rating})."))
   }
 

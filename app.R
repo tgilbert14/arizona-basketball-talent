@@ -296,6 +296,11 @@ ui <- dashboardPage(
         margin: 0 42px; text-align: center;
         font-family: 'Rubik', sans-serif; font-weight: 600; }
       .box-header .box-tools { z-index: 5; }
+      /* rebrand AdminLTE's stock blue -- the most visible chrome in the
+         app should carry the navy, not the framework default */
+      .box.box-primary { border-top-color: #0C234B; }
+      .box.box-solid.box-primary > .box-header { background: #0C234B; }
+      .box.box-solid.box-primary { border-color: #0C234B; }
 
       /* scoreboard-style value boxes */
       .small-box { border-radius: 10px; }
@@ -326,7 +331,7 @@ ui <- dashboardPage(
       .cb-head img { height: 24px; vertical-align: middle; }
       .cb-summary-text { font-size: 13px; color: #0C234B; font-weight: 600;
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .cb-summary-text .cb-dim { color: #8a98a8; font-weight: 500; }
+      .cb-summary-text .cb-dim { color: #64748b; font-weight: 500; }
       .cb-chevron { margin-left: auto; color: #AB0520;
         transition: transform 0.2s; }
       .control-bar.collapsed .cb-chevron { transform: rotate(180deg); }
@@ -346,7 +351,8 @@ ui <- dashboardPage(
         background-color: #0C234B; }
       .year-presets { display: flex; gap: 6px; margin: -6px 0 8px 0; }
       .year-presets .btn { flex: 1; background: #f2f5f9; color: #0C234B;
-        border: 1px solid #d8e0ea; font-size: 10px; font-weight: 600; }
+        border: 1px solid #d8e0ea; font-size: 10px; font-weight: 600;
+        padding: 4px 5px; /* finger-sized (>=24px tall) preset targets */ }
       .year-presets .btn:hover { background: #AB0520; color: white; }
 
       /* home hero */
@@ -377,7 +383,9 @@ ui <- dashboardPage(
       .pinned-card a { color: #FFD200; font-weight: 600; }
       .pinned-card .pin-close {
         float: right; background: transparent; border: none; color: #9fb0c1;
-        font-size: 17px; line-height: 1; cursor: pointer; margin-left: 8px; }
+        font-size: 18px; line-height: 1; cursor: pointer;
+        /* padded to a finger-sized target without growing visually */
+        padding: 8px 10px; margin: -8px -10px 0 8px; }
       .pinned-card .pin-close:hover { color: white; }
       /* gold leader lines tying each card to its data point -- one svg
          overlay per chart box, so downloads + fullscreen include them */
@@ -390,6 +398,12 @@ ui <- dashboardPage(
       .box .box-body { position: relative; }
       /* a fullscreened box becomes a workbench: pin, drag, resize, download */
       .box:fullscreen { overflow: auto; background: white; padding: 26px; }
+      /* iPhone Safari has no Fullscreen API -- the same workbench as a
+         fixed overlay (kept under the player card's z-index 3000) */
+      .box.gi-fauxfs { position: fixed !important; top: 0; left: 0;
+        right: 0; bottom: 0; z-index: 2500; margin: 0; overflow: auto;
+        background: white; padding: 26px; border-radius: 0; }
+      body.gi-fauxfs-open { overflow: hidden; }
 
       /* home value boxes navigate -- make them feel like buttons */
       .vb-link { cursor: pointer; }
@@ -412,7 +426,7 @@ ui <- dashboardPage(
       /* understated 'interactive' tag, bottom-left of each chart box
          (JS lifts it above the footer when one exists) */
       .tap-badge { position: absolute; left: 10px; bottom: 8px; z-index: 900;
-        color: #93a3b3; border-left: 2px solid #c9d4df;
+        color: #5d6f80; border-left: 2px solid #c9d4df;
         font-size: 10px; font-weight: 600; letter-spacing: 0.8px;
         text-transform: uppercase; padding: 1px 0 1px 7px;
         pointer-events: none; }
@@ -446,7 +460,7 @@ ui <- dashboardPage(
       .copy-btn:hover { background: rgba(255,255,255,0.15); }
 
       /* slim site footer with the studio contact */
-      .ddl-footer { text-align: center; color: #8a98a8; font-size: 12.5px;
+      .ddl-footer { text-align: center; color: #64748b; font-size: 12.5px;
         padding: 18px 10px 10px 10px; }
       .ddl-footer a { color: #AB0520; font-weight: 600; }
 
@@ -536,7 +550,7 @@ ui <- dashboardPage(
       /* cards scale from their top-left so they stay where you put them */
       .pinned-card { transform-origin: top left; }
       .pinned-card .pin-resize { position: absolute; right: 2px; bottom: 2px;
-        width: 22px; height: 22px; cursor: nwse-resize; touch-action: none;
+        width: 26px; height: 26px; cursor: nwse-resize; touch-action: none;
         opacity: 0.6;
         background:
           linear-gradient(135deg, transparent 52%, #FFD200 54%, #FFD200 60%,
@@ -577,6 +591,14 @@ ui <- dashboardPage(
         text-transform: uppercase; letter-spacing: 0.5px; }
       .snap-delta-up { color: #1a7f37; font-weight: 700; }
       .snap-delta-down { color: #AB0520; font-weight: 700; }
+
+      /* respect reduced-motion: the foil spin, sheen, pulses, and lifts
+         all become instant states (WCAG 2.3.3) */
+      @media (prefers-reduced-motion: reduce) {
+        .pc-card, .pc-holo, .pc-backdrop, .pinned-card.pulse,
+        .tab-pane.active { animation: none !important; }
+        .box, .vb-link .small-box, .cb-chevron { transition: none !important; }
+      }
 
       /* ---- mobile polish ---- */
       @media (max-width: 767px) {
@@ -650,6 +672,13 @@ ui <- dashboardPage(
                card shows in fullscreen mode too */
             (document.fullscreenElement || document.body).appendChild(bd);
             var card = bd.querySelector('.pc-card');
+            /* minimal dialog semantics: name it, focus the close button so
+               keyboard + screen-reader users aren't stranded behind it */
+            card.setAttribute('role', 'dialog');
+            card.setAttribute('aria-modal', 'true');
+            card.setAttribute('aria-label', p.name + ' player card');
+            var cb = bd.querySelector('.pc-close');
+            if (cb) { cb.setAttribute('aria-label', 'Close player card'); cb.focus(); }
             bd.addEventListener('click', function(ev) {
               if (ev.target === bd || ev.target.closest('.pc-close')) bd.remove();
             });
@@ -674,6 +703,12 @@ ui <- dashboardPage(
             name: el.getAttribute('data-pname'),
             school: el.getAttribute('data-pschool')
           }, {priority: 'event'});
+        });
+        /* Escape closes the player card like any dialog */
+        document.addEventListener('keydown', function(e) {
+          if (e.key !== 'Escape') return;
+          var bd = document.querySelector('.pc-backdrop');
+          if (bd) bd.remove();
         });
       ")),
       ## on phones the sidebar is a full overlay -- close it after a nav
@@ -705,7 +740,13 @@ ui <- dashboardPage(
       ## html-to-image powers all snapshots (handles the resized cards' CSS
       ## transforms correctly -- html2canvas smeared them -- and exports at
       ## 2x resolution for editing quality)
-      tags$script(src = "https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"),
+      ## vendored locally -- school/corporate networks that block CDNs used
+      ## to lose every capture silently; the CDN is now only the fallback
+      tags$script(src = "html-to-image.min.js",
+                  onerror = paste0(
+                    "var s=document.createElement('script');",
+                    "s.src='https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.min.js';",
+                    "document.head.appendChild(s);")),
       ## PIN CARDS v3: pins + leader lines live INSIDE the chart's box, so
       ## chart downloads, fullscreen mode, and tab layout all see them.
       ## Tap a chart element to pin; drag to move; grip to resize; pins
@@ -750,6 +791,27 @@ ui <- dashboardPage(
             document.querySelectorAll('.pinned-card').forEach(function(p) { p.remove(); });
             document.querySelectorAll('svg.pin-lines').forEach(function(s) { s.innerHTML = ''; });
           };
+          function clearBoxPins(box) {
+            document.querySelectorAll('.pinned-card').forEach(function(p) {
+              if (p.__box === box) p.remove();
+            });
+            var s = box.querySelector(':scope > svg.pin-lines');
+            if (s) s.innerHTML = '';
+          }
+          /* a re-rendered chart invalidates its pins -- a surviving card
+             would keep asserting facts about marks that are gone (team or
+             window changed under it). Collapsing a box likewise. */
+          $(document).on('shiny:value', function(ev) {
+            if (!ev.target || !ev.target.closest) return;
+            var box = ev.target.closest('.box');
+            if (box && box.querySelector('.pinned-card')) clearBoxPins(box);
+          });
+          document.addEventListener('click', function(e) {
+            var w = e.target.closest('[data-widget=\"collapse\"]');
+            if (!w) return;
+            var box = w.closest('.box');
+            if (box) clearBoxPins(box);
+          });
           /* every interactive chart gets a small 'tap to pin' badge so the
              feature is discoverable (excluded from image exports) */
           function badgeCharts() {
@@ -843,9 +905,15 @@ ui <- dashboardPage(
               function up() {
                 grip.removeEventListener('pointermove', mv);
                 grip.removeEventListener('pointerup', up);
+                grip.removeEventListener('pointercancel', up);
+                grip.removeEventListener('lostpointercapture', up);
               }
               grip.addEventListener('pointermove', mv);
               grip.addEventListener('pointerup', up);
+              /* a cancelled pointer (palm reject, OS gesture) must end the
+                 resize too, or hovering keeps resizing forever */
+              grip.addEventListener('pointercancel', up);
+              grip.addEventListener('lostpointercapture', up);
             });
             grip.addEventListener('dblclick', function() {
               pin.__scale = 1;
@@ -855,7 +923,9 @@ ui <- dashboardPage(
             /* anchor + card position in BOX coordinates */
             var ax = e.clientX - bR.left, ay = e.clientY - bR.top;
             pin.style.left = Math.max(Math.min(ax + 30, bR.width - 340), 4) + 'px';
-            pin.style.top = (ay + 18) + 'px';
+            /* clamp inside the box -- captures crop to the box node, so a
+               card spawned past its edge would be cut out of the export */
+            pin.style.top = Math.max(4, Math.min(ay + 18, bR.height - 70)) + 'px';
             box.appendChild(pin);
             var layer = linesLayer(box);
             var ln = document.createElementNS(svgNS, 'line');
@@ -884,16 +954,25 @@ ui <- dashboardPage(
               try { pin.setPointerCapture(ev.pointerId); } catch (err) {}
               var sx = ev.clientX - pin.offsetLeft, sy = ev.clientY - pin.offsetTop;
               function mv(em) {
-                pin.style.left = (em.clientX - sx) + 'px';
-                pin.style.top = (em.clientY - sy) + 'px';
+                /* keep the card inside the box: captures crop to the box
+                   node, so anything dragged past an edge exports cropped */
+                var r = pin.getBoundingClientRect();
+                var maxL = Math.max(4, box.clientWidth - r.width - 4);
+                var maxT = Math.max(2, box.clientHeight - r.height - 2);
+                pin.style.left = Math.max(4, Math.min(em.clientX - sx, maxL)) + 'px';
+                pin.style.top = Math.max(2, Math.min(em.clientY - sy, maxT)) + 'px';
                 updateLine(pin);
               }
               function up() {
                 pin.removeEventListener('pointermove', mv);
                 pin.removeEventListener('pointerup', up);
+                pin.removeEventListener('pointercancel', up);
+                pin.removeEventListener('lostpointercapture', up);
               }
               pin.addEventListener('pointermove', mv);
               pin.addEventListener('pointerup', up);
+              pin.addEventListener('pointercancel', up);
+              pin.addEventListener('lostpointercapture', up);
             });
           });
           function downloadPng(node, name, bg, toastMsg) {
@@ -901,8 +980,13 @@ ui <- dashboardPage(
             htmlToImage.toPng(node, {
               pixelRatio: 2, backgroundColor: bg || '#ffffff',
               filter: function(n) {
+                /* UI chrome never ships in an export: toasts, badges, and
+                   the pinned cards' close/grip/hint controls */
                 return !(n.classList && (n.classList.contains('gi-toast') ||
-                                         n.classList.contains('tap-badge')));
+                                         n.classList.contains('tap-badge') ||
+                                         n.classList.contains('pin-close') ||
+                                         n.classList.contains('pin-resize') ||
+                                         n.classList.contains('pin-hint')));
               }
             }).then(function(dataUrl) {
               var a = document.createElement('a');
@@ -922,12 +1006,23 @@ ui <- dashboardPage(
             if (!icon) return;
             var t = (icon.getAttribute('title') || '').toLowerCase();
             var box = icon.closest('.box') || icon.closest('.girafe');
-            /* fullscreen icon -> fullscreen the BOX so pins keep working */
+            /* fullscreen icon -> fullscreen the BOX so pins keep working.
+               iPhone Safari has no Fullscreen API -- emulate with a fixed
+               overlay class instead of dying silently */
             if (t.indexOf('full') !== -1) {
               e.preventDefault();
               e.stopImmediatePropagation();
+              var faux = document.querySelector('.box.gi-fauxfs');
               if (document.fullscreenElement) { document.exitFullscreen(); }
+              else if (faux) {
+                faux.classList.remove('gi-fauxfs');
+                document.body.classList.remove('gi-fauxfs-open');
+              }
               else if (box && box.requestFullscreen) { box.requestFullscreen(); }
+              else if (box) {
+                box.classList.add('gi-fauxfs');
+                document.body.classList.add('gi-fauxfs-open');
+              }
               return;
             }
             if (t.indexOf('png') === -1 && t.indexOf('download') === -1) return;
@@ -936,7 +1031,13 @@ ui <- dashboardPage(
                 '\\u2705 Check your downloads');
               return; /* no pins -> let girafe's native export run */
             }
-            if (typeof htmlToImage === 'undefined') return;
+            if (typeof htmlToImage === 'undefined') {
+              /* capture lib unavailable: fall through to the native export,
+                 but SAY so -- the native PNG won't include the pins */
+              window.giToast('Capture helper unavailable \\u2014 downloading the chart without pinned cards')
+                .done('Chart saved (pins not included)');
+              return;
+            }
             e.preventDefault();
             e.stopImmediatePropagation();
             downloadPng(box,
@@ -965,7 +1066,11 @@ ui <- dashboardPage(
           /* camera button: the whole current page (all charts + pins) */
           document.addEventListener('click', function(e) {
             if (!e.target.closest('#snap_view')) return;
-            if (typeof htmlToImage === 'undefined') return;
+            if (typeof htmlToImage === 'undefined') {
+              window.giToast('Capture library failed to load')
+                .done('Reload the page and try again');
+              return;
+            }
             var pane = document.querySelector('.tab-pane.active') || document.body;
             downloadPng(pane, window.__snapName(), '#ecf0f5',
               '\\ud83d\\udcf8 Rendering the full page\\u2026 a few seconds');
@@ -1724,20 +1829,28 @@ server <- function(input, output, session) {
     })
   }
 
-  ## TRUE only when every control sits at its startup default
-  at_defaults <- function(pos_input = NULL) {
+  ## TRUE only when every control sits at its startup default.
+  ## Reads the SAME debounced years value the renders and cache keys use --
+  ## reading raw input$g_years here let a mid-drag flush disagree with the
+  ## cache key. Charts that draw the compare team pass cmp_sensitive = TRUE:
+  ## the precomputed dna is Arizona-vs-ASU, and serving it for another
+  ## compare pick would store the wrong chart under that bindCache key.
+  at_defaults <- function(pos_input = NULL, cmp_sensitive = FALSE) {
     identical(input$g_team, "arizona") &&
       g_sport() == "football" &&
-      identical(as.integer(input$g_years), as.integer(DEFAULT_YEARS)) &&
+      identical(as.integer(g_years_d()), as.integer(DEFAULT_YEARS)) &&
       identical(input$g_type %||% "both", "both") &&
+      (!cmp_sensitive ||
+         identical(input$g_compare %||% "arizona-state", "arizona-state")) &&
       (is.null(pos_input) || pos_input == "All")
   }
 
   ## chart export filename: team + sport + chart + window, e.g.
-  ## "arizona-football-beef-board-2022-2026"
+  ## "arizona-football-beef-board-2022-2026" (debounced years -- must match
+  ## what the chart actually shows)
   png_name <- function(chart) {
-    glue("{input$g_team}-{g_sport()}-{chart}-",
-         "{input$g_years[1]}-{input$g_years[2]}")
+    yrs <- g_years_d()
+    glue("{input$g_team}-{g_sport()}-{chart}-{yrs[1]}-{yrs[2]}")
   }
 
   ## ---- PLAYER CARD: tap a name in any pinned card -> holographic card ----
@@ -1882,7 +1995,9 @@ server <- function(input, output, session) {
   ## radio (portal transfers exist for refreshed years: 2021+ after back-fill)
   size_all <- reactive({
     d <- if (g_sport() == "football") size_football else size_basketball
-    switch(input$g_type %||% "commit",
+    ## NULL-fallback must match the radio's startup default ("both") -- a
+    ## "commit" fallback here would silently disagree with every caption
+    switch(input$g_type %||% "both",
            commit = dplyr::filter(d, Type == "Commit"),
            transfer = dplyr::filter(d, Type == "Transfer"),
            d)
@@ -2156,7 +2271,7 @@ server <- function(input, output, session) {
                    input$body_pos, (input$client_w %||% 1200) < 700)
 
   output$dna_plot <- renderGirafe({
-    if (at_defaults()) {
+    if (at_defaults(cmp_sensitive = TRUE)) {
       key <- paste0("dna_", ifelse(is_phone(), "phone", "desktop"))
       if (!is.null(PRE[[key]])) {
         message("serving precomputed ", key)
@@ -2543,10 +2658,12 @@ server <- function(input, output, session) {
     ## (a forged websocket message must not become a query fragment)
     validate(need(input$g_team %in% TEAM_CONFIG$slug, "Unknown team."))
     sp <- g_sport()
+    validate(need(sp %in% c("football", "basketball"), "Unknown sport."))
     db_table <- if (sp == "basketball") "recruit_class_basketball" else "recruit_class_football"
 
     ## transfers carry no HS location, so they only matter here when included
-    type_clause <- switch(input$g_type %||% "commit",
+    ## (NULL-fallback matches the radio's startup default "both")
+    type_clause <- switch(input$g_type %||% "both",
                           commit = " AND Type = 'Commit'",
                           transfer = " AND Type = 'Transfer'",
                           "")

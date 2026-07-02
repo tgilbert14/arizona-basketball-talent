@@ -43,15 +43,26 @@ team_state <- function(slug) {
 
 ## pick readable highlight colors for a main + compare team pair; if their
 ## primaries are near-identical (e.g. UA cardinal vs ASU maroon) the compare
-## team falls back to its secondary color
+## team falls back through: its secondary -> Okabe-Ito blue -> orange.
+## A candidate must ALSO be dark enough to survive white chart panels --
+## BYU/Houston secondaries are pure white and K-State's is light grey, so
+## the old one-step fallback could render the compare team invisible.
 highlight_colors <- function(team1, team2 = NULL) {
   col1 <- team_color(team1)
   if (is.null(team2) || is.na(team2) || team2 == "" || team2 == team1) {
     return(c(main = col1, compare = NA_character_))
   }
+  usable <- function(col) {
+    !is.na(col) && nzchar(col) &&
+      sum(abs(col2rgb(col1) - col2rgb(col))) >= 220 &&
+      mean(col2rgb(col)) <= 200
+  }
   col2 <- team_color(team2)
-  if (sum(abs(col2rgb(col1) - col2rgb(col2))) < 220) {
-    col2 <- TEAM_CONFIG$secondary[match(team2, TEAM_CONFIG$slug)]
+  if (!usable(col2)) {
+    for (cand in c(TEAM_CONFIG$secondary[match(team2, TEAM_CONFIG$slug)],
+                   "#0072B2", "#E69F00")) {
+      if (usable(cand)) { col2 <- cand; break }
+    }
   }
   c(main = col1, compare = col2)
 }
