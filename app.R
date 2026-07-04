@@ -2318,6 +2318,19 @@ server <- function(input, output, session) {
 
   output$beef_board <- renderGirafe({
     req(input$size_metric, input$size_pos, input$size_source)
+    ## default Conference Beef view ships precomputed (AvgWeight, all
+    ## positions, commit classes, vs ASU) -- cold-start first paint is a
+    ## readRDS instead of a fragile ~3s SVG build
+    if (at_defaults(cmp_sensitive = TRUE) &&
+        identical(input$size_metric, "AvgWeight") &&
+        identical(input$size_pos, "All") &&
+        identical(input$size_source, "commits")) {
+      key <- paste0("beef_board_", ifelse(is_phone(), "phone", "desktop"))
+      if (!is.null(PRE[[key]])) {
+        message("serving precomputed ", key)
+        return(PRE[[key]])
+      }
+    }
     validate(need(nrow(filter_pos(beef_source_data(), input$size_pos)) > 0,
                   "No players for this position filter."))
     girafe_try(girafe_wrap(
@@ -2338,23 +2351,23 @@ server <- function(input, output, session) {
     validate(need(
       nrow(dplyr::filter(trend_data, School == input$g_team)) > 0,
       "No commits for this team + position filter."))
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_size_trend(size_window(), input$g_team, g_sport(),
                       metric = input$size_metric, pos_filter = input$size_pos,
                       compare_slug = g_cmp(), players_note = players_lab()),
-      w = 10.5, h = 4.5, name = png_name("size-trend"))
+      w = 10.5, h = 4.5, name = png_name("size-trend")), "size trend")
   })
 
   output$h2h_plot <- renderGirafe({
     req(input$size_source)
     validate(need(!is.null(g_cmp()),
                   "Pick a 'Compare to' team in the top bar."))
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_head_to_head(beef_source_data(), input$g_team, g_cmp(), g_sport(),
                         source_label = beef_source_label(),
                         players_note = players_lab()),
       w = 10.5, h = 4.5,
-      name = png_name(glue("h2h-vs-{g_cmp()}")))
+      name = png_name(glue("h2h-vs-{g_cmp()}"))), "head to head")
   })
 
   ## ---- WEIGHT ROOM ---------------------------------------------------------------------
@@ -2429,13 +2442,13 @@ server <- function(input, output, session) {
       validate(need(any(wr_data_r()$WeightGain < 0),
                     "No slimmed-down signees in this window."))
     }
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_weight_room_board(wr_data_r(), input$g_team, g_sport(),
                              compare_slug = g_cmp(),
                              direction = input$wr_direction %||% "gain"),
       w = 8, h = 8,
       name = png_name(ifelse((input$wr_direction %||% "gain") == "gain",
-                             "weight-room", "cut-room")))
+                             "weight-room", "cut-room"))), "weight room board")
   })
   output$wr_footer <- renderUI({
     req(!is.null(roster_now()))
@@ -2456,12 +2469,12 @@ server <- function(input, output, session) {
                     glue("No slimmed-down {team_label(input$g_team)} signees ",
                          "in this window.")))
     }
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_weight_room_players(wr_data_r(), input$g_team, g_sport(),
                                direction = input$wr_direction %||% "gain"),
       w = 8, h = 8,
       name = png_name(ifelse((input$wr_direction %||% "gain") == "gain",
-                             "biggest-gainers", "biggest-slim-downs")))
+                             "biggest-gainers", "biggest-slim-downs"))), "weight room players")
   })
 
   output$height_check <- renderPlot({
@@ -2492,6 +2505,16 @@ server <- function(input, output, session) {
 
   output$era_timeline <- renderGirafe({
     req(input$era_metric)
+    ## default coach-era view ships precomputed (Arizona, football, AvgRating);
+    ## the chart is year-window independent, so a default cold-start paint is
+    ## a readRDS instead of a fragile SVG build
+    if (at_defaults() && identical(input$era_metric, "AvgRating")) {
+      key <- paste0("era_timeline_", ifelse(is_phone(), "phone", "desktop"))
+      if (!is.null(PRE[[key]])) {
+        message("serving precomputed ", key)
+        return(PRE[[key]])
+      }
+    }
     validate(need(nrow(era_data()) > 0, "No commits for this team."))
     girafe_try(girafe_wrap(plot_era_timeline(size_all(), input$g_team, g_sport(),
                                   metric = input$era_metric,
@@ -2503,10 +2526,10 @@ server <- function(input, output, session) {
 
   output$era_mix <- renderGirafe({
     validate(need(nrow(era_data()) > 0, "No commits for this team."))
-    girafe_wrap(plot_era_position_mix(size_all(), input$g_team, g_sport(),
+    girafe_try(girafe_wrap(plot_era_position_mix(size_all(), input$g_team, g_sport(),
                                       players_note = players_lab()),
                 w = 8.5, h = 6.2,
-                name = glue("{input$g_team}-{g_sport()}-era-position-mix"))
+                name = glue("{input$g_team}-{g_sport()}-era-position-mix")), "era position mix")
   })
 
   output$era_table <- renderDT({
@@ -2538,12 +2561,12 @@ server <- function(input, output, session) {
     validate(need(
       nrow(dplyr::filter(roster_now(), School == input$g_team)) > 0,
       "No roster rows for this team."))
-    girafe_wrap(plot_roster_335(roster_now(), input$g_team,
+    girafe_try(girafe_wrap(plot_roster_335(roster_now(), input$g_team,
                                 incoming = incoming_adds(),
                                 incoming_label = paste0("'", SIZE_YEARS[2] %% 100,
                                                         " ADDS"),
                                 proj_gain = proj_gain_r()),
-                w = 8.5, h = 6.4, name = png_name("335-fit-board"))
+                w = 8.5, h = 6.4, name = png_name("335-fit-board")), "335 fit board")
   })
 
   output$def_profile <- renderGirafe({
@@ -2551,10 +2574,10 @@ server <- function(input, output, session) {
                   "The 3-3-5 lens applies to football — switch sport above."))
     validate(need(!is.null(roster_now()),
                   "Run scripts/scrapeRosters.R to add current rosters."))
-    girafe_wrap(plot_def_size_profile(roster_size(), input$g_team,
+    girafe_try(girafe_wrap(plot_def_size_profile(roster_size(), input$g_team,
                                       incoming = incoming_adds(),
                                       proj_gain = proj_gain_r()),
-                w = 8.5, h = 6.4, name = png_name("def-bodies-335"))
+                w = 8.5, h = 6.4, name = png_name("def-bodies-335")), "defense profile")
   })
 
   output$roster_constr <- renderGirafe({
@@ -2563,9 +2586,9 @@ server <- function(input, output, session) {
     validate(need(
       nrow(dplyr::filter(roster_now(), School == input$g_team)) > 0,
       "No roster rows for this team."))
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_roster_construction(roster_now(), input$g_team, g_sport()),
-      w = 8.5, h = 6.4, name = png_name("roster-construction"))
+      w = 8.5, h = 6.4, name = png_name("roster-construction")), "roster construction")
   })
 
   output$state_retention <- renderGirafe({
@@ -2573,11 +2596,11 @@ server <- function(input, output, session) {
     validate(need(
       nrow(dplyr::filter(size_window(), State == st)) > 0,
       glue("No {st} high-school commits in this window.")))
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_state_retention(size_window(), input$g_team, g_sport(),
                            compare_slug = g_cmp(),
                            players_note = players_lab()),
-      w = 8.5, h = 6.4, name = png_name("state-retention"))
+      w = 8.5, h = 6.4, name = png_name("state-retention")), "state retention")
   })
 
   ## class retention: % of each signing class still on the roster
@@ -2585,11 +2608,11 @@ server <- function(input, output, session) {
     validate(need(!is.null(roster_now()),
                   "Run scripts/scrapeRosters.R to add current rosters."))
     src <- if (g_sport() == "football") size_football else size_basketball
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_class_retention(src %>% dplyr::filter(Type == "Commit"),
                            roster_now(), input$g_team,
                            compare_slug = g_cmp()),
-      w = 8, h = 9, name = png_name("class-retention"))
+      w = 8, h = 9, name = png_name("class-retention")), "class retention")
   })
 
   output$analyst_notes_out <- renderUI({
@@ -2630,12 +2653,12 @@ server <- function(input, output, session) {
         theme_void()
       return(girafe_wrap(msg, w = 10.5, h = 6.2, name = "no-seasons"))
     }
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_talent_results(ts_window,
                           size_football %>% filter(Year <= max(ts_window$year)),
                           input$g_team, compare_slug = g_cmp()),
       w = 10.5, h = 6.2,
-      name = png_name("talent-vs-results-quadrant"))
+      name = png_name("talent-vs-results-quadrant")), "talent quadrant")
   })
 
   output$team_scoreboard <- renderGirafe({
@@ -2643,12 +2666,12 @@ server <- function(input, output, session) {
                   "Season outcomes are football-only for now."))
     validate(need(!is.null(team_seasons),
                   "Run scripts/fetchOutcomes.R (needs a free CFBD key) to add season records."))
-    girafe_wrap(
+    girafe_try(girafe_wrap(
       plot_team_scoreboard(team_seasons,
                            size_football %>% filter(Year <= max(team_seasons$year)),
                            input$g_team),
       w = 10.5, h = 4.4,
-      name = glue("{input$g_team}-season-scoreboard"))
+      name = glue("{input$g_team}-season-scoreboard")), "team scoreboard")
   })
 
   ## ---- LEGACY: filtered data + map + distance plots ---------------------------------------
@@ -2725,8 +2748,8 @@ server <- function(input, output, session) {
       filter(School == input$g_team, !is.na(miles_away))
     validate(need(nrow(d) > 0,
                   "No recruits with mapped high schools in this window."))
-    girafe_wrap(plot_distance_box(size_window(), input$g_team, g_sport()),
-                w = 10.5, h = 4.2, name = png_name("distance-box"))
+    girafe_try(girafe_wrap(plot_distance_box(size_window(), input$g_team, g_sport()),
+                w = 10.5, h = 4.2, name = png_name("distance-box")), "distance box")
   })
 
   ## v3.7: interactive distance scatter (hover = recruit card, click = 247
@@ -2736,9 +2759,9 @@ server <- function(input, output, session) {
     d <- size_window() %>%
       filter(School == input$g_team, !is.na(miles_away))
     validate(need(nrow(d) > 0, "No recruits with mapped high schools in this window."))
-    girafe_wrap(plot_distance_lab(size_window(), input$g_team, g_sport(),
+    girafe_try(girafe_wrap(plot_distance_lab(size_window(), input$g_team, g_sport(),
                                   show_outliers = input$show_outliers),
-                name = png_name("distance-lab"))
+                name = png_name("distance-lab")), "distance lab")
   })
 
   output$summary_stats <- renderDT({

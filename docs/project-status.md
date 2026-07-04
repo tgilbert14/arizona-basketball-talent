@@ -28,10 +28,16 @@ element is keyboard-focusable (WCAG 2.1.1 Level A). **Owner:** `whisper` / `/fab
 keyboard path to the pin action.
 
 ### P2 — render robustness + cold-start
-- `girafe_try()` wraps only 4 of ~18 renders; the other ~14 still surface scary errors on cold-start
-  hiccups. **Owner:** `hammer`. **Fix:** wrap the rest (bindCached ones first).
-- Precompute covers only body_map + dna; beef_board + era_timeline are equally default-hit and die on
-  container restart. **Owner:** `hammer`. **Fix:** extend the rds pack (roadmap perf-ladder #2, +1).
+- ✅ DONE (2026-07-03) — `girafe_try()` now wraps ALL 18 girafe renders (was 4); a cold-start
+  font/memory hiccup degrades to the calm "nudge a control to reload" chart instead of a scary
+  sanitized error / apparent outage. Verified live via preview: 0 error banners, live + precomputed
+  paths both render.
+- ✅ DONE (2026-07-03) — precompute pack extended to beef_board + era_timeline (desktop + phone),
+  so all four default-hit views (body_map, dna, beef_board, era_timeline) serve from `.rds` on a
+  cold container instead of a fragile SVG build. PRE-serve branches gated on the sub-input defaults
+  (beef: AvgWeight/All/commits/vs-ASU; era: AvgRating, year-window-independent). Verified via preview
+  logs ("serving precomputed beef_board_* / era_timeline_*"). **Re-run `scripts/precomputeDefaults.R`
+  after every data/tooltip change** or the defaults show stale data.
 - Missing `bindCache` on class_retention / talent_quadrant / team_scoreboard (recompute conference-wide
   work every flip). **Owner:** `hammer`.
 

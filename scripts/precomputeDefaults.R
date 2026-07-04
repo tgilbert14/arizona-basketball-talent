@@ -60,4 +60,29 @@ out(girafe_build(dna_p, w = 9.5, h = 6, phone = TRUE,
                  name = glue("{png_base}-position-dna-{yrs_tag}")),
     "dna_phone.rds")
 
+## beef board -- default Conference Beef view (AvgWeight, all positions,
+## commit classes, vs ASU). The app serves this only when size_metric/pos/
+## source sit at their startup defaults.
+beef_p <- plot_beef_board(w, TEAM, "football", metric = "AvgWeight",
+                          pos_filter = "All", compare_slug = "arizona-state",
+                          source_label = NULL, players_note = note)
+out(girafe_build(beef_p, w = 8, h = 9,
+                 name = glue("{png_base}-beef-board-commits-{yrs_tag}")),
+    "beef_board_desktop.rds")
+out(girafe_build(beef_p, w = 8, h = 9, phone = TRUE,
+                 name = glue("{png_base}-beef-board-commits-{yrs_tag}")),
+    "beef_board_phone.rds")
+
+## era timeline -- full-history coach-era chart (year-window independent),
+## default metric AvgRating. size_all() at the default type ("both") is the
+## whole prepped table, so we pass fb (not the window w).
+era_p <- plot_era_timeline(fb, TEAM, "football", metric = "AvgRating",
+                           players_note = note)
+out(girafe_build(era_p, h = 6,
+                 name = glue("{png_base}-coach-eras-AvgRating")),
+    "era_timeline_desktop.rds")
+out(girafe_build(era_p, h = 6, phone = TRUE,
+                 name = glue("{png_base}-coach-eras-AvgRating")),
+    "era_timeline_phone.rds")
+
 cat("Done. Commit precomputed/ and redeploy.\n")
