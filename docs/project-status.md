@@ -19,10 +19,16 @@ A 52-agent review produced 65 verified findings; the golden-dozen high-impact fi
 - Honesty: school-scoped player-card lookups, n-chips in receipts tooltips, pc_link on era/map/335/roster tips, team-level trend band, "additions" not "signees" copy.
 - Contrast + touch-target pass. Precomputed defaults rebuilt.
 
-## Built 2026-07-11, awaiting commit + activation (the nightly auto-refresh)
+## LIVE 2026-07-11 (the nightly auto-refresh)
 
-The unattended data pipeline is BUILT and verified (offline smoke GREEN, 25 review findings fixed)
-but sits uncommitted until the user pushes and registers the schedule:
+The unattended data pipeline is shipped, scheduled, and verified on both hosts. First supervised run
+went green (22/22 sanity checks, 1 hole auto-healed, shinyapps deployed+verified); the only failure was
+S7 push on a missing git identity — fixed repo-local, then the publish completed manually (commit dcca055)
+and the Connect Cloud badge reads "data updated Jul 11, 2026". Task Scheduler is registered (23:30 daily).
+Also fixed en route: `manifest.json` had drifted since v6.1 — Connect Cloud deploys from the committed
+manifest, so stale checksums + 5 unlisted runtime files (beef/era precomputes + vendored html-to-image)
+meant Connect Cloud was serving an incomplete/old bundle. New `scripts/updateManifest.R` (files-section
+only, packages preserved) is now wired into the pipeline. Details:
 - `scripts/nightlyRefresh.R` (S0–S10 orchestrator: lock → snapshot → scrape → geocode → audit+validate
   w/ rollback → refresh_log ledger → hash-gated precompute → scoped commit/push → shinyapps deploy →
   verify-live → manifest + gh-issue alert), `scripts/lib/refresh_utils.R`, `scripts/validateRefresh.R`,
@@ -33,9 +39,11 @@ but sits uncommitted until the user pushes and registers the schedule:
   fetchOutcomes (dynamic years, per-year replace, honest exit), auditRefreshHoles (baseline arg +
   git-HEAD regen + Type-symmetric counts + idempotent heal — the transfer-duplication bug is FIXED),
   refreshAll (honest exit code), app.R ("data updated" badge from the new refresh_log table).
-- Activation = commit + push, then run `scripts/setupSchedule.ps1`; checklist in the runbook.
 - Scheduler decision: local Task Scheduler (247 verified from this machine; datacenter IPs unproven —
   the canary Action gathers evidence for a future migration).
+- Follow-ups still worth doing (from the NEON refresh-data.yml reference): a post-deploy smoke that
+  opens a GitHub issue on a live-outage (ours S9-verify only WARNs), and a commit message that names
+  what actually changed (freshness marker) rather than a static "[auto]" line.
 
 ## Open quests (ranked)
 
