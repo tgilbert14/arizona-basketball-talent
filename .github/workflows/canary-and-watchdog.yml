@@ -1,0 +1,96 @@
+# ---------------------------------------------------------------------------
+# canary-and-watchdog.yml -- weekly ops checks for the nightly refresh.
+#
+#   canary   : one polite GET of a 247Sports commits page from a GitHub
+#              runner (datacenter IP), status + body snippet to the step
+#              summary. Pure evidence-gathering for whether the scrape
+#              could ever move off the laptop. Never fails the build.
+#   watchdog : if the committed data/refresh-manifest.json is older than
+#              7 days, create-or-update the 'auto-refresh' issue. Stale can
+#              mean a dead laptop schedule OR just a quiet stretch (noop
+#              nights never commit), so the issue says to check logs first.
+# ---------------------------------------------------------------------------
+name: canary-and-watchdog
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    name: 247Sports datacenter-IP canary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe one commits page
+        run: |
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+          URL="https://247sports.com/college/arizona/season/2026-football/commits/"
+          STATUS=$(curl -sS -A "$UA" -o body.html -w '%{http_code}' --max-time 45 "$URL" || echo "curl-error")
+          SNIPPET=$(head -c 300 body.html 2>/dev/null | tr -d '\000' || true)
+          {
+            echo "## 247Sports canary"
+            echo ""
+            echo "- URL: $URL"
+            echo "- HTTP status: **$STATUS**"
+            echo ""
+            echo "First 300 chars of body:"
+            echo ""
+            echo '```'
+            echo "$SNIPPET"
+            echo '```'
+            echo ""
+            echo "Evidence only, never a failure: 200 with commit markup means"
+            echo "datacenter IPs currently work; 403/503 or a challenge page means"
+            echo "the nightly scrape must stay on the laptop's residential IP."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+  watchdog:
+    name: Stale-refresh watchdog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Compare manifest age to the 7-day threshold
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MANIFEST="data/refresh-manifest.json"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "No $MANIFEST in the repo yet -- the nightly pipeline has not shipped a run. Passing."
+            exit 0
+          fi
+          FINISHED=$(jq -r '.finished_at // empty' "$MANIFEST")
+          if [ -z "$FINISHED" ]; then
+            echo "Manifest has no finished_at -- cannot judge staleness. Passing."
+            exit 0
+          fi
+          FINISHED_EPOCH=$(date -d "$FINISHED" +%s 2>/dev/null || echo "")
+          if [ -z "$FINISHED_EPOCH" ]; then
+            echo "Could not parse finished_at='$FINISHED'. Passing."
+            exit 0
+          fi
+          NOW_EPOCH=$(date +%s)
+          AGE_DAYS=$(( (NOW_EPOCH - FINISHED_EPOCH) / 86400 ))
+          echo "Last refresh finished_at=$FINISHED (${AGE_DAYS} days ago)."
+          if [ "$AGE_DAYS" -lt 7 ]; then
+            echo "Fresh enough (threshold 7 days). Passing."
+            exit 0
+          fi
+          echo "Stale: last refresh is ${AGE_DAYS} days old. Raising the alarm issue."
+          BODY="The committed data/refresh-manifest.json says the last nightly refresh finished at ${FINISHED} -- ${AGE_DAYS} days ago (threshold 7). A stale manifest means EITHER the schedule is dead (laptop off or logged out at 23:30, OneDrive blocking the repo, nightlyRefresh.R failing before the push) OR simply that no data changes have pushed in 7+ days -- noop nights never commit. Check logs/refresh_*.log on the machine before assuming failure; docs/auto-refresh-runbook.md has the recovery steps."
+          gh label create auto-refresh --description "Automated nightly-refresh alerts" --force 2>/dev/null || true
+          EXISTING=$(gh issue list --label auto-refresh --state open --search "Nightly refresh looks stale" --json number --jq '.[0].number // empty' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+            echo "Commented on existing issue #$EXISTING."
+          else
+            gh issue create --title "Nightly refresh looks stale" --label auto-refresh --body "$BODY"
+            echo "Opened a new issue."
+          fi

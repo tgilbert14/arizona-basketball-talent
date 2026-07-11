@@ -133,6 +133,32 @@ scrape_class <- function(slug, sport, year) {
 }
 
 ## ---------------------------------------------------------------------------
+## plausibility gate: if 247 shifts the stride-8 page layout, fields land in
+## the wrong columns and parse to garbage. A row FAILS when any NON-NA field
+## is implausible (NA never fails -- transfers carry NA by design). A school
+## is demoted when >30% of its rows fail, or when it parsed rows but every
+## Ranking is NA. Returns list(ok, reason).
+## ---------------------------------------------------------------------------
+validate_class <- function(df, sport) {
+  bad_height <- !is.na(df$Height) &
+    !grepl("^[4-7]-(0|1)?[0-9](\\.[0-9]{1,2})?$", df$Height)
+  wt_max <- if (sport == "basketball") 320 else 420
+  bad_weight <- !is.na(df$Weight) & (df$Weight < 130 | df$Weight > wt_max)
+  bad_rank <- !is.na(df$Ranking) & (df$Ranking < 55 | df$Ranking > 110)
+  row_fail <- bad_height | bad_weight | bad_rank
+
+  if (mean(row_fail) > 0.30) {
+    return(list(ok = FALSE, reason = sprintf(
+      "%d/%d rows implausible (height/weight/rank out of range)",
+      sum(row_fail), nrow(df))))
+  }
+  if (nrow(df) > 0 && all(is.na(df$Ranking))) {
+    return(list(ok = FALSE, reason = "all rows have NA Ranking"))
+  }
+  list(ok = TRUE, reason = "")
+}
+
+## ---------------------------------------------------------------------------
 ## main
 ## ---------------------------------------------------------------------------
 args <- commandArgs(trailingOnly = TRUE)
@@ -144,6 +170,7 @@ cat("Refreshing", sport, year, "classes...\n\n")
 
 fresh <- list()
 ok_slugs <- character(0)   # only these schools' old rows get replaced
+failed_slugs <- character(0)
 for (slug in TEAM_CONFIG$slug) {
   res <- NULL
   for (attempt in 1:3) {   # transient fetch failures get retried
@@ -158,22 +185,36 @@ for (slug in TEAM_CONFIG$slug) {
   if (is.null(res)) {
     cat(sprintf("  %-16s GAVE UP after 3 attempts -- existing rows kept\n",
                 slug))
+    failed_slugs <- c(failed_slugs, slug)
   } else {
     cat(sprintf("  %-16s %3d commits, %2d transfers\n", slug,
                 sum(res$Type == "Commit"), sum(res$Type == "Transfer")))
     ## a successful scrape with zero players is suspicious for a past year:
     ## keep the existing rows rather than wiping them with nothing
     if (nrow(res) > 0) {
-      fresh[[slug]] <- res
-      ok_slugs <- c(ok_slugs, slug)
+      check <- validate_class(res, sport)
+      if (check$ok) {
+        fresh[[slug]] <- res
+        ok_slugs <- c(ok_slugs, slug)
+      } else {
+        ## layout drift, not a fetch failure: keep the existing rows
+        message(sprintf("  %-16s DEMOTED (%s) -- existing rows kept",
+                        slug, check$reason))
+        failed_slugs <- c(failed_slugs, slug)
+      }
     } else {
       cat(sprintf("  %-16s scraped EMPTY -- existing rows kept\n", slug))
+      failed_slugs <- c(failed_slugs, slug)
     }
   }
   Sys.sleep(runif(1, 2, 4))
 }
 fresh <- bind_rows(fresh)
 cat("\nScraped", nrow(fresh), "players across", length(ok_slugs), "schools\n")
+if (length(failed_slugs) > 0) {
+  cat("FAILED schools (rows kept, re-run later):",
+      paste(failed_slugs, collapse = ", "), "\n")
+}
 stopifnot(nrow(fresh) > 0)
 
 conn <- dbConnect(RSQLite::SQLite(), here::here("data", "recruiting.db"))
@@ -227,11 +268,40 @@ fresh_full <- fresh_full[, names(old)]
 n_new <- nrow(fresh_full)
 n_geo <- sum(!is.na(fresh_full$lat))
 ## replace rows ONLY for schools that scraped successfully -- a fetch
-## failure must never delete a school's existing data
-slug_list <- paste0("'", ok_slugs, "'", collapse = ", ")
-dbExecute(conn, paste0("DELETE FROM ", tbl, " WHERE Year = ", year,
-                       " AND School IN (", slug_list, ")"))
-dbWriteTable(conn, tbl, fresh_full, append = TRUE)
+## failure must never delete a school's existing data.
+## Transfer guard: a page whose portal section fails to parse still
+## validates on its commits alone -- if the fresh scrape holds ZERO
+## transfers for a school while the db holds >= 3, keep the old Transfer
+## rows and replace only that school's commits
+transfers_wiped <- function(s) {
+  n_fresh <- sum(fresh_full$School == s & fresh_full$Type == "Transfer",
+                 na.rm = TRUE)
+  n_db <- sum(old$School == s & old$Year == year & old$Type == "Transfer",
+              na.rm = TRUE)
+  n_fresh == 0 && n_db >= 3
+}
+keep_transfer_slugs <- ok_slugs[vapply(ok_slugs, transfers_wiped, logical(1))]
+for (s in keep_transfer_slugs) {
+  cat(sprintf("  %-16s fresh scrape has 0 transfers but db holds %d --",
+              s, sum(old$School == s & old$Year == year &
+                       old$Type == "Transfer", na.rm = TRUE)),
+      "keeping old Transfer rows (Commit-only replace)\n")
+}
+full_slugs <- setdiff(ok_slugs, keep_transfer_slugs)
+in_list <- function(x) paste0("'", x, "'", collapse = ", ")
+## atomic: a crash between delete and append must not lose the old rows
+dbWithTransaction(conn, {
+  if (length(full_slugs) > 0) {
+    dbExecute(conn, paste0("DELETE FROM ", tbl, " WHERE Year = ", year,
+                           " AND School IN (", in_list(full_slugs), ")"))
+  }
+  if (length(keep_transfer_slugs) > 0) {
+    dbExecute(conn, paste0("DELETE FROM ", tbl, " WHERE Year = ", year,
+                           " AND Type = 'Commit' AND School IN (",
+                           in_list(keep_transfer_slugs), ")"))
+  }
+  dbWriteTable(conn, tbl, fresh_full, append = TRUE)
+})
 dbDisconnect(conn)
 
 cat("Replaced", year, "rows in", tbl, ":", n_new, "players (",

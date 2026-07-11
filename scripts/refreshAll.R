@@ -15,7 +15,8 @@
 ##   5. records   fetchOutcomes.R (CFBD season records + SP+; needs the
 ##                CFBD_API_KEY in ~/.Renviron; skip until a season ends)
 ##
-## Skip flags: no-classes, no-rosters, no-geocode, no-audit, no-records
+## Skip flags: no-classes, no-rosters, no-geocode, no-audit, no-records,
+##             no-precompute
 ##
 ## To START A NEW CYCLE (e.g. the 2027 classes appear on 247): run once
 ##   Rscript scripts/refreshClassYear.R football 2027
@@ -106,6 +107,7 @@ for (t in names(before)) {
 if (length(results) > 0 && any(!results)) {
   cat("\nFAILED steps:", paste(names(results)[!results], collapse = ", "),
       "\n  -> re-run those individually; the hole audit protects the db.\n")
+  quit(status = 1)
 } else {
   cat("\nAll steps clean. The deployed app picks this up on the next\n",
       "rsconnect::deployApp() (the db ships inside the bundle).\n", sep = "")

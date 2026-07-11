@@ -1,0 +1,16 @@
+backups
+logs
+insights
+docs
+scripts
+app_v1.R
+app_v2.R
+scrapeData_teamGirth.R
+screenshot.png
+manifest.json
+rsconnect
+.github
+.claude
+README.md
+LICENSE
+*.Rproj

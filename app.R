@@ -39,6 +39,28 @@ roster_basketball <- load_roster("roster_basketball")
 ## CFBD season outcomes (from scripts/fetchOutcomes.R); NULL until fetched
 team_seasons <- load_roster("team_seasons_football")
 
+## last successful data refresh: the nightly pipeline logs each run in
+## refresh_log; before that table exists, fall back to the roster scrape
+## stamp. NULL when neither is available (the badge then renders nothing).
+last_refresh_date <- local({
+  raw <- NULL
+  if (dbExistsTable(conn, "refresh_log")) {
+    raw <- dbGetQuery(conn, paste(
+      "SELECT MAX(finished_at) AS d FROM refresh_log",
+      "WHERE status IN ('ok','degraded')"))$d
+  }
+  if ((length(raw) == 0 || is.na(raw)) &&
+      dbExistsTable(conn, "roster_football")) {
+    raw <- dbGetQuery(conn, "SELECT MAX(ScrapedAt) AS d FROM roster_football")$d
+  }
+  d <- tryCatch(as.Date(raw), error = function(e) NULL)
+  if (is.null(d) || length(d) == 0 || is.na(d)) NULL else d
+})
+
+## display form, e.g. 'Jul 10, 2026' (leading zero on the day stripped)
+last_refresh_label <- if (is.null(last_refresh_date)) NULL else
+  sub(" 0", " ", format(last_refresh_date, "%b %d, %Y"), fixed = TRUE)
+
 ## free what startup allocated -- the deployed worker has a hard 1GB ceiling
 invisible(gc())
 
@@ -104,10 +126,13 @@ shinyOptions(cache = cachem::cache_disk(
 INFO_MODALS <- list(
   info_size = list(
     title = "Size Lab — sources & methods",
-    body = "
+    body = paste0("
       <p><strong>Source:</strong> 247Sports team commit pages, classes
-      2016–2026, all 16 Big 12 programs (scraped Jan 2026; the 2026 class
-      re-scraped June 2026 via <code>scripts/refreshClassYear.R</code>).</p>
+      2016–2026, all 16 Big 12 programs (full scrape Jan 2026; the active
+      class kept current by the nightly refresh",
+      if (!is.null(last_refresh_label))
+        paste0(" — data updated ", last_refresh_label),
+      ").</p>
       <p><strong>What counts:</strong> high-school commits by default; the
       'Players' control in the top bar can add portal transfers or isolate
       them (transfers exist for 2021 onward).</p>
@@ -116,7 +141,7 @@ INFO_MODALS <- list(
       signees are listed shorter on the roster later (see Weight Room →
       Reality Check). Treat any listed height as ±1 inch.</p>
       <p><strong>Girth index:</strong> pounds per inch of height = weight ÷
-      height. BMI = 703 × weight ÷ height².</p>"),
+      height. BMI = 703 × weight ÷ height².</p>")),
   info_beef = list(
     title = "Conference Beef — sources & methods",
     body = "
@@ -332,6 +357,8 @@ ui <- dashboardPage(
       .cb-summary-text { font-size: 13px; color: #0C234B; font-weight: 600;
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .cb-summary-text .cb-dim { color: #64748b; font-weight: 500; }
+      .cb-summary-text .cb-updated { font-variant: small-caps;
+        letter-spacing: 0.4px; }
       .cb-chevron { margin-left: auto; color: #AB0520;
         transition: transform 0.2s; }
       .control-bar.collapsed .cb-chevron { transform: rotate(180deg); }
@@ -1674,7 +1701,7 @@ ui <- dashboardPage(
                 box(
                   title = "About the data", status = "primary",
                   solidHeader = TRUE, width = 6,
-                  HTML("
+                  HTML(paste0("
                     <p style='font-size:13px; color:#777; border-left: 3px solid
                       #FFD200; padding-left: 10px;'>
                       Everything here depends on what programs report and what
@@ -1689,7 +1716,10 @@ ui <- dashboardPage(
                         HS commits, commits + transfers, or transfers only.
                         Every chart caption states which pool it shows.</li>
                       <li><strong>Current rosters</strong>: 247Sports team
-                        roster pages, scraped June 2026.</li>
+                        roster pages, refreshed nightly",
+                        if (!is.null(last_refresh_label))
+                          paste0(" (data updated ", last_refresh_label, ")"),
+                        ".</li>
                       <li><strong>Season records and SP+</strong>:
                         CollegeFootballData.com, seasons 2016–2025 (football).</li>
                       <li><strong>Sizes</strong>: heights and weights are as
@@ -1716,7 +1746,7 @@ ui <- dashboardPage(
                         class, <code>scripts/scrapeRosters.R</code> for rosters,
                         and <code>scripts/fetchOutcomes.R</code> after each
                         season.</li>
-                    </ul>")
+                    </ul>"))
                 ),
                 box(
                   title = "Feedback & custom builds", status = "danger",
@@ -1979,7 +2009,12 @@ server <- function(input, output, session) {
          if (!is.null(g_cmp())) logo(g_cmp()),
          tags$span(class = "cb-dim",
               glue("· {str_to_title(g_sport())} · ",
-                   "{input$g_years[1]}–{input$g_years[2]} · {type_word}")))
+                   "{input$g_years[1]}–{input$g_years[2]} · {type_word}")),
+         ## freshness badge: a startup constant (see last_refresh_label at
+         ## the top of the file); absent entirely when no stamp exists
+         if (!is.null(last_refresh_label))
+           tags$span(class = "cb-dim cb-updated",
+                     glue("· data updated {last_refresh_label}")))
   })
 
   ## ---- global reactives ------------------------------------------------------

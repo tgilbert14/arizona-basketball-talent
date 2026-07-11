@@ -108,20 +108,35 @@ year  <- if (length(args) >= 2) as.integer(args[2]) else
 
 cat("Scraping", sport, "rosters for", year, "...\n\n")
 
+## a parse that returns implausibly few rows is a stub/header-only page, not
+## a roster -- counting it as success would wipe the team's existing rows
+min_roster_rows <- if (sport == "basketball") 5 else 30
+
 all_rosters <- list()
 failures <- character(0)
 
 for (slug in TEAM_CONFIG$slug) {
-  result <- tryCatch({
-    r <- scrape_roster(slug, sport, year)
-    cat(sprintf("  %-16s %3d players\n", slug, nrow(r)))
-    r
-  }, error = function(e) {
-    cat(sprintf("  %-16s FAILED: %s\n", slug, conditionMessage(e)))
-    failures <<- c(failures, slug)
-    NULL
-  })
-  if (!is.null(result)) all_rosters[[slug]] <- result
+  result <- NULL
+  for (attempt in 1:3) {   # transient fetch failures get retried
+    result <- tryCatch(scrape_roster(slug, sport, year), error = function(e) {
+      cat(sprintf("  %-16s attempt %d failed: %s\n", slug, attempt,
+                  conditionMessage(e)))
+      NULL
+    })
+    if (!is.null(result)) break
+    Sys.sleep(5 * attempt)
+  }
+  if (is.null(result)) {
+    cat(sprintf("  %-16s GAVE UP after 3 attempts\n", slug))
+    failures <- c(failures, slug)
+  } else if (nrow(result) < min_roster_rows) {
+    cat(sprintf("  %-16s scraped EMPTY (%d rows < %d floor) -- existing rows kept\n",
+                slug, nrow(result), min_roster_rows))
+    failures <- c(failures, slug)
+  } else {
+    cat(sprintf("  %-16s %3d players\n", slug, nrow(result)))
+    all_rosters[[slug]] <- result
+  }
 
   ## be polite between teams (each team = 2 requests)
   Sys.sleep(runif(1, 2, 4))
@@ -134,8 +149,16 @@ if (length(failures) > 0) {
   cat("FAILED teams (re-run later):", paste(failures, collapse = ", "), "\n")
 }
 
+## minimum-success gate: a mostly-failed run must not touch the db at all
+n_teams <- length(TEAM_CONFIG$slug)
+if (length(all_rosters) < 12) {
+  stop("only ", length(all_rosters), "/", n_teams, " teams scraped ",
+       "successfully (need >= 12) -- nothing written. Failed: ",
+       paste(failures, collapse = ", "))
+}
+
 if (nrow(roster_data) > 0) {
-  ## CSV backup (backups/ is gitignored)
+  ## CSV backup of the fresh scrape (backups/ is gitignored)
   dir.create(here::here("backups"), showWarnings = FALSE)
   csv_path <- here::here("backups", paste0("rosters_", sport, "_", year, "_",
                                            format(Sys.Date()), ".csv"))
@@ -143,8 +166,37 @@ if (nrow(roster_data) > 0) {
   cat("CSV backup:", csv_path, "\n")
 
   ## write to the app database (new table; recruit tables untouched)
+  tbl <- paste0("roster_", sport)
   conn <- dbConnect(RSQLite::SQLite(), here::here("data", "recruiting.db"))
-  dbWriteTable(conn, paste0("roster_", sport), roster_data, overwrite = TRUE)
+  if (tbl %in% dbListTables(conn)) {
+    ## back up the OLD table before any write touches it
+    old <- dbGetQuery(conn, paste0("SELECT * FROM ", tbl))
+    write_csv(old, here::here("backups", paste0(
+      tbl, "_pre_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")))
+    cat("Old-table backup:", nrow(old), "rows\n")
+
+    ## align fresh columns to the existing table schema exactly
+    missing_cols <- setdiff(names(old), names(roster_data))
+    for (mc in missing_cols) roster_data[[mc]] <- NA
+    roster_data <- roster_data[, names(old)]
+
+    ## replace rows ONLY for teams that scraped successfully -- a fetch
+    ## failure must never delete a team's existing roster
+    ok_slugs <- names(all_rosters)
+    slug_list <- paste0("'", ok_slugs, "'", collapse = ", ")
+    where <- paste0("School IN (", slug_list, ")")
+    if ("RosterYear" %in% names(old)) {
+      where <- paste0(where, " AND RosterYear = ", year)
+    }
+    ## atomic: a crash between delete and append must not lose the old rows
+    dbWithTransaction(conn, {
+      dbExecute(conn, paste0("DELETE FROM ", tbl, " WHERE ", where))
+      dbAppendTable(conn, tbl, roster_data)
+    })
+    cat("Database table updated (per-team replace): ", tbl, "\n", sep = "")
+  } else {
+    dbWriteTable(conn, tbl, roster_data)
+    cat("Database table created: ", tbl, "\n", sep = "")
+  }
   dbDisconnect(conn)
-  cat("Database table written: roster_", sport, "\n", sep = "")
 }
