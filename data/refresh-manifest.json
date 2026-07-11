@@ -1,0 +1,31 @@
+{
+  "run_id": "20260711_081252",
+  "started_at": "2026-07-11 08:12:52",
+  "finished_at": "2026-07-11 08:12:55",
+  "status": "noop",
+  "changed": false,
+  "row_counts": {
+    "recruit_class_football": 5190,
+    "recruit_class_basketball": 837,
+    "roster_football": 1733,
+    "roster_basketball": 243,
+    "team_seasons_football": 160
+  },
+  "failed_schools": [],
+  "stages": {
+    "preflight": "ok",
+    "snapshot": "ok",
+    "classes_football": "skipped",
+    "classes_basketball": "skipped",
+    "rosters_football": "skipped",
+    "rosters_basketball": "skipped",
+    "records": "skipped",
+    "geocode": "skipped",
+    "audit": "ok",
+    "validate": "ok",
+    "precompute": "skipped",
+    "push": "skipped",
+    "deploy": "skipped",
+    "verify": "skipped"
+  }
+}

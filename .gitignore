@@ -49,3 +49,6 @@ rsconnect/
 
 csvs*
 backups/
+
+# nightly-refresh transcripts + full per-run manifests
+logs/

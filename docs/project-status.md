@@ -19,6 +19,24 @@ A 52-agent review produced 65 verified findings; the golden-dozen high-impact fi
 - Honesty: school-scoped player-card lookups, n-chips in receipts tooltips, pc_link on era/map/335/roster tips, team-level trend band, "additions" not "signees" copy.
 - Contrast + touch-target pass. Precomputed defaults rebuilt.
 
+## Built 2026-07-11, awaiting commit + activation (the nightly auto-refresh)
+
+The unattended data pipeline is BUILT and verified (offline smoke GREEN, 25 review findings fixed)
+but sits uncommitted until the user pushes and registers the schedule:
+- `scripts/nightlyRefresh.R` (S0–S10 orchestrator: lock → snapshot → scrape → geocode → audit+validate
+  w/ rollback → refresh_log ledger → hash-gated precompute → scoped commit/push → shinyapps deploy →
+  verify-live → manifest + gh-issue alert), `scripts/lib/refresh_utils.R`, `scripts/validateRefresh.R`,
+  `scripts/deployApp.R`, `scripts/runNightly.ps1`, `scripts/setupSchedule.ps1` (Task Scheduler 23:30),
+  `.github/workflows/canary-and-watchdog.yml`, `.rscignore`, `docs/auto-refresh-runbook.md`.
+- Hardened: scrapeRosters (retry/backup/per-team replace/12-of-16 gate/row floor/transaction),
+  refreshClassYear (plausibility demotion gate w/ fractional heights, transfer-wipe guard, transaction),
+  fetchOutcomes (dynamic years, per-year replace, honest exit), auditRefreshHoles (baseline arg +
+  git-HEAD regen + Type-symmetric counts + idempotent heal — the transfer-duplication bug is FIXED),
+  refreshAll (honest exit code), app.R ("data updated" badge from the new refresh_log table).
+- Activation = commit + push, then run `scripts/setupSchedule.ps1`; checklist in the runbook.
+- Scheduler decision: local Task Scheduler (247 verified from this machine; datacenter IPs unproven —
+  the canary Action gathers evidence for a future migration).
+
 ## Open quests (ranked)
 
 ### P1 — accessibility floor (keyboard reach)
@@ -51,6 +69,24 @@ keyboard path to the pin action.
 - Extract ~720 lines of static CSS/JS from `app.R` (2,600+ lines) to `www/` (26 JS lines carry R escapes — not a verbatim move). **Owner:** `bowerstone` / `page`.
 - No `.rscignore` — the shinyapps bundle ships ~10MB of backups/insights/scripts. **Owner:** `caravan` / `ship`.
 - Showcase wow-list (from the review): one-tap 1200×630 share card, tale-of-the-tape versus poster, bump/slope rank-evolution chart, deep-link/bookmarkable state, kiosk mode, watchlist tray. **Owner:** `fable` + `bowerstone`.
+
+### Verified backlog from the 2026-07-11 beef-up sweep (29-agent, all ideas adversarially verified)
+
+High-impact, ranked by impact-per-effort (details in the sweep transcript; each is grounded in real code):
+1. **Table-twin "view the numbers" toggle** rendered as Savant-style rank rows — clears the P1 a11y item AND a showcase visual in one build (L).
+2. **247 profile hrefs as stable player key** — exact profile links for transfers, better joins, AND unlocks transfer hometowns → transfer geocoding for Distance Lab/Map (M; needs ALTER TABLE first, schema-align drops unknown cols).
+3. **What-changed-since-your-last-visit panel** on Home (localStorage snapshot → class_snapshot delta, pool-honest) (M).
+4. **URL state for the control bar + per-team OG share cards** — deep links, unfurl-ready (M).
+5. **Ranked n-gated insight engine** replacing fixed-order talking points (M).
+6. **Era-timeline honesty overhaul**: split-pool dashed HS-only overlay + pool-split tooltips (M; clears P2 honesty item).
+7. **Wins Above Talent ladder** — quasibinomial wins~talent with honest intervals (M; scoreboard stays frozen).
+8. **Auto-published "what changed this week" brief** on the GitHub Pages landing site, diffed from the nightly backups (M; rides the new pipeline).
+9. **Hover ergonomics pack** in girafe_build: opts_hover_inv dim-the-rest + nearest-hover for touch (S — one edit upgrades all 18 charts).
+10. **Degraded-state pack**: branded shiny:disconnected overlay + retry affordance (S).
+11. **Freshness everywhere**: ScrapedAt on recruit tables, live prose dates, status.json on landing (S; badge already shipped w/ pipeline).
+12. **Realignment-honest baselines**: membership-aware bands w/ backcast disclosure on body map/era/quadrant (S).
+13. **Published join-match rates + fuzzy-miss sensitivity** for Weight Room/retention name joins (M; 4-6 confirmed false departures today, ~2pp worst-school error).
+14. **Power-4 rivals pack** (6-8 marquee programs) — REQUIRES the conference-gate work first or SEC rows corrupt every Big 12 board (L).
 
 ## Deliberately deferred (do NOT re-flag)
 

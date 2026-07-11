@@ -58,7 +58,12 @@ cfbd_get <- function(path, ...) {
   fromJSON(content(resp, "text", encoding = "UTF-8"), flatten = TRUE)
 }
 
-YEARS <- 2016:2025
+## end year is dynamic: from September the current season has results worth
+## pulling; before that the latest complete season is last year's
+cur_year <- as.integer(format(Sys.Date(), "%Y"))
+end_year <- if (as.integer(format(Sys.Date(), "%m")) >= 9) cur_year else
+  cur_year - 1
+YEARS <- 2016:end_year
 seasons <- list()
 problems <- character(0)
 
@@ -123,8 +128,17 @@ if ("team_seasons_football" %in% dbListTables(conn)) {
   dir.create(here::here("backups"), showWarnings = FALSE)
   write_csv(old, here::here("backups", paste0("team_seasons_before_",
                                               format(Sys.Date()), ".csv")))
+  ## per-year replace: only years that fetched AND validated are touched,
+  ## so a failed CFBD year keeps its existing rows instead of vanishing
+  ok_years <- sort(unique(out$year))
+  dbWithTransaction(conn, {
+    dbExecute(conn, paste0("DELETE FROM team_seasons_football WHERE year IN (",
+                           paste(ok_years, collapse = ", "), ")"))
+    dbAppendTable(conn, "team_seasons_football", out)
+  })
+} else {
+  dbWriteTable(conn, "team_seasons_football", out)
 }
-dbWriteTable(conn, "team_seasons_football", out, overwrite = TRUE)
 dbDisconnect(conn)
 
 cat("\nWrote", nrow(out), "validated team-seasons to team_seasons_football\n")
@@ -136,3 +150,12 @@ if (length(problems) > 0) {
 }
 cat("\nNext: a 'Talent vs Performance' module can join this to the 4-year",
     "rolling class composite from recruit_class_football.\n")
+
+## any year that fetched/validated nothing kept its old rows above, but the
+## run must still exit nonzero so the failure is visible to refreshAll.R
+missing_years <- setdiff(YEARS, as.integer(names(seasons)))
+if (length(missing_years) > 0) {
+  cat("\nFAILED/SKIPPED years (existing rows kept, re-run later):",
+      paste(missing_years, collapse = ", "), "\n")
+  quit(status = 1)
+}
