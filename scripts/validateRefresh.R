@@ -101,6 +101,24 @@ for (tbl in c("recruit_class_football", "recruit_class_basketball")) {
     m <- merge(bg, lg, by = c("School", "Year"), all.x = TRUE)
     m$n_live[is.na(m$n_live)] <- 0L
     bad <- m[m$n_base > 0 & m$n_live < 0.6 * m$n_base, , drop = FALSE]
+    ## exempt school-years the hole audit has deliberately STOPPED healing
+    ## (heal streak exhausted = probable decommit; the row loss there is the
+    ## source being honored, not a scrape failure) -- see auditRefreshHoles.R
+    if (nrow(bad) > 0 && has_table(live_db, "audit_heals")) {
+      aged <- q(live_db, paste0(
+        "SELECT School, Year FROM audit_heals WHERE tbl = '", tbl,
+        "' AND streak > 3"))
+      if (nrow(aged) > 0) {
+        keep <- !(paste(bad$School, bad$Year) %in%
+                    paste(aged$School, aged$Year))
+        if (any(!keep)) {
+          cat("[INFO] ", tbl, ": ", sum(!keep), " group(s) exempted from the",
+              " retention gate (aged-out heals / probable decommits)\n",
+              sep = "")
+        }
+        bad <- bad[keep, , drop = FALSE]
+      }
+    }
     detail <- if (nrow(bad) > 0) {
       paste0(nrow(bad), " group(s), e.g. ",
              paste(head(sprintf("%s %s (%d -> %d)", bad$School, bad$Year,
