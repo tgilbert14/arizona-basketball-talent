@@ -90,8 +90,14 @@ COACH_ERAS <- rbind(
   ))
 )
 
-## current window cap: treat NA last_class as "through latest class year"
-ERA_MAX_CLASS <- 2026
+## current window cap: treat NA last_class as "through the ACTIVE recruiting
+## cycle". Class of N signs Dec N-1/Feb N, so by mid-year the N+1 cycle is
+## already live on 247 (2027 pages have commits in July 2026) and the scraper
+## can land rows a year ahead of the calendar. A hardcoded cap would strip
+## coach attribution from those rows and drop them from every era chart.
+## Open-ended eras (NA last_class) extend to this cap automatically; actual
+## coaching CHANGES stay curated rows above -- edit those by hand.
+ERA_MAX_CLASS <- as.integer(format(Sys.Date(), "%Y")) + 1L
 
 ## coach for each school/sport/class-year (vectorized over year)
 coach_for_class <- function(slug, sport, year) {

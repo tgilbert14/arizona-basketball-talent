@@ -15,16 +15,45 @@ loc_dash <- function(loc) {
 ## page, so the season search works; TRANSFERS don't (they're filed under
 ## their original HS class, not the portal year), and 247's portal pages
 ## ignore name filters -- a site-scoped Google search reliably lands their
-## profile instead. Real profile URLs need a scraper upgrade (roadmap).
-p247_url <- function(name, year, sport, type = "Commit") {
+## profile instead. When the scraper has captured a real profile URL,
+## `profile_url` short-circuits both fallbacks: pass it (NA-safe, vectorized)
+## and any non-empty entry is returned directly, absolutized if relative
+## (247 name-link hrefs come protocol-relative, "//247sports.com/Player/...").
+p247_url <- function(name, year, sport, type = "Commit", profile_url = NULL) {
   enc <- vapply(as.character(name),
                 function(n) utils::URLencode(n, reserved = TRUE),
                 character(1), USE.NAMES = FALSE)
-  ifelse(type == "Transfer",
-         paste0("https://www.google.com/search?q=site%3A247sports.com+%22",
-                enc, "%22"),
-         paste0("https://247sports.com/season/", year, "-", tolower(sport),
-                "/recruits/?&Player.FullName=", enc))
+  ## recycle type up front: ifelse() sizes its result by the TEST, so a
+  ## scalar default type with vector names would collapse fallback to 1
+  type <- rep_len(as.character(type), length(enc))
+  fallback <- ifelse(type == "Transfer",
+                     paste0("https://www.google.com/search?q=site%3A247sports",
+                            ".com+%22", enc, "%22"),
+                     paste0("https://247sports.com/season/", year, "-",
+                            tolower(sport), "/recruits/?&Player.FullName=",
+                            enc))
+  if (is.null(profile_url)) return(fallback)
+  ## same trap on the profile side: a scalar NA profile_url with vector
+  ## names must not shrink the result -- recycle first, then size the
+  ## output by the fallback and overwrite only where a real URL exists
+  pu <- rep_len(as.character(profile_url), length(fallback))
+  pu[pu %in% c("", "NA")] <- NA_character_
+  ## protocol-relative first ("//host/..."), then root-relative ("/path")
+  pu <- ifelse(!is.na(pu) & startsWith(pu, "//"), paste0("https:", pu), pu)
+  pu <- ifelse(!is.na(pu) & startsWith(pu, "/") & !startsWith(pu, "//"),
+               paste0("https://247sports.com", pu), pu)
+  out <- fallback
+  keep <- !is.na(pu) & nzchar(pu)
+  out[keep] <- pu[keep]
+  out
+}
+
+## per-row ProfileUrl column if the frame carries one -- older dbs don't have
+## the column at all, so callers guard with this instead of assuming it
+## (atomic [[ on a missing name errors)
+profile_col <- function(d) {
+  if ("ProfileUrl" %in% names(d)) as.character(d$ProfileUrl)
+  else rep(NA_character_, nrow(d))
 }
 
 ## a player name that opens the holographic PLAYER CARD when its hover card
@@ -141,14 +170,17 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
   t_lab <- team_label(team_slug)
   yr_rng <- paste0(min(size_data$Year), "–", max(size_data$Year))
 
-  ## hover text for the interactive version
+  ## hover text for the interactive version (scraped profile URL when the
+  ## frame carries one; search fallback otherwise)
+  team_data$.p247 <- p247_url(team_data$Name, team_data$Year, sport,
+                              team_data$Type, profile_col(team_data))
   team_data <- team_data %>%
     mutate(tip = glue(
       "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
       "{HeightLabel} • {Weight} lbs • {LbsPerInch} lbs/in<br/>",
       "From: {loc_dash(Location)}<br/>",
       "247 Rating: {ifelse(is.na(Ranking), 'unrated', round(Ranking, 0))}<br/>",
-      "<a href=\"{p247_url(Name, Year, sport, Type)}\" target=\"_blank\">",
+      "<a href=\"{.p247}\" target=\"_blank\">",
       "Open on 247Sports →</a>"
     ))
 
@@ -237,7 +269,20 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
 ## ---------------------------------------------------------------------------
 ## 2) BEEF BOARD -- conference leaderboard for a size metric, logos on axis
 ## ---------------------------------------------------------------------------
-plot_beef_board <- function(size_data, team_slug, sport,
+
+## sprintf-style formats for the table twins (girth_metrics$fmt closures
+## build display strings; tables want a bare numeric format)
+girth_metric_sprintf <- c(AvgWeight = "%.1f", AvgHeight = "%.1f",
+                          AvgLbsPerIn = "%.2f", AvgBMI = "%.1f")
+
+## TABLE TWIN: the EXACT per-school frame plot_beef_board() draws -- the
+## plot builder calls this internally so chart and table can never disagree.
+## Contract columns: School, value, n (+ the chart's own extras).
+## attrs: value_label (human metric label), value_fmt (sprintf format),
+## value_fmt_fn (the chart's formatter closure -- AvgHeight renders 6'4.5"),
+## yr_rng, conf_avg. logo_prefix/source_label/players_note are accepted for
+## signature parity with the plot builder; they are cosmetic and ignored.
+beef_board_data <- function(size_data, team_slug, sport,
                             metric = "AvgWeight", pos_filter = "All",
                             year_min = NULL, year_max = NULL,
                             compare_slug = NULL, logo_prefix = "www/",
@@ -247,10 +292,6 @@ plot_beef_board <- function(size_data, team_slug, sport,
   }
   size_data <- filter_pos(size_data, pos_filter)
   m <- girth_metrics[[metric]]
-  yr_rng <- paste0(min(size_data$Year), "–", max(size_data$Year))
-  context <- source_label %||%
-    glue("{str_to_title(sport)} commits {yr_rng}")
-  hl <- highlight_colors(team_slug, compare_slug)
   ## NULL-safe compare slug (School == NULL inside case_when errors)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
 
@@ -274,9 +315,36 @@ plot_beef_board <- function(size_data, team_slug, sport,
       role = case_when(School == team_slug ~ "main",
                        School == cmp_safe ~ "compare",
                        TRUE ~ "other"),
-      val_lab  = m$fmt(Value)
+      ## understated class-size chip, same style as the sibling boards
+      val_lab = paste0(m$fmt(Value), "  (n=", Players, ")"),
+      value = Value,
+      n = Players
     )
-  conf_avg <- mean(board$Value)
+  attr(board, "value_label") <- m$label
+  attr(board, "value_fmt") <- girth_metric_sprintf[[metric]]
+  attr(board, "value_fmt_fn") <- m$fmt
+  attr(board, "yr_rng") <- paste0(min(size_data$Year), "–",
+                                  max(size_data$Year))
+  attr(board, "conf_avg") <- mean(board$Value)
+  board
+}
+
+plot_beef_board <- function(size_data, team_slug, sport,
+                            metric = "AvgWeight", pos_filter = "All",
+                            year_min = NULL, year_max = NULL,
+                            compare_slug = NULL, logo_prefix = "www/",
+                            source_label = NULL, players_note = NULL) {
+  ## single source of truth: the chart draws exactly the table twin's frame
+  board <- beef_board_data(size_data, team_slug, sport, metric = metric,
+                           pos_filter = pos_filter, year_min = year_min,
+                           year_max = year_max, compare_slug = compare_slug)
+  m <- girth_metrics[[metric]]
+  yr_rng <- attr(board, "yr_rng")
+  context <- source_label %||%
+    glue("{str_to_title(sport)} commits {yr_rng}")
+  hl <- highlight_colors(team_slug, compare_slug)
+  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  conf_avg <- attr(board, "conf_avg")
   logos <- team_logo_labels(width = 30, prefix = logo_prefix)
   ## rows never overlap on a board, so the compare team keeps its true
   ## primary color (the similar-hue fallback is for overlapping charts)
@@ -295,8 +363,10 @@ plot_beef_board <- function(size_data, team_slug, sport,
     geom_point_interactive(aes(color = role, tooltip = tip,
                                data_id = School),
                            size = 5, show.legend = FALSE) +
+    ## hjust/expansion match the sibling boards -- the n-chip makes these
+    ## labels longer, so they need the wider right margin retention uses
     geom_text(aes(label = val_lab, color = role),
-              hjust = -0.25, size = 3.6, fontface = "bold",
+              hjust = -0.15, size = 3.6, fontface = "bold",
               show.legend = FALSE) +
     annotate("text", x = conf_avg, y = 0.6,
              label = glue("Big 12 avg: {m$fmt(conf_avg)}"),
@@ -304,7 +374,7 @@ plot_beef_board <- function(size_data, team_slug, sport,
     scale_color_manual(values = role_cols) +
     scale_y_discrete(labels = logos) +
     scale_x_continuous(
-      expand = expansion(mult = c(0.01, 0.18)),
+      expand = expansion(mult = c(0.01, 0.28)),
       labels = if (metric == "AvgHeight") function(x) format_height(x) else waiver()
     ) +
     labs(
@@ -395,7 +465,9 @@ plot_size_trend <- function(size_data, team_slug, sport,
       aes(x = Year, y = val, color = TeamName, size = n,
           tooltip = tip, data_id = paste(School, Year))) +
     scale_color_manual(values = line_cols, name = NULL) +
-    scale_size_continuous(range = c(2.5, 6.5), name = "Commits in class",
+    ## pool-neutral (matches this chart's own "players added" caption): n
+    ## counts the selected pool, which can include portal transfers
+    scale_size_continuous(range = c(2.5, 6.5), name = "Players in class",
                           breaks = function(lims) unique(round(pretty(lims)))) +
     scale_x_continuous(breaks = seq(min(size_data$Year),
                                     max(size_data$Year), 1)) +
@@ -458,11 +530,13 @@ plot_position_dna <- function(size_data, team_slug, sport,
     group_by(PosGroup) %>%
     summarize(Weight = mean(Weight), .groups = "drop")
 
+  team_data$.p247 <- p247_url(team_data$Name, team_data$Year, sport,
+                              team_data$Type, profile_col(team_data))
   team_data <- team_data %>%
     mutate(tip = glue(
       "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
       "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
-      '<a href="{p247_url(Name, Year, sport, Type)}" ',
+      '<a href="{.p247}" ',
       'target="_blank">Open on 247Sports →</a><br/>',
       "<em>Tap the dot to pin this card</em>"))
 
@@ -610,17 +684,27 @@ weight_room_data <- function(size_data, roster_data) {
 ##       class did we keep? HS signees name-matched to the current roster;
 ##       the unmatched are the attrition.
 ## ---------------------------------------------------------------------------
-plot_class_retention <- function(size_commits, roster_data, team_slug,
+## TABLE TWIN: the EXACT per-school frame plot_class_retention() draws.
+## Contract columns: School, value, n (+ the chart's own extras).
+## attrs: value_label, value_fmt, conf_avg (weighted, from per-class counts),
+## cls_years. logo_prefix is accepted for signature parity; it is ignored.
+retention_board_data <- function(size_commits, roster_data, team_slug,
                                  compare_slug = NULL, logo_prefix = "www/") {
-  hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
   nkey <- function(x) tolower(gsub("[^a-z]", "", tolower(x)))
 
   roster_year <- suppressWarnings(
     max(as.numeric(roster_data$RosterYear), na.rm = TRUE))
   ## classes old enough to be enrolled but young enough to still have
-  ## eligibility: the last four completed cycles before the current one
-  cls_years <- (roster_year - 4):(roster_year - 1)
+  ## eligibility: the last four completed cycles before the current one.
+  ## The newest class is CAPPED at the arriving class -- class of N enrolls
+  ## fall N, and during an active recruiting cycle the db can hold classes
+  ## a year ahead of the calendar (2027 signees in July 2026). A class that
+  ## has not enrolled yet cannot be on any roster; uncapped it would count
+  ## as all-departed and deflate every school's retention.
+  arriving_class <- as.integer(format(Sys.Date(), "%Y"))
+  newest_cls <- min(roster_year - 1, arriving_class)
+  cls_years <- (newest_cls - 3):newest_cls
 
   ros_keys <- roster_data %>%
     transmute(School, key = nkey(Name)) %>%
@@ -653,9 +737,27 @@ plot_class_retention <- function(size_commits, roster_data, team_slug,
            role = case_when(School == team_slug ~ "main",
                             School == cmp_safe ~ "compare",
                             TRUE ~ "other"),
-           lab = glue("{round(retention)}%  (n={n})"))
+           lab = glue("{round(retention)}%  (n={n})"),
+           value = retention)
 
-  conf_avg <- 100 * sum(per_class$kept) / sum(per_class$n)
+  attr(board, "value_label") <- "% of signees still on the roster"
+  attr(board, "value_fmt") <- "%.0f"
+  ## the chart's formatter: the twin renders "78%" instead of bare "78.0"
+  attr(board, "value_fmt_fn") <- function(v) paste0(round(v), "%")
+  attr(board, "conf_avg") <- 100 * sum(per_class$kept) / sum(per_class$n)
+  attr(board, "cls_years") <- cls_years
+  board
+}
+
+plot_class_retention <- function(size_commits, roster_data, team_slug,
+                                 compare_slug = NULL, logo_prefix = "www/") {
+  hl <- highlight_colors(team_slug, compare_slug)
+  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## single source of truth: the chart draws exactly the table twin's frame
+  board <- retention_board_data(size_commits, roster_data, team_slug,
+                                compare_slug = compare_slug)
+  cls_years <- attr(board, "cls_years")
+  conf_avg <- attr(board, "conf_avg")
   logos <- team_logo_labels(width = 30, prefix = logo_prefix)
   role_cols <- c(main = unname(hl["main"]),
                  compare = ifelse(cmp_safe == "", "grey60",
@@ -752,12 +854,14 @@ plot_height_check <- function(wr_data, team_slug, sport) {
     theme_girth()
 }
 
-## conference board: average lbs added per matched signee, by program
-## direction flips the hover cards between top gainers and top slim-downs
-plot_weight_room_board <- function(wr_data, team_slug, sport,
-                                   compare_slug = NULL, logo_prefix = "www/",
-                                   direction = "gain") {
-  hl <- highlight_colors(team_slug, compare_slug)
+## TABLE TWIN: the EXACT per-school frame plot_weight_room_board() draws.
+## Contract columns: School, value, n (+ the chart's own extras).
+## attrs: value_label (direction-aware), value_fmt, conf_avg (player-level
+## mean, NOT the mean of team means). logo_prefix is accepted for signature
+## parity; it is ignored.
+wr_board_data <- function(wr_data, team_slug, sport,
+                          compare_slug = NULL, logo_prefix = "www/",
+                          direction = "gain") {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
   gain_fmt <- function(v) paste0(ifelse(v >= 0, "+", ""), round(v, 1),
                                  " lbs/yr")
@@ -794,14 +898,41 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
     mutate(TeamName = factor(TeamName, levels = TeamName),
            role = case_when(School == team_slug ~ "main",
                             School == cmp_safe ~ "compare",
-                            TRUE ~ "other"))
+                            TRUE ~ "other"),
+           value = AvgGain)
 
-  logos <- team_logo_labels(width = 30, prefix = logo_prefix)
-  conf_avg <- if (direction == "gain") {
+  attr(board, "value_label") <- if (direction == "gain") {
+    "Avg lbs gained per year on campus"
+  } else {
+    "Avg lbs trimmed among slimmers"
+  }
+  attr(board, "value_fmt") <- "%.1f"
+  ## the chart's formatter, direction-aware like value_label: gain mode is
+  ## per-year ("+3.2 lbs/yr"), loss mode is total pounds trimmed ("13.0 lbs"
+  ## -- gain_fmt's "+"/"per yr" framing would misread there)
+  attr(board, "value_fmt_fn") <- if (direction == "gain") gain_fmt else {
+    function(v) paste0(round(v, 1), " lbs")
+  }
+  attr(board, "conf_avg") <- if (direction == "gain") {
     mean(wr_data$GainPerYr)
   } else {
     mean(-wr_data$WeightGain[wr_data$WeightGain < 0])
   }
+  board
+}
+
+## conference board: average lbs added per matched signee, by program
+## direction flips the hover cards between top gainers and top slim-downs
+plot_weight_room_board <- function(wr_data, team_slug, sport,
+                                   compare_slug = NULL, logo_prefix = "www/",
+                                   direction = "gain") {
+  hl <- highlight_colors(team_slug, compare_slug)
+  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## single source of truth: the chart draws exactly the table twin's frame
+  board <- wr_board_data(wr_data, team_slug, sport,
+                         compare_slug = compare_slug, direction = direction)
+  logos <- team_logo_labels(width = 30, prefix = logo_prefix)
+  conf_avg <- attr(board, "conf_avg")
   ## boards keep the compare team's true primary color (rows don't overlap)
   role_cols <- c(main = unname(hl["main"]),
                  compare = ifelse(is.null(compare_slug), "grey60",
@@ -862,6 +993,8 @@ plot_weight_room_players <- function(wr_data, team_slug, sport, top_n = 18,
     ## only actual slimmers -- never pad the list with small gainers
     team_wr %>% filter(WeightGain < 0) %>% slice_min(WeightGain, n = top_n)
   }
+  team_wr$.p247 <- p247_url(team_wr$Name, team_wr$Year, sport,
+                            team_wr$Type, profile_col(team_wr))
   team_wr <- team_wr %>%
     arrange(if (direction == "gain") WeightGain else dplyr::desc(WeightGain)) %>%
     mutate(player_lab = glue("{Name} ({Position}, '{substr(Year, 3, 4)})"),
@@ -871,7 +1004,7 @@ plot_weight_room_players <- function(wr_data, team_slug, sport, top_n = 18,
              "<b>{pc_link(Name, School)}</b> ({Position}, {Year} class)<br/>",
              "Commit day: {Weight} lbs → roster: {RosterWeight} lbs ",
              "({gain_lab} lbs)<br/>",
-             '<a href="{p247_url(Name, Year, sport, Type)}" ',
+             '<a href="{.p247}" ',
              'target="_blank">Open on 247Sports →</a><br/>',
              "<em>Tap the dot to pin this card</em>"))
 
@@ -979,13 +1112,21 @@ plot_era_timeline <- function(size_data, team_slug, sport,
   hl <- highlight_colors(team_slug)
   t_lab <- team_label(team_slug)
 
-  team_yrs <- era_metric_by_year(
-    size_data %>% filter(School == team_slug), metric)
+  team_pool <- size_data %>% filter(School == team_slug)
+  team_yrs <- era_metric_by_year(team_pool, metric)
+
+  ## split-pool honesty: when the selected pool mixes HS commits and portal
+  ## transfers, overlay the HS-commits-only series (dashed) and split each
+  ## class dot's headcount by type. A commits-only pool changes nothing.
+  split_pool <- "Type" %in% names(team_pool) &&
+    any(team_pool$Type == "Transfer", na.rm = TRUE)
+  commit_yrs <- if (split_pool) {
+    era_metric_by_year(team_pool %>% filter(Type == "Commit"), metric)
+  } else team_yrs[0, ]
 
   ## hover card per class dot: the top-5 signees (lets users verify the data)
   ## + click opens that class's page on 247Sports
-  top5 <- size_data %>%
-    filter(School == team_slug) %>%
+  top5 <- team_pool %>%
     group_by(Year) %>%
     arrange(desc(Ranking), .by_group = TRUE) %>%
     mutate(.rk = row_number()) %>%
@@ -994,13 +1135,26 @@ plot_era_timeline <- function(size_data, team_slug, sport,
                                 " (", Position, ", ",
                                 round(Ranking, 0), ")", collapse = "<br/>"),
               .groups = "drop")
+  team_yrs <- team_yrs %>% left_join(top5, by = "Year")
+  if (split_pool) {
+    type_counts <- team_pool %>%
+      group_by(Year) %>%
+      summarize(n_hs = sum(Type == "Commit", na.rm = TRUE),
+                n_portal = sum(Type == "Transfer", na.rm = TRUE),
+                .groups = "drop")
+    team_yrs <- team_yrs %>%
+      left_join(type_counts, by = "Year") %>%
+      mutate(n_split = paste0(" (", coalesce(n_hs, 0L), " HS + ",
+                              coalesce(n_portal, 0L), " portal)"))
+  } else {
+    team_yrs$n_split <- ""
+  }
   team_yrs <- team_yrs %>%
-    left_join(top5, by = "Year") %>%
     mutate(
       ## clicking a dot PINS this card (app-level JS); the link inside the
       ## pinned card opens the class on 247Sports
       tip = glue(
-        "<b>{Year} class — {n} players</b><br/>{top_list}<br/>",
+        "<b>{Year} class — {n} players{n_split}</b><br/>{top_list}<br/>",
         '<a href="https://247sports.com/college/{team_slug}/season/',
         '{Year}-{tolower(sport)}/commits/" target="_blank">',
         "Open this class on 247Sports →</a><br/>",
@@ -1016,7 +1170,8 @@ plot_era_timeline <- function(size_data, team_slug, sport,
               p50 = median(val, na.rm = TRUE),
               p75 = quantile(val, 0.75, na.rm = TRUE), .groups = "drop")
 
-  y_rng <- range(c(team_yrs$val, conf_yrs$p25, conf_yrs$p75), na.rm = TRUE)
+  y_rng <- range(c(team_yrs$val, commit_yrs$val, conf_yrs$p25, conf_yrs$p75),
+                 na.rm = TRUE)
 
   p <- ggplot()
 
@@ -1043,18 +1198,34 @@ plot_era_timeline <- function(size_data, team_slug, sport,
                 fontface = "bold.italic", vjust = 1)
   }
 
+  ## the HS-commits-only series draws dashed UNDER the solid all-additions
+  ## line; no legend (interactive legends are broken under ggplot2 4.0) --
+  ## the caption says what dashed means
+  show_dash <- split_pool && nrow(commit_yrs) >= 2
+  dash_note <- if (show_dash) {
+    glue(" Dashed team line = HS commits only ",
+         "(solid includes portal transfers).")
+  } else ""
+
   p +
     geom_ribbon(data = conf_yrs, aes(x = Year, ymin = p25, ymax = p75),
                 fill = "grey75", alpha = 0.35) +
     geom_line(data = conf_yrs, aes(x = Year, y = p50),
               color = "grey45", linetype = "dashed", linewidth = 0.8) +
+    (if (show_dash) {
+      geom_line(data = commit_yrs, aes(x = Year, y = val),
+                color = hl["main"], linetype = "dashed",
+                linewidth = 0.9, alpha = 0.8)
+    }) +
     geom_line(data = team_yrs, aes(x = Year, y = val),
               color = hl["main"], linewidth = 1.5) +
     geom_point_interactive(
       data = team_yrs,
       aes(x = Year, y = val, size = n, tooltip = tip, data_id = Year),
       color = hl["main"]) +
-    scale_size_continuous(range = c(2.2, 6), name = "Commits in class",
+    ## pool-neutral: n counts the SELECTED pool (HS commits, + transfers, or
+    ## transfers only), so "Commits" would over-claim on mixed pools
+    scale_size_continuous(range = c(2.2, 6), name = "Players in class",
                           breaks = function(l) unique(round(pretty(l)))) +
     scale_x_continuous(breaks = seq(min(size_data$Year),
                                     max(size_data$Year), 1)) +
@@ -1065,11 +1236,13 @@ plot_era_timeline <- function(size_data, team_slug, sport,
       title = glue("{t_lab} by Coaching Era: {m$label}"),
       subtitle = glue(
         "Shaded bands = head-coach eras (recruiting-class attribution). ",
-        "Grey band = Big 12 team middle (25th–75th pct), dashed = median."),
+        "Grey band = Big 12 team middle (25th–75th pct), grey dashed = ",
+        "median."),
       x = "Class Year", y = m$label,
       caption = paste0("Tap or hover a class dot for its top-5 signees; pin ",
                        "it to open that class on 247Sports. Era assignment ",
-                       "is by class year.", scope_note(players_note))
+                       "is by class year.", dash_note,
+                       scope_note(players_note))
     ) +
     theme_girth()
 }
@@ -1098,13 +1271,14 @@ plot_distance_lab <- function(size_data, team_slug, sport,
               avg = mean(miles_away, na.rm = TRUE), .groups = "drop")
   med_all <- median(d$miles_away, na.rm = TRUE)
 
+  d$.p247 <- p247_url(d$Name, d$Year, sport, d$Type, profile_col(d))
   d <- d %>%
     mutate(
       tip = glue(
         "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
         "{miles_away} miles from campus<br/>From: {loc_dash(Location)}<br/>",
         "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
-        '<a href="{p247_url(Name, Year, sport, Type)}" ',
+        '<a href="{.p247}" ',
         'target="_blank">Open on 247Sports →</a><br/>',
         "<em>Tap the dot to pin this card</em>")
     )
@@ -1130,11 +1304,11 @@ plot_distance_lab <- function(size_data, team_slug, sport,
     labs(
       title = glue("{t_lab} {str_to_title(sport)}: Miles from Home by Class ({yr_rng})"),
       subtitle = glue(
-        "Each dot = one commit's distance from high school to campus. ",
+        "Each dot = one player's distance from hometown to campus. ",
         "Yellow band = 25th–75th percentile, orange = class average",
         "{ifelse(removed_n > 0, glue('. {removed_n} outliers hidden (1.5×IQR)'), '')}."),
       x = "Class Year", y = "Miles from Home",
-      caption = "Tap or hover any dot for the recruit card; click to open their 247 page. Transfers excluded (no HS location)."
+      caption = "Tap or hover any dot for the recruit card; click to open their 247 page. Portal transfers appear once a hometown is known for them."
     ) +
     theme_girth()
 }
@@ -1191,7 +1365,7 @@ plot_distance_box <- function(size_data, team_slug, sport) {
         '{x_cap} mi not shown.'), '')}"), 84),
       x = "Miles from Home", y = NULL,
       caption = paste("Tap or hover any dot for the recruit card. Distances need a",
-                      "high-school location, so portal transfers aren't shown.")
+                      "hometown, so portal transfers appear only once one is known.")
     ) +
     theme_girth()
 }
@@ -1262,13 +1436,14 @@ build_pipeline_map <- function(size_data, team_slug, sport,
              college_lat = as.numeric(college_lat),
              college_long = as.numeric(college_long))
     if (nrow(d) == 0) return(d)
+    d$.purl <- profile_col(d)
     ## spread players from the same school so dots don't fully overlap
     d %>%
       group_by(round(lat, 3), round(long, 3)) %>%
       mutate(lat = ifelse(n() > 1, jitter(lat, amount = 0.012), lat),
              long = ifelse(n() > 1, jitter(long, amount = 0.012), long)) %>%
       ungroup() %>%
-      mutate(URL = p247_url(Name, Year, sport, Type),
+      mutate(URL = p247_url(Name, Year, sport, Type, .purl),
              ## pc_link works in leaflet popups too -- the app's .pc-open
              ## listener is document-level, so map names open player cards
              popup = paste0(
@@ -1344,19 +1519,20 @@ build_pipeline_map <- function(size_data, team_slug, sport,
   map %>%
     addLegend(position = "topright", colors = legend_colors,
               labels = legend_labels, opacity = 0.9,
-              title = "HS hometowns") %>%
+              title = "Hometowns") %>%
     addControl(html = tags$div(
       style = "background: rgba(255,255,255,.85); padding: 3px 8px;
                border-radius: 4px; font-size: 11px; max-width: 290px;",
       tags$small(
         "Data: ", tags$a(href = "https://247sports.com",
                          "247Sports", target = "_blank"),
-        " — HS commits with mapped hometowns.",
+        " — players with mapped hometowns; transfers appear once a hometown
+         is known.",
         if (n_unmapped > 0) {
           tags$b(glue(" {n_unmapped} player{ifelse(n_unmapped == 1, '', 's')}
-                       in this window can't be mapped (portal transfers have
-                       no HS hometown; a few HS commits aren't geocoded
-                       yet)."))
+                       in this window can't be mapped yet (no hometown on
+                       file, which covers most portal transfers, or awaiting
+                       geocoding)."))
         })),
       position = "bottomleft")
 }
@@ -1867,10 +2043,12 @@ talent_composites <- function(size_data, seasons) {
   grid
 }
 
-## the over/under-achiever quadrant: 10-season averages per program
-plot_talent_results <- function(team_seasons, size_data, team_slug,
-                                compare_slug = NULL) {
-  hl <- highlight_colors(team_slug, compare_slug)
+## TABLE TWIN: the EXACT per-program frame plot_talent_results() draws.
+## Contract columns: School, talent, win_pct, seasons_n (+ the chart's own
+## extras -- slug rides along for data_id parity). attrs: value_label,
+## value_fmt (for the talent axis), yr_rng.
+quadrant_data <- function(team_seasons, size_data, team_slug,
+                          compare_slug = NULL) {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
   ## the season window shows up in the hover cards too, so a pinned card
   ## still says which seasons it summarizes
@@ -1884,12 +2062,14 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
     group_by(slug) %>%
     summarize(
       talent = mean(composite, na.rm = TRUE),
-      winpct = 100 * sum(wins) / sum(wins + losses),
+      win_pct = 100 * sum(wins) / sum(wins + losses),
       sp = mean(sp_rating, na.rm = TRUE),
       W = sum(wins), L = sum(losses),
+      seasons_n = dplyr::n(),
       best = paste0(year[which.max(wins)], " (", max(wins), " wins)"),
       .groups = "drop") %>%
     mutate(
+      School = slug,
       TeamName = team_label(slug),
       role = case_when(slug == team_slug ~ "main",
                        slug == cmp_safe ~ "compare",
@@ -1897,27 +2077,44 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
       tip = glue(
         "<b>{TeamName} ({yr_rng2})</b><br/>",
         "Talent composite: {round(talent, 1)}<br/>",
-        "Record {W}–{L} ({round(winpct)}% wins)<br/>",
+        "Record {W}–{L} ({round(win_pct)}% wins)<br/>",
         "Avg SP+: {round(sp, 1)} • Best season: {best}<br/>",
         "<em>Tap the dot to pin this card</em>"))
 
+  attr(agg, "value_label") <- "Talent composite (247 rating points)"
+  attr(agg, "value_fmt") <- "%.1f"
+  ## the chart's formatter closure (matches the hover card's rounding)
+  attr(agg, "value_fmt_fn") <- function(v) sprintf("%.1f", v)
+  attr(agg, "yr_rng") <- yr_rng2
+  agg
+}
+
+## the over/under-achiever quadrant: 10-season averages per program
+plot_talent_results <- function(team_seasons, size_data, team_slug,
+                                compare_slug = NULL) {
+  hl <- highlight_colors(team_slug, compare_slug)
+  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## single source of truth: the chart draws exactly the table twin's frame
+  agg <- quadrant_data(team_seasons, size_data, team_slug,
+                       compare_slug = compare_slug)
+
   med_t <- median(agg$talent, na.rm = TRUE)
-  med_w <- median(agg$winpct, na.rm = TRUE)
+  med_w <- median(agg$win_pct, na.rm = TRUE)
   role_cols <- c(main = unname(hl["main"]),
                  compare = ifelse(cmp_safe == "", "grey55",
                                   team_color(cmp_safe)),
                  other = "grey55")
   yr_rng <- paste0(min(team_seasons$year), "–", max(team_seasons$year))
 
-  ggplot(agg, aes(x = talent, y = winpct)) +
+  ggplot(agg, aes(x = talent, y = win_pct)) +
     geom_vline(xintercept = med_t, linetype = "dashed", color = "grey55") +
     geom_hline(yintercept = med_w, linetype = "dashed", color = "grey55") +
     ## Okabe-Ito blue/vermillion: color-blind-safe, and neither collides
     ## with a team's highlight color (the old red matched Arizona's)
-    annotate("text", x = min(agg$talent), y = max(agg$winpct),
+    annotate("text", x = min(agg$talent), y = max(agg$win_pct),
              label = "OVERACHIEVERS", hjust = 0, vjust = 0, size = 3.6,
              fontface = "bold", color = "#0072B2") +
-    annotate("text", x = max(agg$talent), y = min(agg$winpct),
+    annotate("text", x = max(agg$talent), y = min(agg$win_pct),
              label = "UNDERACHIEVERS", hjust = 1, vjust = 1, size = 3.6,
              fontface = "bold", color = "#D55E00") +
     geom_point_interactive(aes(color = role, tooltip = tip, data_id = slug),

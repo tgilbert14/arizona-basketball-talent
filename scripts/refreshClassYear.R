@@ -6,7 +6,9 @@
 ##   * ratings get re-ranked through the cycle (and were stored as rounded
 ##     integers -- borderline 89.x players looked like 90+ "blue chips")
 ##   * late/spring commits were missing entirely (e.g. 2026 basketball)
-## Also captures PORTAL TRANSFERS (Type = "Transfer") from the same pages.
+## Also captures PORTAL TRANSFERS (Type = "Transfer") from the same pages,
+## and each player's 247 profile href (ProfileUrl) so backfillProfiles.R can
+## later fill missing hometowns from the profile pages.
 ##
 ## Geocoded columns (lat/long etc.) are carried over for players already in
 ## the db; brand-new players get NA geo until the geocoding pipeline runs,
@@ -15,6 +17,13 @@
 ## Run from the project root:
 ##   Rscript scripts/refreshClassYear.R football 2026
 ##   Rscript scripts/refreshClassYear.R basketball 2026
+##   Rscript scripts/refreshClassYear.R football 2027 --allow-empty
+##
+## --allow-empty: a totally empty scrape exits 0 without touching the db
+## (no backup CSV, no delete, no write). This is how the nightly pipeline
+## probes MAX(Year)+1 before 247 opens the next cycle's pages; without the
+## flag an all-empty scrape is still a hard stop (a past year scraping to
+## zero rows means the source or selectors broke, never "no data yet").
 ## ===========================================================================
 
 suppressMessages({
@@ -45,6 +54,27 @@ norm_rating <- function(x) {
   ifelse(!is.na(v) & v <= 1.5, round(v * 100, 2), round(v, 2))
 }
 
+## normalized name key -- display names drift between scrapes
+## ("RJ Mosley" vs "R.J. Mosley"); used for the geo carry-forward join and
+## for pairing profile hrefs to parsed rows
+name_key <- function(x) tolower(gsub("[^a-z]", "", tolower(x)))
+
+## 247 hrefs arrive in two shapes: commits' name links are PROTOCOL-RELATIVE
+## ("//247sports.com/Player/<slug>-<id>/"), transfer anchors are absolute
+## college-scoped URLs. Normalize both to absolute https. Never prefix the
+## host onto a protocol-relative href -- the double host 404s.
+## Quotes, angle brackets, and spaces never appear in a clean profile URL;
+## an href carrying one is scraped-markup breakage (or an attribute-breakout
+## injection attempt) and is rejected outright.
+abs_247 <- function(href) {
+  bad <- grepl('["\'<> ]', href)
+  ifelse(is.na(href) | !nzchar(href) | bad, NA_character_,
+  ifelse(grepl("^//", href), paste0("https:", href),
+  ifelse(grepl("^https?://", href), href,
+  ifelse(grepl("^/", href), paste0("https://247sports.com", href),
+         NA_character_))))
+}
+
 ## ---------------------------------------------------------------------------
 ## scrape the commits page for one school/year/sport
 ## (same node selectors as the original updatingSQLdatabase.R pipeline)
@@ -63,6 +93,23 @@ scrape_class <- function(slug, sport, year) {
 
   pr <- scores[scores != "Rating"]
   pr <- pr[!grepl("^Commit", pr)]
+
+  ## profile hrefs: text + href pulled from the SAME name-link node list, so
+  ## the name-to-url pairing can never drift. (The stride-8 text vector above
+  ## is filtered before pairing -- indexing hrefs into it would misalign.)
+  link_nodes <- html_nodes(page, ".ri-page__name-link")
+  link_map <- data.frame(
+    .pkey = name_key(html_text(link_nodes, trim = TRUE)),
+    url = abs_247(html_attr(link_nodes, "href")),
+    stringsAsFactors = FALSE)
+  link_map <- link_map[nzchar(link_map$.pkey) & !is.na(link_map$url), ,
+                       drop = FALSE]
+  ## two players sharing a name key is ambiguous -- keeping the FIRST url
+  ## would attach the wrong player's profile (and later the wrong hometown),
+  ## so drop BOTH and let the row fall back to NA / the search URL
+  link_dup <- duplicated(link_map$.pkey) |
+    duplicated(link_map$.pkey, fromLast = TRUE)
+  link_map <- link_map[!link_dup, , drop = FALSE]
 
   commits <- NULL
   if (length(pr) >= 8) {
@@ -97,7 +144,8 @@ scrape_class <- function(slug, sport, year) {
       Type = "Commit",
       stringsAsFactors = FALSE
     ) %>%
-      filter(!is.na(Ranking))
+      filter(!is.na(Ranking)) %>%
+      mutate(ProfileUrl = link_map$url[match(name_key(Name), link_map$.pkey)])
   }
 
   ## portal transfers on the same page (ratings marked "(T)")
@@ -122,7 +170,24 @@ scrape_class <- function(slug, sport, year) {
         Type = "Transfer",
         stringsAsFactors = FALSE)
     })
-    transfers <- bind_rows(rows) %>% filter(!is.na(Ranking))
+    ## transfer profile hrefs live on the same portal list; the anchors
+    ## interleave empty-text scholarshipdistribution links, so keep only
+    ## anchors with visible text AND a /player/ href
+    t_nodes <- html_nodes(page, ".portal-list_itm a")
+    t_href <- html_attr(t_nodes, "href")
+    t_text <- html_text(t_nodes, trim = TRUE)
+    t_keep <- !is.na(t_href) & grepl("/player/", t_href, ignore.case = TRUE) &
+      nzchar(t_text)
+    t_map <- data.frame(.pkey = name_key(t_text[t_keep]),
+                        url = abs_247(t_href[t_keep]),
+                        stringsAsFactors = FALSE)
+    ## same ambiguity rule as link_map: drop ALL duplicated keys, never
+    ## guess which of two same-named players owns the href
+    t_dup <- duplicated(t_map$.pkey) | duplicated(t_map$.pkey, fromLast = TRUE)
+    t_map <- t_map[!t_dup, , drop = FALSE]
+    transfers <- bind_rows(rows) %>%
+      filter(!is.na(Ranking)) %>%
+      mutate(ProfileUrl = t_map$url[match(name_key(Name), t_map$.pkey)])
   }
 
   out <- bind_rows(commits, transfers)
@@ -164,6 +229,8 @@ validate_class <- function(df, sport) {
 ## main
 ## ---------------------------------------------------------------------------
 args <- commandArgs(trailingOnly = TRUE)
+allow_empty <- "--allow-empty" %in% args
+args <- args[args != "--allow-empty"]
 sport <- if (length(args) >= 1) tolower(args[1]) else "football"
 year <- if (length(args) >= 2) as.integer(args[2]) else 2026
 tbl <- paste0("recruit_class_", sport)
@@ -217,9 +284,31 @@ if (length(failed_slugs) > 0) {
   cat("FAILED schools (rows kept, re-run later):",
       paste(failed_slugs, collapse = ", "), "\n")
 }
+## the ahead-year probe: before 247 opens a cycle's pages, every school
+## scrapes to nothing -- that is expected, not a failure. Exit here, BEFORE
+## the db connection opens and BEFORE the backup CSV is written (a backup of
+## a run that changed nothing would only mislead a later restore).
+if (allow_empty && nrow(fresh) == 0) {
+  cat("no rows yet for ", sport, " ", year,
+      " -- nothing to write (allow-empty)\n", sep = "")
+  quit(save = "no", status = 0)
+}
 stopifnot(nrow(fresh) > 0)
 
 conn <- dbConnect(RSQLite::SQLite(), here::here("data", "recruiting.db"))
+
+## self-migrating: the schema-align projection below keeps ONLY columns the
+## table already has, so ProfileUrl must exist in the db BEFORE names(old)
+## is read -- otherwise every scraped href would be silently dropped
+for (mig_tbl in c("recruit_class_football", "recruit_class_basketball")) {
+  mig_cols <- dbGetQuery(conn, paste0("PRAGMA table_info(", mig_tbl, ")"))$name
+  if (!"ProfileUrl" %in% mig_cols) {
+    dbExecute(conn, paste0("ALTER TABLE ", mig_tbl,
+                           " ADD COLUMN ProfileUrl TEXT"))
+    cat("Schema migration:", mig_tbl, "gained ProfileUrl TEXT\n")
+  }
+}
+
 old <- dbGetQuery(conn, paste0("SELECT * FROM ", tbl))
 
 ## backup before replacing anything (timestamped so repeated runs on the
@@ -229,17 +318,17 @@ write_csv(old, here::here("backups", paste0(
   tbl, "_before_refresh_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")))
 
 ## carry geo + bookkeeping columns over from the existing rows.
-## join on a NORMALIZED name key -- display names drift between scrapes
-## (e.g. "RJ Mosley" vs "R.J. Mosley") and an exact join would silently
-## drop their map coordinates
-name_key <- function(x) tolower(gsub("[^a-z]", "", tolower(x)))
+## join on the NORMALIZED name key (name_key, defined up top) -- an exact
+## join would silently drop map coordinates when display names drift.
+## ProfileUrl rides along renamed so a page that stops serving a player's
+## href (layout drift) keeps the previously captured URL
 geo_cols <- c("count", "loc_inside_parens", "location_name", "Location_Clean",
               "lat", "long", "School_Clean", "School_City",
               "college_lat", "college_long")
 carry <- old %>%
   filter(Year == year) %>%
   mutate(.key = name_key(Name)) %>%
-  select(.key, School, all_of(geo_cols)) %>%
+  select(.key, School, all_of(geo_cols), .old_profile = ProfileUrl) %>%
   distinct(.key, School, .keep_all = TRUE)
 
 ## campus coords are constant per school -- fill for brand-new players
@@ -251,10 +340,14 @@ campus <- old %>%
             c_city = first(School_City[!is.na(School_City)]),
             .groups = "drop")
 
+## defensive: a page whose layout hides every name link still binds cleanly
+if (!"ProfileUrl" %in% names(fresh)) fresh$ProfileUrl <- NA_character_
+
 fresh_full <- fresh %>%
   mutate(sport = sport, .key = name_key(Name)) %>%
   left_join(carry, by = c(".key", "School")) %>%
-  select(-.key) %>%
+  mutate(ProfileUrl = ifelse(is.na(ProfileUrl), .old_profile, ProfileUrl)) %>%
+  select(-.key, -.old_profile) %>%
   left_join(campus, by = "School") %>%
   mutate(college_lat = ifelse(is.na(college_lat), c_lat, college_lat),
          college_long = ifelse(is.na(college_long), c_long, college_long),

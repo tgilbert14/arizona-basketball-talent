@@ -78,6 +78,24 @@ keyboard path to the pin action.
 - No `.rscignore` — the shinyapps bundle ships ~10MB of backups/insights/scripts. **Owner:** `caravan` / `ship`.
 - Showcase wow-list (from the review): one-tap 1200×630 share card, tale-of-the-tape versus poster, bump/slope rank-evolution chart, deep-link/bookmarkable state, kiosk mode, watchlist tray. **Owner:** `fable` + `bowerstone`.
 
+### Shipped 2026-07-11 PM (the v8 feature wave — sweep items 1-4 + year-ahead)
+
+- **Table-twin toggles** on beef board / class retention / weight-room board / talent quadrant:
+  single-source `*_data()` builders, savant rank rows (quadrant uses a neutral navy ramp), scoped
+  captions, full keyboard/aria semantics, visibility-based swap (P1 a11y CLEARED for the boards).
+- **247 ProfileUrls** captured for classes 2023-2027 (100% coverage); exact player links everywhere;
+  **1,634 transfer hometowns backfilled** from profiles + geocoded (1,480 accepted, 0 bbox rejects;
+  ~66 internationals honestly unmapped) — transfers now render on the Distance Lab + Recruiting Map.
+- **What-changed-since-last-visit strip** (server-computed snapshot handshake, context-mismatch guard)
+  + **auto-published weekly brief** at /brief/ (name-drift collapse, coverage-vs-activity disclosure).
+- **Quick wins**: hover spotlight on all 18 charts (opts_hover_inv + nearest), branded disconnect card,
+  era split-pool dashed overlay + pool-split tooltips + pool-neutral legend, beef n-chips.
+- **Year-ahead**: nightly scrapes MAX(Year)+1 with --allow-empty (self-governing rollover — the Dec
+  manual seed is dead); **2027 seeded** (271 fb + 7 bb commits); dynamic ERA_MAX_CLASS; war-room +
+  retention pinned to the arriving class (class of N enrolls fall N).
+- Suite training: the U.A. "Girth v8 patterns" class landed these patterns in connor/cyrus/ship +
+  the four guild playbooks + 15 LESSONS lines (TG-Data-Apps a47d6a5).
+
 ### Verified backlog from the 2026-07-11 beef-up sweep (29-agent, all ideas adversarially verified)
 
 High-impact, ranked by impact-per-effort (details in the sweep transcript; each is grounded in real code):

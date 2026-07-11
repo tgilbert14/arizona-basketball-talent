@@ -16,9 +16,15 @@
 ## Stages:
 ##   S0 preflight   lock, quick_check, 247 reachability probe, prune
 ##   S1 snapshot    content hash + whole-file db copy to backups/
-##   S2 ingest      refreshClassYear.R (both sports, newest cycle),
+##   S2 ingest      refreshClassYear.R (both sports, newest cycle, PLUS an
+##                  ahead-year probe of MAX(Year)+1 with --allow-empty: the
+##                  night 247 opens the next cycle's pages its rows land,
+##                  MAX(Year) advances, and the normal scrape owns the new
+##                  cycle from then on -- rollover is automatic, no manual
+##                  seed; an ahead-year failure only ever warns),
 ##                  scrapeRosters.R (both sports), fetchOutcomes.R (CFBD)
-##   S3 enrich      geocodeMissing.R (non-fatal)
+##   S3 enrich      backfillProfiles.R (hometowns from 247 profiles, cap 40)
+##                  then geocodeMissing.R (both non-fatal)
 ##   S4 validate    auditRefreshHoles.R + validateRefresh.R vs the snapshot;
 ##                  either failing restores the snapshot and aborts
 ##   S5 ledger      content hash again -> changed?; write refresh_log row
@@ -26,7 +32,10 @@
 ##                  updateManifest.R to re-checksum manifest.json; a failure
 ##                  in either degrades the night and blocks publishing (never
 ##                  ship a db/rds/manifest mismatch)
-##   S7 commit+push git add db + precomputed + manifest.json, commit, push
+##   S6.5 brief     weeklyBrief.R rewrites docs/brief/ when data changed
+##                  (non-fatal)
+##   S7 commit+push git add db + precomputed + manifests + docs brief,
+##                  commit, push
 ##   S8 deploy      scripts/deployApp.R (shinyapps.io)
 ##   S9 verify      GET both live URLs, 2 retries 30 s apart (idle-sleep)
 ##   S10 report     manifests, summary, gh alert, release lock
@@ -139,7 +148,11 @@ read_scraper_ua <- function(path = file.path("scripts", "refreshClassYear.R")) {
 ## run a child Rscript with the orchestrator's db connections all CLOSED
 ## (every db helper here is short-lived, so nothing is ever open when this
 ## is called). Captures output for the log + failed-school harvesting.
-run_child <- function(label, script, extra_args = character(0)) {
+## harvest_failures = FALSE for the ahead-year probes: before 247 opens a
+## cycle's pages EVERY school legitimately gives up, and listing all 16 as
+## "fetch problems" in the summary/commit/alert would cry wolf nightly.
+run_child <- function(label, script, extra_args = character(0),
+                      harvest_failures = TRUE) {
   cat("\n==== ", label, " ====\n", sep = "")
   t0 <- Sys.time()
   out <- suppressWarnings(system2(
@@ -154,11 +167,13 @@ run_child <- function(label, script, extra_args = character(0)) {
       " (", mins, " min)\n", sep = "")
 
   ## harvest per-school failures from the child's own log lines
-  m <- regmatches(out, regexec(
-    "^\\s*([a-z0-9-]+)\\s+(GAVE UP|DEMOTED|FAILED:|scraped EMPTY)", out))
-  slugs <- vapply(m[lengths(m) > 0], function(x) x[2], character(1))
-  if (length(slugs) > 0) {
-    failed_schools <<- unique(c(failed_schools, slugs))
+  if (harvest_failures) {
+    m <- regmatches(out, regexec(
+      "^\\s*([a-z0-9-]+)\\s+(GAVE UP|DEMOTED|FAILED:|scraped EMPTY)", out))
+    slugs <- vapply(m[lengths(m) > 0], function(x) x[2], character(1))
+    if (length(slugs) > 0) {
+      failed_schools <<- unique(c(failed_schools, slugs))
+    }
   }
   list(ok = status == 0, status = status)
 }
@@ -401,8 +416,10 @@ tryCatch({
   ## -------------------------------------------------------------------------
   banner("S2 ingest")
   if (no_classes) {
-    stages$classes_football   <- "skipped"
-    stages$classes_basketball <- "skipped"
+    stages$classes_football         <- "skipped"
+    stages$classes_basketball       <- "skipped"
+    stages$classes_ahead_football   <- "skipped"
+    stages$classes_ahead_basketball <- "skipped"
     cat("[classes] skipped by flag\n")
   } else {
     s2_ran <- TRUE
@@ -414,6 +431,24 @@ tryCatch({
       if (!r$ok) {
         notes <- c(notes, paste0("refreshClassYear.R ", sp, " ", yr,
                                  " exited ", r$status))
+      }
+    }
+    ## probe one cycle ahead with --allow-empty: before 247 opens the pages
+    ## the child exits 0 without touching the db; the night rows first land,
+    ## MAX(Year) advances and the loop above owns the new cycle from the
+    ## NEXT run -- that is the rollover, no manual seed. Ahead-year problems
+    ## are only ever a warn: the current cycle's data must publish anyway.
+    for (sp in c("football", "basketball")) {
+      yr_ahead <- newest_year(db_path, sp) + 1L
+      r <- run_child(paste("classes ahead:", sp, yr_ahead),
+                     "refreshClassYear.R",
+                     c(sp, as.character(yr_ahead), "--allow-empty"),
+                     harvest_failures = FALSE)
+      stages[[paste0("classes_ahead_", sp)]] <- if (r$ok) "ok" else "warn"
+      if (!r$ok) {
+        notes <- c(notes, paste0("refreshClassYear.R ", sp, " ", yr_ahead,
+                                 " (ahead-year probe) exited ", r$status,
+                                 " (non-fatal; retried next night)"))
       }
     }
   }
@@ -467,10 +502,20 @@ tryCatch({
   ## -------------------------------------------------------------------------
   banner("S3 enrich")
   if (no_geocode) {
+    stages$profiles <- "skipped"
     stages$geocode <- "skipped"
-    cat("[geocode] skipped by flag\n")
+    cat("[enrich] skipped by flag\n")
   } else {
     s2_ran <- TRUE
+    ## profile hometown backfill FIRST, so the Locations it fills get
+    ## geocoded on the same night (both stages non-fatal by design)
+    r <- run_child("profile hometown backfill", "backfillProfiles.R",
+                   c("both", "--max-fetches", "40"))
+    stages$profiles <- if (r$ok) "ok" else "warn"
+    if (!r$ok) {
+      notes <- c(notes, paste0("backfillProfiles.R exited ", r$status,
+                               " (non-fatal; hometowns retry next run)"))
+    }
     r <- run_child("geocode new players", "geocodeMissing.R")
     stages$geocode <- if (r$ok) "ok" else "warn"
     if (!r$ok) {
@@ -560,6 +605,24 @@ tryCatch({
   }
 
   ## -------------------------------------------------------------------------
+  ## S6.5 weekly brief -- rewrite docs/brief/ so the landing site's
+  ## auto-written "what changed" page rides the same push (non-fatal: a
+  ## brief failure keeps the old page, never blocks publishing the data)
+  ## -------------------------------------------------------------------------
+  banner("S6.5 weekly brief")
+  if (!changed) {
+    stages$brief <- "skipped"
+    cat("[brief] skipped -- content unchanged, the published brief stands\n")
+  } else {
+    r <- run_child("weekly brief", "weeklyBrief.R")
+    stages$brief <- if (r$ok) "ok" else "warn"
+    if (!r$ok) {
+      notes <- c(notes, paste0("weeklyBrief.R exited ", r$status,
+                               " (non-fatal; docs/brief keeps the old page)"))
+    }
+  }
+
+  ## -------------------------------------------------------------------------
   ## S7 commit + push (Connect Cloud republishes straight off the push)
   ## -------------------------------------------------------------------------
   banner("S7 commit + push")
@@ -620,8 +683,12 @@ tryCatch({
     }
     msg_args <- c("-m", shQuote(msg, type = "cmd"))
     for (l in body_lines) msg_args <- c(msg_args, "-m", shQuote(l, type = "cmd"))
+    ## machine-written files ONLY -- docs/index.html is human-authored and
+    ## must never ride an unattended commit (auto-publishing WIP landing-page
+    ## edits is worse than a stale brief link)
     st <- git_run("add", "--", "data/recruiting.db", "precomputed",
-                  "manifest.json", "data/refresh-manifest.json")
+                  "manifest.json", "data/refresh-manifest.json",
+                  "docs/brief")
     where <- "add"
     if (st == 0) { st <- git_run("commit", msg_args); where <- "commit" }
     if (st == 0) {

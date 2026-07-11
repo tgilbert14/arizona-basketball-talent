@@ -71,6 +71,15 @@ SIZE_YEARS <- range(c(size_football$Year, size_basketball$Year))
 ## only ~4%), and the smaller default keeps first renders fast
 DEFAULT_YEARS <- c(SIZE_YEARS[2] - 3, SIZE_YEARS[2])
 
+## recruiting runs a year ahead of arrival: the class of year N signs in
+## Dec N-1 / Feb N and ENROLLS fall N, and the next cycle's 247 pages go
+## live (with commits) the summer before. So once the db carries that next
+## cycle, the newest class is NOT the one arriving this season -- the War
+## Room pins its "incoming adds" to the class that enrolls this fall
+## (capped at the newest cycle actually in the db).
+arriving_class <- as.integer(format(Sys.Date(), "%Y"))
+war_room_class <- min(SIZE_YEARS[2], arriving_class)
+
 ## named choices for team pickers (slug values, pretty labels)
 team_choices <- setNames(TEAM_CONFIG$slug, TEAM_CONFIG$team_name)
 
@@ -110,6 +119,147 @@ ctx_note <- function(...) {
     div(class = "ctx-note", icon("circle-info"), tags$span(...)))
 }
 
+## ---- TABLE TWINS -----------------------------------------------------------
+## Each of the four boards ships with an accessible <table> sibling built
+## from the SAME *_data() frame the chart draws (single source of truth in
+## R/girth_plots.R), so chart and table can never disagree. A header link
+## swaps the views with a client-side class flip: the girafe is never
+## re-rendered and never display:none'd (the 0-width first-paint trap), and
+## the table renders lazily via input$twin_<chart_id>.
+
+## the understated header toggle: "view the numbers" <-> "view the chart".
+## JS (see the twin-toggle script) flips the box class, the visible label,
+## and aria-pressed, and reports the state as input$twin_<chart_id>.
+## a11y contract: role="button" because aria-pressed promises button
+## semantics on what is markup-wise a link, and a CONSTANT aria-label
+## ("table view") so the accessible name never swaps with the state --
+## aria-pressed alone carries on/off, while sighted users still get the
+## swapping visible label.
+twin_toggle <- function(chart_id) {
+  actionLink(
+    inputId = paste0("twin_link_", chart_id),
+    label = "view the numbers",
+    class = "twin-toggle",
+    `data-chart` = chart_id,
+    role = "button",
+    `aria-label` = "table view",
+    `aria-pressed` = "false",
+    title = "Swap between the chart and its table of numbers")
+}
+
+## percentile-bar fill along a low -> high ramp; hex computed here so the
+## table ships as plain inline-styled HTML. Default = the shared blue (low)
+## -> grey (mid) -> red (high) board ramp; the quadrant twin passes a
+## neutral navy ramp instead (its chart already spends Okabe-Ito blue and
+## vermillion on the over/underachiever vocabulary)
+twin_bar_color <- function(pct, ramp = c("#0072B2", "#98A4B3", "#D55E00")) {
+  m <- grDevices::colorRamp(ramp)(pmin(pmax(pct, 0), 100) / 100)
+  grDevices::rgb(m[, 1], m[, 2], m[, 3], maxColorValue = 255)
+}
+
+## build the semantic table twin of a board frame (a *_data() result).
+## The frame must carry School/TeamName/role plus the named value + n
+## columns; attrs value_label + value_fmt drive the value column
+## (value_fmt_fn preferred when present -- AvgHeight renders 6'4.5" instead
+## of raw inches). `extras` = named list of functions of the SORTED frame,
+## each returning a pre-formatted character vector (extra columns between
+## the value and the n chip). `caption_note` = the chart's scope line
+## (source + window + pool), rendered dim after the caption so the table
+## never drops the context its chart's subtitle carried. `bar_ramp` = the
+## percentile-bar color stops (see twin_bar_color). Returns one HTML string.
+twin_table_html <- function(frame, caption, value_col = "value",
+                            n_col = "n",
+                            n_chip = function(n) paste0("n=", n),
+                            extras = NULL, caption_note = NULL,
+                            bar_ramp = c("#0072B2", "#98A4B3", "#D55E00")) {
+  esc <- htmltools::htmlEscape
+  d <- as.data.frame(frame)
+  d <- d[order(-d[[value_col]]), , drop = FALSE]
+  n_row <- nrow(d)
+  vals <- d[[value_col]]
+
+  vlab <- attr(frame, "value_label") %||% "Value"
+  fmt_fn <- attr(frame, "value_fmt_fn")
+  if (is.null(fmt_fn)) {
+    fspec <- attr(frame, "value_fmt") %||% "%.1f"
+    fmt_fn <- function(v) sprintf(fspec, v)
+  }
+
+  ## percentile within the field (leader = 100, last = 0) -> bar width + ramp
+  fin <- is.finite(vals)
+  pct <- rep(0, n_row)
+  if (sum(fin) > 1) {
+    pct[fin] <- 100 * (rank(vals[fin], ties.method = "average") - 1) /
+      (sum(fin) - 1)
+  } else if (sum(fin) == 1) {
+    pct[fin] <- 100
+  }
+
+  team <- esc(as.character(d$TeamName))
+  logo <- TEAM_CONFIG$logo[match(d$School, TEAM_CONFIG$slug)]
+  logo_img <- ifelse(is.na(logo), "",
+                     paste0("<img src=\"", logo,
+                            "\" alt=\"\" width=\"22\"/>"))
+  val_txt <- rep("n/a", n_row)
+  if (any(fin)) {
+    val_txt[fin] <- vapply(vals[fin],
+                           function(v) as.character(fmt_fn(v)), character(1))
+  }
+  chip_txt <- vapply(d[[n_col]], function(n) as.character(n_chip(n)),
+                     character(1))
+
+  ex_heads <- names(extras) %||% character(0)
+  ex_cells <- lapply(extras, function(f) as.character(f(d)))
+
+  role <- as.character(d$role)
+  row_cls <- ifelse(role == "main", " class=\"twin-main\"",
+                    ifelse(role == "compare", " class=\"twin-compare\"", ""))
+
+  ## one concise announcement per row for keyboard / screen-reader users,
+  ## e.g. "Arizona, 231.4 average weight (lbs), rank 3 of 16, n=27"
+  extra_aria <- rep("", n_row)
+  for (i in seq_along(ex_heads)) {
+    extra_aria <- paste0(extra_aria, ", ", ex_heads[i], " ", ex_cells[[i]])
+  }
+  aria <- esc(paste0(as.character(d$TeamName), ", ", val_txt, " ",
+                     tolower(vlab), ", rank ", seq_len(n_row), " of ", n_row,
+                     extra_aria, ", ", chip_txt), attribute = TRUE)
+
+  extra_th <- if (length(ex_heads)) {
+    paste0("<th scope=\"col\">", esc(ex_heads), "</th>", collapse = "")
+  } else ""
+  extra_td <- rep("", n_row)
+  for (i in seq_along(ex_heads)) {
+    extra_td <- paste0(extra_td, "<td class=\"twin-extra\">",
+                       esc(ex_cells[[i]]), "</td>")
+  }
+
+  rows <- paste0(
+    "<tr tabindex=\"0\"", row_cls, " aria-label=\"", aria, "\">",
+    "<td class=\"twin-rank\">", seq_len(n_row), "</td>",
+    "<td class=\"twin-team\">", logo_img, team, "</td>",
+    "<td class=\"twin-bar-cell\"><div class=\"twin-bar\" aria-hidden=\"true\"",
+    " style=\"width:", sprintf("%.1f", pct), "%;background:",
+    twin_bar_color(pct, bar_ramp), ";\"></div></td>",
+    "<td class=\"twin-val\">", esc(val_txt), "</td>",
+    extra_td,
+    "<td><span class=\"twin-n\">", esc(chip_txt), "</span></td>",
+    "</tr>", collapse = "")
+
+  cap_note <- if (is.null(caption_note) || !nzchar(caption_note)) "" else
+    paste0(" <span class=\"twin-cap-note\">", esc(caption_note), "</span>")
+
+  paste0(
+    "<div class=\"twin-scroll\"><table class=\"twin-table\">",
+    "<caption>", esc(caption), cap_note, "</caption>",
+    "<thead><tr><th scope=\"col\">#</th><th scope=\"col\">Team</th>",
+    "<th scope=\"col\">vs the field</th>",
+    "<th scope=\"col\">", esc(vlab), "</th>",
+    extra_th,
+    "<th scope=\"col\">n</th></tr></thead>",
+    "<tbody>", rows, "</tbody></table></div>")
+}
+
 ## public app: visitors see a generic error message, never raw R errors
 ## (full errors still reach the server logs for debugging)
 options(shiny.sanitize.errors = TRUE)
@@ -128,7 +278,7 @@ INFO_MODALS <- list(
     title = "Size Lab — sources & methods",
     body = paste0("
       <p><strong>Source:</strong> 247Sports team commit pages, classes
-      2016–2026, all 16 Big 12 programs (full scrape Jan 2026; the active
+      2016–", SIZE_YEARS[2], ", all 16 Big 12 programs (full scrape Jan 2026; the active
       class kept current by the nightly refresh",
       if (!is.null(last_refresh_label))
         paste0(" — data updated ", last_refresh_label),
@@ -249,9 +399,10 @@ INFO_MODALS <- list(
       <p><strong>Locations:</strong> each commit's high school, geocoded from
       the 247Sports profile location. Shaded shapes = your team's state
       footprint (smoothed convex hulls).</p>
-      <p><strong>Gaps:</strong> transfers have no HS location; players added
-      in the June 2026 refresh appear in stats but not on the map until the
-      geocoding pipeline runs for them.</p>"),
+      <p><strong>Gaps:</strong> transfers from recent cycles (2023 on) gain
+      a map location as the nightly refresh captures hometowns from their
+      247Sports profiles; earlier transfer classes stay unmapped. New
+      commits reach the map after the nightly geocoding pass.</p>"),
   info_distance = list(
     title = "Distance Lab — sources & methods",
     body = "
@@ -627,6 +778,88 @@ ui <- dashboardPage(
         .box, .vb-link .small-box, .cb-chevron { transition: none !important; }
       }
 
+      /* ---- table twins: the numbers view behind each board ---- */
+      .twin-toggle { display: inline-block; margin-left: 10px;
+        padding: 1px 9px; color: inherit; opacity: 0.85; font-size: 10.5px;
+        font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
+        vertical-align: middle; border: 1px solid rgba(255,255,255,0.45);
+        border-radius: 10px; cursor: pointer; text-decoration: none; }
+      .twin-toggle:hover, .twin-toggle:focus { background: #FFD200;
+        border-color: #FFD200; color: #0C234B; opacity: 1;
+        text-decoration: none; }
+      .gi-tablewrap { display: none; }
+      .box.gi-table-mode .gi-tablewrap { display: block; }
+      /* the chart collapses but KEEPS its width -- display:none here would
+         blank a girafe that re-renders while hidden (the 0-width trap) */
+      .box.gi-table-mode .gi-chartwrap { visibility: hidden; height: 0;
+        overflow: hidden; }
+      /* table mode shelves the pin workbench; toggling back restores it */
+      .box.gi-table-mode .pinned-card, .box.gi-table-mode svg.pin-lines,
+      .box.gi-table-mode .tap-badge { display: none !important; }
+      .twin-scroll { overflow-x: auto; }
+      .twin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .twin-table caption { caption-side: top; text-align: left;
+        font-weight: 700; color: #0C234B; font-family: 'Rubik', sans-serif;
+        padding: 2px 4px 8px 4px; }
+      /* the chart's scope (source + window + pool), dimmed after the title */
+      .twin-table caption .twin-cap-note { font-weight: 400;
+        font-size: 11.5px; color: #8a94a3; }
+      .twin-table th { font-size: 10.5px; text-transform: uppercase;
+        letter-spacing: 0.6px; color: #64748b; text-align: left;
+        padding: 4px 8px; border-bottom: 2px solid #d8e0ea; }
+      .twin-table td { padding: 5px 8px; border-bottom: 1px solid #eef2f6;
+        vertical-align: middle; }
+      .twin-table tr:focus { outline: 2px solid #FFD200;
+        outline-offset: -2px; }
+      .twin-rank { color: #64748b; font-weight: 600; width: 34px; }
+      .twin-team { white-space: nowrap; }
+      .twin-team img { height: 20px; width: auto; margin-right: 7px;
+        vertical-align: middle; }
+      .twin-bar-cell { width: 28%; min-width: 110px; }
+      .twin-bar { height: 12px; border-radius: 3px; min-width: 2px; }
+      .twin-val { font-weight: 700; color: #0C234B; white-space: nowrap; }
+      .twin-n { display: inline-block; background: #f2f5f9;
+        border: 1px solid #d8e0ea; border-radius: 10px; padding: 0 7px;
+        font-size: 11px; color: #64748b; white-space: nowrap; }
+      tr.twin-main { background: #FFF8E6; }
+      tr.twin-main td:first-child { border-left: 3px solid #AB0520; }
+      tr.twin-main td { font-weight: 600; }
+      tr.twin-compare { background: #f2f5f9; }
+      tr.twin-compare td:first-child { border-left: 3px solid #0C234B; }
+      .twin-empty { color: #64748b; font-size: 13px; padding: 14px 6px; }
+
+      /* ---- branded disconnect overlay ---- */
+      #shiny-disconnected-overlay { background: #0C234B !important;
+        opacity: 0.55 !important; }
+      .gi-reconnect { position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+        z-index: 99999; display: flex; align-items: center;
+        justify-content: center; padding: 20px; }
+      .gi-reconnect-card { background: #ffffff; border-radius: 12px;
+        border-top: 4px solid #AB0520; padding: 24px 26px; max-width: 340px;
+        width: 100%; text-align: center;
+        box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+      .gi-reconnect-card h3 { margin: 0 0 8px 0;
+        font-family: 'Rubik', sans-serif; font-weight: 800; color: #0C234B;
+        font-size: 20px; }
+      .gi-reconnect-card p { margin: 0 0 16px 0; color: #64748b;
+        font-size: 13.5px; }
+      .gi-reconnect-btn { background: #0C234B; color: #ffffff; border: none;
+        border-radius: 8px; padding: 9px 26px; font-weight: 700;
+        font-size: 14px; cursor: pointer; min-height: 44px; }
+      .gi-reconnect-btn:hover, .gi-reconnect-btn:focus { background: #FFD200;
+        color: #0C234B; }
+
+      /* ---- 'since your last visit' strip (Home) ---- */
+      .lastvisit-strip { display: flex; flex-wrap: wrap; gap: 6px;
+        align-items: baseline; background: #ffffff;
+        border-left: 4px solid #0C234B; border-radius: 8px;
+        padding: 8px 14px; margin-bottom: 16px; font-size: 13px;
+        color: #41546a; box-shadow: 0 2px 8px rgba(12,35,75,0.08); }
+      .lastvisit-strip .lv-lead { font-variant: small-caps;
+        letter-spacing: 0.5px; font-weight: 700; color: #AB0520; }
+      .lastvisit-strip b { color: #0C234B; }
+      .lastvisit-strip .lv-pool { color: #8A949C; font-size: 12px; }
+
       /* ---- mobile polish ---- */
       @media (max-width: 767px) {
         .hero { padding: 14px 16px; border-radius: 8px; }
@@ -644,6 +877,9 @@ ui <- dashboardPage(
         .snap-stat .num { font-size: 19px; }
         .content { padding: 8px; }
         .pinned-card { max-width: 86vw; }
+        .twin-table { font-size: 12px; }
+        .twin-bar-cell { min-width: 70px; }
+        .gi-reconnect-card { max-width: 88vw; }
       }
     ")),
       ## report the window width so charts can render larger text on phones;
@@ -666,6 +902,19 @@ ui <- dashboardPage(
           Shiny.setInputValue('stored_team', saved);
           Shiny.addCustomMessageHandler('saveTeam', function(slug) {
             try { localStorage.setItem('gi_team', slug); } catch (e) {}
+          });
+          /* WHAT CHANGED: the device's prior-visit snapshot goes up ONCE
+             (read BEFORE the server can overwrite it below); the server
+             recomputes today's numbers and only compares against these. */
+          var snap = 'none';
+          try {
+            var rawSnap = localStorage.getItem('gi_snapshot');
+            if (rawSnap) snap = JSON.parse(rawSnap);
+          } catch (e) {}
+          Shiny.setInputValue('stored_snapshot', snap);
+          Shiny.addCustomMessageHandler('saveSnapshot', function(s) {
+            try { localStorage.setItem('gi_snapshot', JSON.stringify(s)); }
+            catch (e) {}
           });
           /* PLAYER CARD: server sends the record; we spin up the card */
           Shiny.addCustomMessageHandler('playerCard', function(p) {
@@ -736,6 +985,64 @@ ui <- dashboardPage(
           if (e.key !== 'Escape') return;
           var bd = document.querySelector('.pc-backdrop');
           if (bd) bd.remove();
+        });
+      ")),
+      ## TABLE TWINS: the header link swaps a board between its chart and
+      ## its table with a class flip -- the girafe is never re-rendered,
+      ## never display:none'd, and the table renders lazily through
+      ## input$twin_<chart>. The branded disconnect card lives here too.
+      tags$script(HTML("
+        window.giTwinFlip = function(t) {
+          var box = t.closest('.box');
+          if (!box) return;
+          var on = !box.classList.contains('gi-table-mode');
+          box.classList.toggle('gi-table-mode', on);
+          t.setAttribute('aria-pressed', on ? 'true' : 'false');
+          /* only the VISIBLE label swaps -- the accessible name is the
+             constant aria-label ('table view') set in twin_toggle(), so
+             aria-pressed alone announces the state */
+          t.textContent = on ? 'view the chart' : 'view the numbers';
+          if (window.Shiny && Shiny.setInputValue) {
+            Shiny.setInputValue('twin_' + t.getAttribute('data-chart'), on);
+          }
+          /* nudge the girafe to re-measure when it comes back into view */
+          window.dispatchEvent(new Event('resize'));
+        };
+        document.addEventListener('click', function(e) {
+          var t = e.target.closest('.twin-toggle');
+          if (!t) return;
+          e.preventDefault();
+          window.giTwinFlip(t);
+        });
+        /* the toggle is a link styled as a control: Space must work like
+           Enter does (aria-pressed promises button semantics) */
+        document.addEventListener('keydown', function(e) {
+          if (e.key !== ' ' && e.key !== 'Spacebar') return;
+          var t = e.target && e.target.closest ?
+            e.target.closest('.twin-toggle') : null;
+          if (!t) return;
+          e.preventDefault();
+          window.giTwinFlip(t);
+        });
+        /* a lost connection gets a calm, branded card instead of the stock
+           grey curtain (shiny:disconnected is jQuery-triggered -- native
+           listeners never see it) */
+        $(document).on('shiny:disconnected', function() {
+          if (document.querySelector('.gi-reconnect')) return;
+          var d = document.createElement('div');
+          d.className = 'gi-reconnect';
+          d.innerHTML =
+            '<div class=\"gi-reconnect-card\" role=\"alertdialog\"' +
+            ' aria-label=\"Session paused\">' +
+            '<h3>Session paused</h3>' +
+            '<p>The connection was lost - the server may have idled to ' +
+            'save resources.</p>' +
+            '<button type=\"button\" class=\"gi-reconnect-btn\">' +
+            'Reconnect</button></div>';
+          document.body.appendChild(d);
+          var b = d.querySelector('.gi-reconnect-btn');
+          b.addEventListener('click', function() { location.reload(); });
+          b.focus();
         });
       ")),
       ## on phones the sidebar is a full overlay -- close it after a nav
@@ -830,6 +1137,10 @@ ui <- dashboardPage(
              window changed under it). Collapsing a box likewise. */
           $(document).on('shiny:value', function(ev) {
             if (!ev.target || !ev.target.closest) return;
+            /* table twins render inside the chart boxes, but a table render
+               doesn't invalidate the chart's pins -- when the DATA changes
+               the girafe's own shiny:value still clears them */
+            if (ev.target.closest('.gi-tablewrap')) return;
             var box = ev.target.closest('.box');
             if (box && box.querySelector('.pinned-card')) clearBoxPins(box);
           });
@@ -1007,13 +1318,16 @@ ui <- dashboardPage(
             htmlToImage.toPng(node, {
               pixelRatio: 2, backgroundColor: bg || '#ffffff',
               filter: function(n) {
-                /* UI chrome never ships in an export: toasts, badges, and
-                   the pinned cards' close/grip/hint controls */
+                /* UI chrome never ships in an export: toasts, badges, the
+                   pinned cards' close/grip/hint controls, the chart/table
+                   toggles, and the personal last-visit strip */
                 return !(n.classList && (n.classList.contains('gi-toast') ||
                                          n.classList.contains('tap-badge') ||
                                          n.classList.contains('pin-close') ||
                                          n.classList.contains('pin-resize') ||
-                                         n.classList.contains('pin-hint')));
+                                         n.classList.contains('pin-hint') ||
+                                         n.classList.contains('twin-toggle') ||
+                                         n.classList.contains('lastvisit-strip')));
               }
             }).then(function(dataUrl) {
               var a = document.createElement('a');
@@ -1238,6 +1552,12 @@ ui <- dashboardPage(
                 ))
               ),
               fluidRow(
+                ## 'since your last visit': renders ONLY when this device saw
+                ## the same team/sport/pool on an earlier date and the class
+                ## numbers moved -- otherwise nothing (no empty box)
+                column(width = 12, uiOutput("last_visit_strip"))
+              ),
+              fluidRow(
                 box(
                   title = textOutput("class_snap_title"),
                   status = "danger", solidHeader = TRUE, width = 5,
@@ -1354,11 +1674,15 @@ ui <- dashboardPage(
               fluidRow(
                 column(width = 5,
                        box(
-                         title = "Big 12 Beef Board",
+                         title = tagList("Big 12 Beef Board",
+                                         twin_toggle("beef_board")),
                          status = "primary", solidHeader = TRUE,
                          width = NULL, collapsible = TRUE,
-                         spin(girafeOutput("beef_board", height = "640px"),
-                                     color = "#0C234B"),
+                         div(class = "gi-chartwrap",
+                             spin(girafeOutput("beef_board", height = "640px"),
+                                  color = "#0C234B")),
+                         div(class = "gi-tablewrap",
+                             uiOutput("beef_twin")),
                          ctx_note("'Big 12' means today's 16 members, applied
                            retroactively — Arizona, ASU, Colorado, and Utah
                            joined in 2024, so their earlier classes were
@@ -1406,11 +1730,15 @@ ui <- dashboardPage(
                        box(
                          title = tagList(textOutput("wr_board_box_title",
                                                     inline = TRUE),
-                                         info_btn("info_wr")),
+                                         info_btn("info_wr"),
+                                         twin_toggle("wr_board")),
                          status = "primary", solidHeader = TRUE,
                          width = NULL, collapsible = TRUE,
-                         spin(girafeOutput("wr_board", height = "560px"),
-                                     color = "#0C234B"),
+                         div(class = "gi-chartwrap",
+                             spin(girafeOutput("wr_board", height = "560px"),
+                                  color = "#0C234B")),
+                         div(class = "gi-tablewrap",
+                             uiOutput("wr_twin")),
                          footer = htmlOutput("wr_footer")
                        )),
                 column(width = 6,
@@ -1426,11 +1754,15 @@ ui <- dashboardPage(
               fluidRow(
                 box(
                   title = tagList("Class Retention: who keeps their signees?",
-                                  info_btn("info_retention")),
+                                  info_btn("info_retention"),
+                                  twin_toggle("class_retention")),
                   status = "primary", solidHeader = TRUE,
                   width = 12, collapsible = TRUE,
-                  spin(girafeOutput("class_retention", height = "560px"),
-                       color = "#0C234B"),
+                  div(class = "gi-chartwrap",
+                      spin(girafeOutput("class_retention", height = "560px"),
+                           color = "#0C234B")),
+                  div(class = "gi-tablewrap",
+                      uiOutput("retention_twin")),
                   footer = HTML("<em style='color:#888;'>The portal-era
                     scoreboard: of the last four signing classes, how many
                     players are still in the building?</em>")
@@ -1462,10 +1794,10 @@ ui <- dashboardPage(
                                        selected = "AvgRating", width = "100%")),
                     column(width = 8,
                            div(style = "padding-top:25px; color:#777;",
-                               HTML("<em>Always shows the full 2016–2026
+                               HTML(paste0("<em>Always shows the full 2016–", SIZE_YEARS[2], "
                                     history. Tap or hover a class dot for its top-5
                                     signees; click to open the class on
-                                    247Sports.</em>")))
+                                    247Sports.</em>"))))
                   )
                 )
               ),
@@ -1605,11 +1937,15 @@ ui <- dashboardPage(
               ),
               fluidRow(
                 box(
-                  title = "The Over/Underachiever Quadrant",
+                  title = tagList("The Over/Underachiever Quadrant",
+                                  twin_toggle("talent_quadrant")),
                   status = "primary", solidHeader = TRUE,
                   width = 12, collapsible = TRUE,
-                  spin(girafeOutput("talent_quadrant", height = "520px"),
-                              color = "#0C234B"),
+                  div(class = "gi-chartwrap",
+                      spin(girafeOutput("talent_quadrant", height = "520px"),
+                           color = "#0C234B")),
+                  div(class = "gi-tablewrap",
+                      uiOutput("quadrant_twin")),
                   ctx_note("2020 was the COVID season — most programs played
                     5–10 games, so windows that include 2020 mix shortened
                     seasons into the win percentages."),
@@ -1688,8 +2024,10 @@ ui <- dashboardPage(
                   solidHeader = TRUE, width = 12,
                   collapsible = TRUE, collapsed = FALSE,
                   footer = HTML("<span style='color:#888;'>
-                    Distances need a high-school hometown, so portal transfers
-                    can't appear here.</span>"),
+                    Distances need a mapped hometown. Transfers from recent
+                    cycles (2023 on) join as the nightly refresh captures
+                    theirs from their 247Sports profiles; earlier transfer
+                    classes stay unmapped.</span>"),
                   spin(girafeOutput("box_plot", height = "340px"),
                               color = "#0C234B"))
               )
@@ -1710,9 +2048,9 @@ ui <- dashboardPage(
                       Treat small differences between teams accordingly.</p>
                     <ul style='font-size:14px; line-height:1.7;'>
                       <li><strong>Recruiting classes</strong>: 247Sports commit
-                        lists, classes 2016–2026, all 16 Big 12 programs,
+                        lists, classes from 2016 on, all 16 Big 12 programs,
                         football and basketball. Portal transfers are included
-                        for 2021–2026; the 'Players' control switches between
+                        from 2021 on; the 'Players' control switches between
                         HS commits, commits + transfers, or transfers only.
                         Every chart caption states which pool it shows.</li>
                       <li><strong>Current rosters</strong>: 247Sports team
@@ -1729,9 +2067,10 @@ ui <- dashboardPage(
                         Reality Check). Treat any listed height as ±1 inch.</li>
                       <li><strong>Locations</strong>: high schools are geocoded,
                         and each result is checked against its claimed state
-                        before it can appear on the map. Transfers have no
-                        high-school origin, so they don't appear in
-                        distance-based views.</li>
+                        before it can appear on the map. Transfers from recent
+                        cycles (2023 on) join the distance-based views as the
+                        nightly refresh captures hometowns from their 247Sports
+                        profiles; earlier transfer classes stay unmapped.</li>
                       <li><strong>Blue chips (90+)</strong>: counted from the
                         rating on 247's team pages. 247's Composite runs about
                         a point lower for borderline players, so counts can
@@ -1917,6 +2256,10 @@ server <- function(input, output, session) {
     }
     req(nrow(hit) == 1)
     slug <- hit$School[1]
+    ## captured 247 profile deep-link when the scraper has one (works for
+    ## commits AND transfers); p247_url falls back to the search URLs
+    purl <- if ("ProfileUrl" %in% names(hit)) hit$ProfileUrl[1] else NA
+    has_purl <- !is.na(purl) && !purl %in% c("", "NA")
     session$sendCustomMessage("playerCard", list(
       name = hit$Name[1], team = team_label(slug),
       logo = TEAM_CONFIG$logo[match(slug, TEAM_CONFIG$slug)],
@@ -1934,8 +2277,9 @@ server <- function(input, output, session) {
                      paste0(format(hit$miles_away[1], big.mark = ","),
                             " mi from campus")),
       coach = ifelse(is.na(hit$Coach[1]), "", hit$Coach[1]),
-      url = p247_url(hit$Name[1], hit$Year[1], g_sport(), hit$Type[1]),
-      urlLabel = ifelse(identical(hit$Type[1], "Transfer"),
+      url = p247_url(hit$Name[1], hit$Year[1], g_sport(), hit$Type[1],
+                     profile_url = purl),
+      urlLabel = ifelse(identical(hit$Type[1], "Transfer") && !has_purl,
                         "Find their 247Sports profile →",
                         "Full 247Sports profile →"),
       src = "Size + rating as listed by 247Sports at commitment"))
@@ -2242,6 +2586,94 @@ server <- function(input, output, session) {
     HTML(paste0("<ul class='talking-points'>",
                 paste0("<li>", head(pts, 4), "</li>", collapse = ""),
                 "</ul>"))
+  })
+
+  ## ---- WHAT CHANGED SINCE THE LAST VISIT -----------------------------------
+  ## The device stores a compact class snapshot (localStorage key
+  ## 'gi_snapshot', written by the saveSnapshot observer below). On the next
+  ## visit the stored copy comes back once through input$stored_snapshot,
+  ## gets validated HARD (forged localStorage must neither error the app nor
+  ## inject HTML -- every field is type-checked and only validated numbers
+  ## ever surface), and the Home strip compares it against TODAY'S
+  ## recomputed numbers under the same team + sport + player pool.
+  prior_snap <- reactiveVal(NULL)
+  observeEvent(input$stored_snapshot, once = TRUE, {
+    s <- input$stored_snapshot
+    ok <- tryCatch({
+      chr1 <- function(x) is.character(x) && length(x) == 1 &&
+        !is.na(x) && nzchar(x)
+      num1 <- function(x) is.numeric(x) && length(x) == 1 && is.finite(x)
+      is.list(s) &&
+        all(c("team", "sport", "pool", "year", "n", "blue", "avg",
+              "visited") %in% names(s)) &&
+        chr1(s$team) && s$team %in% TEAM_CONFIG$slug &&
+        chr1(s$sport) && s$sport %in% c("football", "basketball") &&
+        chr1(s$pool) && s$pool %in% c("commit", "both", "transfer") &&
+        num1(s$year) && num1(s$n) && num1(s$blue) && num1(s$avg) &&
+        chr1(s$visited) && !is.na(as.Date(s$visited))
+    }, error = function(e) FALSE)
+    if (isTRUE(ok)) {
+      prior_snap(list(
+        team = s$team, sport = s$sport, pool = s$pool,
+        year = as.integer(s$year), n = as.integer(s$n),
+        blue = as.integer(s$blue), avg = round(as.numeric(s$avg), 1),
+        visited = as.Date(s$visited)))
+    }
+  })
+
+  ## keep the device's snapshot current under whatever settings are active
+  ## (the strip compares against the copy captured BEFORE these overwrites)
+  observe({
+    req(input$g_team)
+    snap <- tryCatch(class_snapshot(size_window(), input$g_team),
+                     error = function(e) NULL)
+    if (is.null(snap) || !is.finite(snap$avg_rating)) return(invisible(NULL))
+    session$sendCustomMessage("saveSnapshot", list(
+      team = input$g_team, sport = g_sport(),
+      pool = input$g_type %||% "both",
+      year = snap$year, n = snap$n, blue = snap$blue,
+      avg = snap$avg_rating, visited = as.character(Sys.Date())))
+  })
+
+  output$last_visit_strip <- renderUI({
+    p <- prior_snap()
+    if (is.null(p)) return(NULL)
+    req(input$g_team)
+    ## only compare like with like: same team, sport, and player pool,
+    ## stored on an earlier day, about the same class year
+    if (!identical(p$team, input$g_team) ||
+        !identical(p$sport, g_sport()) ||
+        !identical(p$pool, input$g_type %||% "both")) return(NULL)
+    if (!isTRUE(p$visited < Sys.Date())) return(NULL)
+    snap <- tryCatch(class_snapshot(size_window(), input$g_team),
+                     error = function(e) NULL)
+    if (is.null(snap) ||
+        !identical(as.integer(snap$year), p$year)) return(NULL)
+    parts <- character(0)
+    ## before/after, never "additions": the delta is NET (a +1 can be two
+    ## commits and a decommit), so the honest wording is the size change
+    if (snap$n != p$n) {
+      parts <- c(parts, glue(
+        "class size <b>{p$n} &rarr; {snap$n}</b>"))
+    }
+    if (is.finite(snap$avg_rating) &&
+        abs(snap$avg_rating - p$avg) >= 0.05) {
+      parts <- c(parts, glue(
+        "class avg <b>{sprintf('%.1f', p$avg)} &rarr; ",
+        "{sprintf('%.1f', snap$avg_rating)}</b>"))
+    }
+    if (snap$blue != p$blue) {
+      parts <- c(parts, glue(
+        "blue-chips <b>{p$blue} &rarr; {snap$blue}</b>"))
+    }
+    if (length(parts) == 0) return(NULL)
+    date_lab <- sub(" 0", " ", format(p$visited, "%b %d"), fixed = TRUE)
+    div(class = "lastvisit-strip",
+        tags$span(class = "lv-lead",
+                  glue("Since your last visit ({date_lab}):")),
+        HTML(paste(parts, collapse = " &middot; ")),
+        tags$span(class = "lv-pool",
+                  glue("Class of {snap$year}, {players_lab()}")))
   })
 
   ## ---- SIZE LAB --------------------------------------------------------------------
@@ -2575,16 +3007,18 @@ server <- function(input, output, session) {
   })
 
   ## ---- ANALYST BRIEF (DEFENSIVE WAR ROOM) ----------------------------------------------------
-  ## the newest cycle's additions (HS + portal, ALL types regardless of the
-  ## global radio) that aren't on the 247 roster page yet -- the bodies that
-  ## are arriving (e.g. June portal adds)
+  ## the ARRIVING class's additions (HS + portal, ALL types regardless of
+  ## the global radio) that aren't on the 247 roster page yet -- the bodies
+  ## showing up this fall (e.g. June portal adds). Pinned to war_room_class,
+  ## NOT the newest cycle in the db: once next year's cycle is scraped, its
+  ## signees enroll a season out and don't belong on this fit board.
   incoming_adds <- reactive({
     req(input$g_team)
     if (g_sport() != "football" || is.null(roster_now())) return(NULL)
     nkey <- function(x) tolower(gsub("[^a-z]", "", tolower(x)))
     ros_keys <- nkey(roster_now()$Name[roster_now()$School == input$g_team])
     size_football %>%
-      filter(School == input$g_team, Year == SIZE_YEARS[2],
+      filter(School == input$g_team, Year == war_room_class,
              !nkey(Name) %in% ros_keys)
   })
 
@@ -2598,7 +3032,9 @@ server <- function(input, output, session) {
       "No roster rows for this team."))
     girafe_try(girafe_wrap(plot_roster_335(roster_now(), input$g_team,
                                 incoming = incoming_adds(),
-                                incoming_label = paste0("'", SIZE_YEARS[2] %% 100,
+                                ## the gold stack names the PINNED arriving
+                                ## class, matching incoming_adds() above
+                                incoming_label = paste0("'", war_room_class %% 100,
                                                         " ADDS"),
                                 proj_gain = proj_gain_r()),
                 w = 8.5, h = 6.4, name = png_name("335-fit-board")), "335 fit board")
@@ -2696,6 +3132,119 @@ server <- function(input, output, session) {
       name = png_name("talent-vs-results-quadrant")), "talent quadrant")
   })
 
+  ## ---- TABLE TWINS: the numbers view behind the four boards ----------------
+  ## Each twin is built from the SAME *_data() call, with the SAME reactive
+  ## args, as its chart render above -- the two views cannot disagree. The
+  ## req(input$twin_*) gate plus suspendWhenHidden = FALSE means the table
+  ## computes exactly when its toggle is on: never while the chart view is
+  ## active, and without relying on Shiny's visibility polling of the
+  ## display:none container.
+  output$beef_twin <- renderUI({
+    req(isTRUE(input$twin_beef_board))
+    req(input$size_metric, input$size_pos, input$size_source)
+    validate(need(nrow(filter_pos(beef_source_data(), input$size_pos)) > 0,
+                  "No players for this position filter."))
+    b <- beef_board_data(beef_source_data(), input$g_team, g_sport(),
+                         metric = input$size_metric,
+                         pos_filter = input$size_pos,
+                         compare_slug = g_cmp(),
+                         source_label = beef_source_label(),
+                         players_note = players_lab())
+    ## carry the chart's scope onto the table: source + window + pool in
+    ## commit mode; roster mode has no year window, so say that instead
+    cap_note <- if (is.null(beef_source_label())) {
+      glue("{str_to_title(g_sport())} commits {attr(b, 'yr_rng')}. ",
+           "Showing: {players_lab()}.")
+    } else {
+      glue("{beef_source_label()}; the year window does not apply to ",
+           "current roster weights.")
+    }
+    HTML(twin_table_html(
+      b, caption = glue("Big 12 Beef Board - ",
+                        "{pos_filter_label(input$size_pos)} - table view"),
+      caption_note = cap_note))
+  })
+  outputOptions(output, "beef_twin", suspendWhenHidden = FALSE)
+
+  output$retention_twin <- renderUI({
+    req(isTRUE(input$twin_class_retention))
+    validate(need(!is.null(roster_now()),
+                  "Run scripts/scrapeRosters.R to add current rosters."))
+    src <- if (g_sport() == "football") size_football else size_basketball
+    b <- retention_board_data(src %>% dplyr::filter(Type == "Commit"),
+                              roster_now(), input$g_team,
+                              compare_slug = g_cmp())
+    ## the chart's subtitle names the four classes measured -- so must the
+    ## table (cls_years = the last four completed cycles, from the frame)
+    cy <- attr(b, "cls_years")
+    HTML(twin_table_html(
+      b, caption = "Class Retention: who keeps their signees? - table view",
+      caption_note = glue("HS signees from the {min(cy)}-{max(cy)} classes ",
+                          "vs the current roster.")))
+  })
+  outputOptions(output, "retention_twin", suspendWhenHidden = FALSE)
+
+  output$wr_twin <- renderUI({
+    req(isTRUE(input$twin_wr_board))
+    validate(need(!is.null(roster_now()),
+                  "Run scripts/scrapeRosters.R to add current rosters."))
+    validate(need(nrow(wr_data_r()) > 0, "No matched signees in this window."))
+    dir <- input$wr_direction %||% "gain"
+    if (dir == "loss") {
+      validate(need(any(wr_data_r()$WeightGain < 0),
+                    "No slimmed-down signees in this window."))
+    }
+    b <- wr_board_data(wr_data_r(), input$g_team, g_sport(),
+                       compare_slug = g_cmp(), direction = dir)
+    ## the chart's pool: the global year window, HS signees only (the
+    ## Weight Room is defined as HS-signee development -- see wr_data_r)
+    yrs <- g_years_d()
+    HTML(twin_table_html(
+      b, caption = ifelse(
+        dir == "gain",
+        "The Weight Room Effect: pounds added per year - table view",
+        "The Cut Room: pounds trimmed per slimmer - table view"),
+      caption_note = glue("Classes {yrs[1]}-{yrs[2]}; matched HS signees ",
+                          "still on the roster only.")))
+  })
+  outputOptions(output, "wr_twin", suspendWhenHidden = FALSE)
+
+  output$quadrant_twin <- renderUI({
+    req(isTRUE(input$twin_talent_quadrant))
+    validate(need(g_sport() == "football",
+                  "Season outcomes are football-only for now."))
+    validate(need(!is.null(team_seasons),
+                  "Run scripts/fetchOutcomes.R (needs a free CFBD key) to add season records."))
+    yrs <- g_years_d()
+    ts_window <- team_seasons %>%
+      filter(year >= yrs[1], year <= yrs[2])
+    if (nrow(ts_window) == 0) {
+      return(div(class = "twin-empty",
+                 glue("No completed seasons in {yrs[1]}-{yrs[2]} - widen ",
+                      "the year window to see the table.")))
+    }
+    b <- quadrant_data(ts_window,
+                       size_football %>% filter(Year <= max(ts_window$year)),
+                       input$g_team, compare_slug = g_cmp())
+    extras <- list("Win %" = function(d) sprintf("%.0f%%", d$win_pct))
+    if ("sp" %in% names(b)) {
+      extras[["Avg SP+"]] <- function(d) {
+        ifelse(is.finite(d$sp), sprintf("%.1f", d$sp), "n/a")
+      }
+    }
+    HTML(twin_table_html(
+      b, caption = glue("The Over/Underachiever Quadrant ",
+                        "({attr(b, 'yr_rng')}) - table view"),
+      value_col = "talent", n_col = "seasons_n",
+      n_chip = function(n) paste0(n, ifelse(n == 1, " season", " seasons")),
+      extras = extras,
+      ## neutral navy: the quadrant chart reserves Okabe-Ito blue and
+      ## vermillion for over/underachiever, so a blue->red bar ramp here
+      ## would collide with that vocabulary
+      bar_ramp = c("#d8e0ea", "#0C234B")))
+  })
+  outputOptions(output, "quadrant_twin", suspendWhenHidden = FALSE)
+
   output$team_scoreboard <- renderGirafe({
     validate(need(g_sport() == "football",
                   "Season outcomes are football-only for now."))
@@ -2767,8 +3316,9 @@ server <- function(input, output, session) {
     req(input$g_team, input$g_years)
     team_w <- size_window() %>% filter(School == input$g_team)
     validate(need(nrow(team_w) > 0, "No recruits in this window."))
-    ## say on the map itself how many window players CAN'T be mapped
-    ## (transfers have no HS hometown; a few HS commits lack geocodes)
+    ## say on the map itself how many window players CAN'T be mapped yet
+    ## (transfers appear once the nightly profile backfill captures a
+    ## hometown; a few HS commits lack geocodes)
     n_unmapped <- sum(is.na(suppressWarnings(as.numeric(team_w$lat))) |
                         is.na(suppressWarnings(as.numeric(team_w$long))))
     build_pipeline_map(size_window(), input$g_team, g_sport(),
@@ -2776,7 +3326,8 @@ server <- function(input, output, session) {
   })
 
   ## v4.4: themed interactive rebuild (the sourced scripts/box_plot.R is
-  ## retired); transfers can't appear -- no high-school origin to measure from
+  ## retired); transfers appear once the nightly profile backfill captures a
+  ## hometown -- until then there is no origin to measure from
   output$box_plot <- renderGirafe({
     req(input$g_team, input$g_years)
     d <- size_window() %>%

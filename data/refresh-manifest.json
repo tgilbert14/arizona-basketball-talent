@@ -1,7 +1,7 @@
 {
-  "run_id": "20260711_102247",
-  "started_at": "2026-07-11 10:22:47",
-  "finished_at": "2026-07-11 10:22:50",
+  "run_id": "20260711_125411",
+  "started_at": "2026-07-11 12:54:11",
+  "finished_at": "2026-07-11 12:54:14",
   "status": "noop",
   "changed": false,
   "row_counts": {
@@ -17,13 +17,17 @@
     "snapshot": "ok",
     "classes_football": "skipped",
     "classes_basketball": "skipped",
+    "classes_ahead_football": "skipped",
+    "classes_ahead_basketball": "skipped",
     "rosters_football": "skipped",
     "rosters_basketball": "skipped",
     "records": "skipped",
+    "profiles": "skipped",
     "geocode": "skipped",
     "audit": "ok",
     "validate": "ok",
     "precompute": "skipped",
+    "brief": "skipped",
     "push": "skipped",
     "deploy": "skipped",
     "verify": "skipped"

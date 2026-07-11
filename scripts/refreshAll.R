@@ -7,20 +7,26 @@
 ## Steps (each script keeps its own safety rails -- per-school replace,
 ## retries, timestamped backups, validation gates):
 ##   1. classes   refreshClassYear.R for the newest cycle, both sports
-##                (commits + portal transfers; ratings re-rank all cycle)
+##                (commits + portal transfers; ratings re-rank all cycle),
+##                then a MAX(Year)+1 probe with --allow-empty (exits 0
+##                without touching the db until 247 opens those pages)
 ##   2. rosters   scrapeRosters.R, both sports (heights/weights/classes)
-##   3. geocode   geocodeMissing.R (new commits -> map, state-bbox checked)
+##   3. geocode   backfillProfiles.R (missing hometowns from 247 profile
+##                pages, capped) then geocodeMissing.R (players -> map,
+##                state-bbox checked)
 ##   4. audit     auditRefreshHoles.R (restores any school-year a failed
 ##                fetch wiped)
 ##   5. records   fetchOutcomes.R (CFBD season records + SP+; needs the
 ##                CFBD_API_KEY in ~/.Renviron; skip until a season ends)
+##   6. brief     weeklyBrief.R (rewrites docs/brief/, the landing site's
+##                auto-written "what changed" page)
 ##
 ## Skip flags: no-classes, no-rosters, no-geocode, no-audit, no-records,
 ##             no-precompute
 ##
-## To START A NEW CYCLE (e.g. the 2027 classes appear on 247): run once
-##   Rscript scripts/refreshClassYear.R football 2027
-## after that, this script picks 2027 up automatically (newest year in db).
+## New cycles roll over on their own: the ahead-year probe writes the first
+## 2027 rows the run after 247 opens those pages, MAX(Year) advances, and
+## the newest-cycle scrape owns 2027 from then on. No manual seed needed.
 ## ---------------------------------------------------------------------------
 
 suppressMessages({
@@ -69,6 +75,14 @@ if (!"no-classes" %in% skip) {
     results[paste("classes", sp, yr)] <-
       run_step(paste("classes:", sp, yr), "refreshClassYear.R", c(sp, yr))
   }
+  ## probe one cycle ahead (same rollover mechanics as the nightly run):
+  ## exits 0 without touching the db until 247 opens the ahead-year pages
+  for (sp in c("football", "basketball")) {
+    yr <- newest_year(sp) + 1L
+    results[paste("classes ahead", sp, yr)] <-
+      run_step(paste("classes ahead:", sp, yr), "refreshClassYear.R",
+               c(sp, yr, "--allow-empty"))
+  }
 }
 if (!"no-rosters" %in% skip) {
   for (sp in c("football", "basketball")) {
@@ -77,6 +91,11 @@ if (!"no-rosters" %in% skip) {
   }
 }
 if (!"no-geocode" %in% skip) {
+  ## backfill first: the hometowns it fills from 247 profile pages get
+  ## geocoded by the very next step
+  results["profiles"] <- run_step("profile hometown backfill",
+                                  "backfillProfiles.R",
+                                  c("both", "--max-fetches", "40"))
   results["geocode"] <- run_step("geocode new players", "geocodeMissing.R")
 }
 if (!"no-audit" %in% skip) {
@@ -97,6 +116,9 @@ if (!"no-precompute" %in% skip) {
                                     "precomputeDefaults.R")
   results["manifest"] <- run_step("update manifest", "updateManifest.R")
 }
+## rewrite the landing site's auto-written "what changed" brief so a manual
+## refresh keeps docs/brief/ in step with the data
+results["brief"] <- run_step("weekly brief", "weeklyBrief.R")
 
 after <- table_counts()
 

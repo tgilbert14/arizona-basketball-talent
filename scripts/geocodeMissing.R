@@ -11,6 +11,10 @@
 ##   3. rows with no parseable "City, ST" (international players etc.) are
 ##      skipped and reported, never guessed
 ##
+## Covers ANY row with a Location string but no coordinates -- commits from
+## the scrape, and transfers once backfillProfiles.R fills their hometowns
+## from the 247 profile pages.
+##
 ## Run from the project root (OSM is rate-limited to ~1 query/second):
 ##   Rscript scripts/geocodeMissing.R            # both sports
 ## ===========================================================================
@@ -97,11 +101,12 @@ all_rejects <- list()
 
 for (tbl in c("recruit_class_football", "recruit_class_basketball")) {
   cat("\n=====", tbl, "=====\n")
+  ## no Type filter: transfers gain Location strings via backfillProfiles.R
+  ## and deserve map dots exactly like commits
   todo <- dbGetQuery(conn, paste0(
     "SELECT rowid AS rid, Name, School, Year, Location, State FROM ", tbl,
     " WHERE (lat IS NULL OR lat = '' OR lat = 'NA')",
-    " AND Location IS NOT NULL AND Location != ''",
-    " AND Type = 'Commit'"))
+    " AND Location IS NOT NULL AND Location != ''"))
   if (nrow(todo) == 0) { cat("nothing to geocode\n"); next }
 
   todo <- cbind(todo, parse_loc(todo$Location))

@@ -187,7 +187,15 @@ girafe_build <- function(p, w = 11.5, h = 6.5, name = "big12-girth-index",
         "background-color:#0C234B;color:white;padding:8px;",
         "border-radius:6px;font-size:13px;"),
         offx = 25, offy = -20, delay_mouseout = 1200),
-      ggiraph::opts_hover(css = "stroke:#0C234B;stroke-width:2px;cursor:pointer;"),
+      ## nearest_distance makes hover touch-forgiving: a tap within ~30px
+      ## snaps to the closest interactive element (verified present in the
+      ## installed ggiraph 0.9.6 via formals(opts_hover))
+      ggiraph::opts_hover(
+        css = "stroke:#0C234B;stroke-width:2px;cursor:pointer;",
+        nearest_distance = 30),
+      ## spotlight: everything NOT hovered dims, so the hovered element and
+      ## its teammates read instantly on busy charts
+      ggiraph::opts_hover_inv(css = "opacity:0.3;transition:opacity 0.15s;"),
       ggiraph::opts_selection(type = "none"),
       ggiraph::opts_selection_key(type = "none"),
       ggiraph::opts_toolbar(saveaspng = TRUE, pngname = name)

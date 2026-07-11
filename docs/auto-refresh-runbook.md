@@ -13,7 +13,10 @@ transcript log. Stages, in order:
 1. **lock + snapshot** -- take `logs/refresh.lock`, copy the db to
    `backups/pre_run_<ts>.db` before anything touches it
 2. **classes** -- `refreshClassYear.R`, newest cycle, both sports
-   (commits + portal; per-school replace, never a blind wipe)
+   (commits + portal; per-school replace, never a blind wipe), then an
+   ahead-year probe of `MAX(Year)+1` per sport with `--allow-empty`
+   (exits 0 without touching the db until 247 opens those pages; a probe
+   failure only ever degrades the night to `warn`, never aborts it)
 3. **rosters** -- `scrapeRosters.R`, both sports
 4. **geocode** -- `geocodeMissing.R` for new commits (state-bbox checked)
 5. **records** -- `fetchOutcomes.R` (CFBD; needs `CFBD_API_KEY`; a no-op
@@ -109,15 +112,19 @@ lock older than 3 hours as stale on its own).
 Compare a suspect db against a snapshot at any time:
 `Rscript scripts/validateRefresh.R backups/pre_run_<ts>.db`
 
-## New-cycle rollover (manual, roughly Dec 2026)
+## New-cycle rollover (automatic)
 
-The nightly refresh always re-scrapes the NEWEST class year in the db, so a
-new cycle needs one manual seed when 247Sports opens the 2027 pages:
+Every night, after re-scraping the newest class year in the db, the
+pipeline probes one year ahead (`MAX(Year)+1`, both sports) with
+`refreshClassYear.R --allow-empty`. Until 247Sports opens those pages the
+probe scrapes zero rows and exits 0 without touching the db -- no backup
+CSV, no delete, no write. The night the pages go live, the probe writes the
+first ahead-year rows, `MAX(Year)` advances, and the normal newest-cycle
+scrape owns the new cycle from the next run onward. No manual seed needed.
 
-    Rscript scripts/refreshClassYear.R football 2027
-    Rscript scripts/refreshClassYear.R basketball 2027
-
-After that the nightly run picks 2027 up automatically.
+One thing stays human-curated: the ERA coach rows. When a staff changes
+(new head coach, new cycle attribution), update the coach-era tables by
+hand -- the scraper only moves recruiting data, never coach attribution.
 
 ## Known risks
 
