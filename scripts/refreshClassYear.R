@@ -136,8 +136,10 @@ scrape_class <- function(slug, sport, year) {
 ## plausibility gate: if 247 shifts the stride-8 page layout, fields land in
 ## the wrong columns and parse to garbage. A row FAILS when any NON-NA field
 ## is implausible (NA never fails -- transfers carry NA by design). A school
-## is demoted when >30% of its rows fail, or when it parsed rows but every
-## Ranking is NA. Returns list(ok, reason).
+## is demoted when >30% of its rows fail AND at least 2 rows fail (small
+## basketball classes sit at n=6, where one genuinely odd row is 16.7% --
+## a single bad row must never demote a school), or when it parsed rows but
+## every Ranking is NA. Returns list(ok, reason).
 ## ---------------------------------------------------------------------------
 validate_class <- function(df, sport) {
   bad_height <- !is.na(df$Height) &
@@ -147,7 +149,7 @@ validate_class <- function(df, sport) {
   bad_rank <- !is.na(df$Ranking) & (df$Ranking < 55 | df$Ranking > 110)
   row_fail <- bad_height | bad_weight | bad_rank
 
-  if (mean(row_fail) > 0.30) {
+  if (mean(row_fail) > 0.30 && sum(row_fail) >= 2) {
     return(list(ok = FALSE, reason = sprintf(
       "%d/%d rows implausible (height/weight/rank out of range)",
       sum(row_fail), nrow(df))))

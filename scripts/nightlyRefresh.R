@@ -188,15 +188,29 @@ find_connect_url <- function() {
 
 ## GET with retries -- the Connect Cloud free tier idle-sleeps, and the wake
 ## race means the first hit can catch the worker mid-restart
-verify_url <- function(url, attempts = 3, wait_s = 30) {
+## marker: optional literal string that must appear in the 200 response body
+## (e.g. the app's freshness badge "data updated Jul 12, 2026") -- proves the
+## NEW bundle is being served, not just that A server answered. Only usable on
+## hosts that serve the app HTML directly (shinyapps does; Connect Cloud's
+## share URL serves an iframe wrapper, so it gets a plain 200 check with a
+## longer cold-start budget instead).
+verify_url <- function(url, attempts = 3, wait_s = 30, marker = NULL) {
   for (i in seq_len(attempts)) {
-    code <- tryCatch(status_code(GET(url, timeout(60))),
-                     error = function(e) -1L)
-    if (code == 200) {
-      cat("  attempt ", i, ": 200 OK\n", sep = "")
-      return(TRUE)
+    resp <- tryCatch(GET(url, timeout(60)), error = function(e) NULL)
+    code <- if (is.null(resp)) -1L else status_code(resp)
+    ok <- identical(code, 200L)
+    if (ok && !is.null(marker)) {
+      body <- tryCatch(content(resp, as = "text", encoding = "UTF-8"),
+                       error = function(e) "")
+      ok <- grepl(marker, body, fixed = TRUE)
+      cat("  attempt ", i, ": ", code,
+          if (ok) " + freshness marker found" else
+            " but freshness marker missing (old bundle still serving?)",
+          "\n", sep = "")
+    } else {
+      cat("  attempt ", i, ": ", code, "\n", sep = "")
     }
-    cat("  attempt ", i, ": ", code, "\n", sep = "")
+    if (ok) return(TRUE)
     if (i < attempts) Sys.sleep(wait_s)
   }
   FALSE
@@ -495,6 +509,10 @@ tryCatch({
   any_bad <- any(unlist(stages) %in% c("failed", "warn"))
   status_s5 <- if (any_bad) "degraded" else if (!changed) "noop" else "ok"
   ensure_refresh_log(db_path)
+  ## the date the app's freshness badge will show once this db deploys --
+  ## captured HERE (not at S9) so a run that crosses midnight still checks
+  ## for the date the ledger row actually carries
+  published_date <- Sys.Date()
   write_refresh_log(
     db_path, run_id, started_at,
     format(Sys.time(), "%Y-%m-%d %H:%M:%S"), status_s5,
@@ -574,11 +592,38 @@ tryCatch({
     compact_s7$stages$verify <- "pending"
     write_manifest(file.path("data", "refresh-manifest.json"), compact_s7)
     msg <- paste0("Nightly data refresh ", format(Sys.Date()), " [auto]")
+    ## commit body names what actually changed (per-table deltas + any
+    ## failed/demoted schools) instead of a bare stamp -- each line rides
+    ## its own -m flag, which git joins into paragraphs (multi-line args
+    ## through system2 on Windows are quoting quicksand)
+    body_lines <- character(0)
+    if (!is.null(counts_before) && !is.null(counts_after)) {
+      for (t in names(counts_after)) {
+        ## atomic [[ on a missing name ERRORS (it does not return NULL) --
+        ## guard for a content table first created mid-run (e.g. a fresh
+        ## team_seasons_football from fetchOutcomes.R on an older db)
+        b <- if (t %in% names(counts_before)) counts_before[[t]] else NULL
+        a <- counts_after[[t]]
+        if (!is.null(b) && !identical(a, b)) {
+          body_lines <- c(body_lines,
+                          sprintf("%s: %d -> %d (%+d)", t, b, a, a - b))
+        }
+      }
+      if (length(body_lines) == 0) {
+        body_lines <- "row counts unchanged (in-place value updates)"
+      }
+    }
+    if (length(failed_schools) > 0) {
+      body_lines <- c(body_lines, paste("failed/demoted schools kept on",
+                                        "existing rows:",
+                                        paste(failed_schools, collapse = ", ")))
+    }
+    msg_args <- c("-m", shQuote(msg, type = "cmd"))
+    for (l in body_lines) msg_args <- c(msg_args, "-m", shQuote(l, type = "cmd"))
     st <- git_run("add", "--", "data/recruiting.db", "precomputed",
                   "manifest.json", "data/refresh-manifest.json")
     where <- "add"
-    if (st == 0) { st <- git_run("commit", "-m",
-                                 shQuote(msg, type = "cmd")); where <- "commit" }
+    if (st == 0) { st <- git_run("commit", msg_args); where <- "commit" }
     if (st == 0) {
       st <- git_run("pull", "--rebase", "--autostash")
       where <- "pull --rebase"
@@ -630,7 +675,17 @@ tryCatch({
   ## -------------------------------------------------------------------------
   banner("S9 verify live URLs")
   ## verify whichever publish channel actually ran: the push feeds Connect
-  ## Cloud, the deploy feeds shinyapps -- one failing must not skip the other
+  ## Cloud, the deploy feeds shinyapps -- one failing must not skip the other.
+  ## shinyapps serves the app HTML directly, so we demand the freshness badge
+  ## ("data updated <today>") in the body -- a 200 from the OLD bundle is a
+  ## false pass. The marker format MUST match app.R's last_refresh_label
+  ## (format "%b %d, %Y" with the day's leading zero stripped). Connect
+  ## Cloud's share URL serves an iframe wrapper (the app HTML is not in the
+  ## GET body), so it gets a plain 200 check with a longer budget to ride out
+  ## the post-push rebuild.
+  marker <- paste0("data updated ",
+                   sub(" 0", " ", format(published_date, "%b %d, %Y"),
+                       fixed = TRUE))
   urls <- c(if (identical(stages$deploy, "ok")) c(shinyapps = find_shinyapps_url()),
             if (identical(stages$push, "ok"))   c(connect   = find_connect_url()))
   urls <- urls[!is.na(urls)]
@@ -641,10 +696,19 @@ tryCatch({
     all_ok <- TRUE
     for (nm in names(urls)) {
       cat("checking ", nm, ": ", urls[[nm]], "\n", sep = "")
-      if (!verify_url(urls[[nm]])) {
+      ok <- if (nm == "shinyapps") {
+        cat("  (requiring freshness marker: '", marker, "')\n", sep = "")
+        verify_url(urls[[nm]], attempts = 4, wait_s = 30, marker = marker)
+      } else {
+        verify_url(urls[[nm]], attempts = 6, wait_s = 45)
+      }
+      if (!ok) {
         all_ok <- FALSE
-        notes <- c(notes, paste0(nm, " did not return 200 after 3 attempts: ",
-                                 urls[[nm]]))
+        notes <- c(notes, paste0(
+          nm, " live check FAILED (", urls[[nm]], ") -- ",
+          if (nm == "shinyapps") "no 200 with today's freshness badge"
+          else "no 200 within the cold-start budget",
+          "; the host may be serving the old bundle"))
       }
     }
     stages$verify <- if (all_ok) "ok" else "warn"
