@@ -3894,22 +3894,34 @@
   },
   "files": {
     "app.R": {
-      "checksum": "e0e5b33d202129dbeb0a69e8ff72c6b4"
+      "checksum": "688093a30fbdc7cb712af7929e5fed20"
     },
     "data/recruiting.db": {
-      "checksum": "76ce029caad659e14eab9fae269e75ea"
+      "checksum": "d5221a2c8ce1d1eff1f8bc916d37bce9"
+    },
+    "precomputed/beef_board_desktop.rds": {
+      "checksum": "bbf139387aeee6796ed635b9ed8c1d39"
+    },
+    "precomputed/beef_board_phone.rds": {
+      "checksum": "6cfb26c11c458b3fe7d33f34baa55412"
     },
     "precomputed/body_map_desktop.rds": {
-      "checksum": "45c3e58b2b056f7ae71ee92f72da9ee4"
+      "checksum": "7d1bdd67435050de63890ba9877cdf16"
     },
     "precomputed/body_map_phone.rds": {
-      "checksum": "893e13619eb59616f1aa4c865372f98f"
+      "checksum": "f5554863ddac1f1c9836032e1d3ee562"
     },
     "precomputed/dna_desktop.rds": {
-      "checksum": "d586754d2de6aaf3144dc0e97cd284e1"
+      "checksum": "b7c1b3480758033b0fd5fe3d9fbccb13"
     },
     "precomputed/dna_phone.rds": {
-      "checksum": "2f963da1c558d843c050b6a249c08a2c"
+      "checksum": "debb56307f80c17a8a41fb353b213b56"
+    },
+    "precomputed/era_timeline_desktop.rds": {
+      "checksum": "fe748578868b0b379fc9e9821b5c1656"
+    },
+    "precomputed/era_timeline_phone.rds": {
+      "checksum": "c52de4b0f4ba829cd2b498e4b4da6772"
     },
     "R/coach_eras.R": {
       "checksum": "b559c52b0e9d9d20312c2b1e1b9bd763"
@@ -3921,10 +3933,10 @@
       "checksum": "50152d6a2f837700c7bf1e4e473abf46"
     },
     "R/girth_plots.R": {
-      "checksum": "5dc53e17afa78f778105ef89528f163d"
+      "checksum": "fa46dca4115b9d911e0071d1996e8a85"
     },
     "R/team_config.R": {
-      "checksum": "d2cfbb4ee3ec7ca7a8408a6409051e08"
+      "checksum": "83a128bfa7aefaec66136e94ef98b2c3"
     },
     "www/arizona-state.png": {
       "checksum": "5342cfb90e573b129f20939a4a8e7c01"
@@ -3946,6 +3958,9 @@
     },
     "www/houston.png": {
       "checksum": "9d47bacf884e8b1b32f58faebd2beea1"
+    },
+    "www/html-to-image.min.js": {
+      "checksum": "fc6a43f64cc0f48b9852d5610ea89b0e"
     },
     "www/iowa-state.png": {
       "checksum": "fc45892be566cceb8e2789bac3a3788a"

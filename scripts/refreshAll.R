@@ -89,10 +89,13 @@ if (!"no-records" %in% skip) {
     results["records"] <- run_step("season records", "fetchOutcomes.R")
   }
 }
-## refresh the deploy-time default-view renders so they match the new data
+## refresh the deploy-time default-view renders so they match the new data,
+## then re-checksum manifest.json so Connect Cloud ships the fresh bundle
+## (a stale manifest makes it serve the OLD db -- see updateManifest.R)
 if (!"no-precompute" %in% skip) {
   results["precompute"] <- run_step("precompute defaults",
                                     "precomputeDefaults.R")
+  results["manifest"] <- run_step("update manifest", "updateManifest.R")
 }
 
 after <- table_counts()

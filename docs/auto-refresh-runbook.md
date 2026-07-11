@@ -37,6 +37,11 @@ If nothing changed upstream the run logs `noop` and publishes nothing.
 - Register the schedule: `powershell -NoProfile -ExecutionPolicy Bypass
   -File scripts\setupSchedule.ps1` (add `-WakeToRun` if the laptop sleeps
   at night; add `-At '02:00'` to move the time)
+- Git identity must be repo-LOCAL (`git config user.name` / `user.email`
+  inside the repo, no `--global`). The S7 commit runs as a child of
+  Rscript, and R on Windows sets `HOME` to `Documents\`, so git cannot see
+  `C:/Users/<you>/.gitconfig` and dies with "unable to auto-detect email
+  address". Set on 2026-07-11; re-set it after any fresh clone.
 - Connect Cloud: open the app's settings at connect.posit.cloud and confirm
   the "automatically publish on push" toggle is ON for
   `tgilbert14/arizona-basketball-talent` main

@@ -22,10 +22,11 @@
 ##   S4 validate    auditRefreshHoles.R + validateRefresh.R vs the snapshot;
 ##                  either failing restores the snapshot and aborts
 ##   S5 ledger      content hash again -> changed?; write refresh_log row
-##   S6 precompute  precomputeDefaults.R (only if data changed); a failure
-##                  degrades the night and blocks publishing (never ship a
-##                  db/rds mismatch)
-##   S7 commit+push git add db + precomputed + manifest, commit, push
+##   S6 precompute  precomputeDefaults.R (only if data changed), then
+##                  updateManifest.R to re-checksum manifest.json; a failure
+##                  in either degrades the night and blocks publishing (never
+##                  ship a db/rds/manifest mismatch)
+##   S7 commit+push git add db + precomputed + manifest.json, commit, push
 ##   S8 deploy      scripts/deployApp.R (shinyapps.io)
 ##   S9 verify      GET both live URLs, 2 retries 30 s apart (idle-sleep)
 ##   S10 report     manifests, summary, gh alert, release lock
@@ -523,6 +524,20 @@ tryCatch({
       notes <- c(notes, paste0(
         "precomputeDefaults.R exited ", r$status,
         " -- publish skipped to avoid shipping a db/rds mismatch"))
+    } else {
+      ## Sync manifest.json checksums to the refreshed db + precomputed rds.
+      ## Connect Cloud deploys from the committed manifest; a stale checksum
+      ## makes it serve the OLD bundle. Only the files section changes --
+      ## packages are preserved, so this can never break the Connect install.
+      ## A failure here downgrades precompute to blocked (never publish a
+      ## manifest that disagrees with the shipped files).
+      rm <- run_child("update manifest", "updateManifest.R")
+      if (!rm$ok) {
+        stages$precompute <- "failed"
+        notes <- c(notes, paste0(
+          "updateManifest.R exited ", rm$status,
+          " -- publish skipped to avoid shipping a stale manifest"))
+      }
     }
   }
 
@@ -560,7 +575,7 @@ tryCatch({
     write_manifest(file.path("data", "refresh-manifest.json"), compact_s7)
     msg <- paste0("Nightly data refresh ", format(Sys.Date()), " [auto]")
     st <- git_run("add", "--", "data/recruiting.db", "precomputed",
-                  "data/refresh-manifest.json")
+                  "manifest.json", "data/refresh-manifest.json")
     where <- "add"
     if (st == 0) { st <- git_run("commit", "-m",
                                  shQuote(msg, type = "cmd")); where <- "commit" }
