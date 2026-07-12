@@ -146,6 +146,8 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
   if (!is.null(year_min)) {
     size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
   }
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  size_data <- scope_to_conf(size_data, team_slug)
   team_data  <- dplyr::filter(size_data, School == team_slug)
 
   ## legend keys stay stable across filtering (colors don't shift)
@@ -169,10 +171,14 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
   t_col <- team_color(team_slug)
   t_lab <- team_label(team_slug)
   yr_rng <- paste0(min(size_data$Year), "–", max(size_data$Year))
-  ## realignment honesty: the grey cloud is the current 16 members, so a
-  ## window reaching before 2024 shows programs that were not yet in the league
-  bc_note <- if (min(size_data$Year) < 2024) {
-    " Grey cloud = the current 16 members, backcast before 2024."
+  conf_lab <- conf_label(team_slug)
+  ## realignment honesty: the grey cloud is the current conference membership,
+  ## so a window reaching before it was whole shows programs that were not yet
+  ## in the league. Count + seam year come from the config, not 16/2024.
+  whole_yr <- conf_whole_year(team_slug)
+  bc_note <- if (min(size_data$Year) < whole_yr) {
+    glue(" Grey cloud = the current {n_conf_members(team_slug)} members, ",
+         "backcast before {whole_yr}.")
   } else ""
 
   ## hover text for the interactive version (scraped profile URL when the
@@ -260,7 +266,7 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
     labs(
       title = glue("{t_lab} {str_to_title(sport)} Body Map ({yr_rng}{pos_note})"),
       subtitle = glue(
-        "Big 12 players (grey cloud) vs {t_lab} (colored by position). ",
+        "{conf_lab} players (grey cloud) vs {t_lab} (colored by position). ",
         "Tall is up, heavy is right; dashed lines = conference medians",
         "{ifelse(pos_note == '', '', ' for this position')}.{bc_note}"),
       x = "Weight (lbs)", y = "Height",
@@ -295,6 +301,8 @@ beef_board_data <- function(size_data, team_slug, sport,
   if (!is.null(year_min)) {
     size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
   }
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  size_data <- scope_to_conf(size_data, team_slug)
   size_data <- filter_pos(size_data, pos_filter)
   m <- girth_metrics[[metric]]
   ## NULL-safe compare slug (School == NULL inside case_when errors)
@@ -374,7 +382,7 @@ plot_beef_board <- function(size_data, team_slug, sport,
               hjust = -0.15, size = 3.6, fontface = "bold",
               show.legend = FALSE) +
     annotate("text", x = conf_avg, y = 0.6,
-             label = glue("Big 12 avg: {m$fmt(conf_avg)}"),
+             label = glue("{conf_label(team_slug)} avg: {m$fmt(conf_avg)}"),
              size = 3.3, color = "grey35", hjust = -0.05, fontface = "italic") +
     scale_color_manual(values = role_cols) +
     scale_y_discrete(labels = logos) +
@@ -384,7 +392,7 @@ plot_beef_board <- function(size_data, team_slug, sport,
     ) +
     labs(
       title = wrap_title(
-        glue("Big 12 Beef Board — {pos_filter_label(pos_filter)}"), 38),
+        glue("{conf_label(team_slug)} Beef Board — {pos_filter_label(pos_filter)}"), 38),
       subtitle = wrap_title(glue(
         "{m$label}, {context} ",
         "({team_label(team_slug)}",
@@ -423,7 +431,10 @@ plot_size_trend <- function(size_data, team_slug, sport,
   ## scale as the team lines drawn over it. (A player-level band mixes
   ## units -- individual spread vs team means -- and makes every team look
   ## mid-pack; the era timeline already does this correctly.)
-  conf_band <- size_data %>%
+  ## band pools only the active team's conference (all 16 at Phase 0); the
+  ## team + compare lines stay unscoped so a cross-conference compare still
+  ## draws (design: g_compare is full-P4 while the band is conference-scoped)
+  conf_band <- scope_to_conf(size_data, team_slug) %>%
     group_by(School, Year) %>%
     summarize(team_val = mean(.data[[metric_col]], na.rm = TRUE),
               .groups = "drop") %>%
@@ -482,7 +493,7 @@ plot_size_trend <- function(size_data, team_slug, sport,
     labs(
       title = wrap_title(glue("{t_lab}: {m$label} by Recruiting Class"), 58),
       subtitle = wrap_title(glue(
-        "{pos_filter_label(pos_filter)} — {str_to_title(sport)} vs the Big 12 middle ",
+        "{pos_filter_label(pos_filter)} — {str_to_title(sport)} vs the {conf_label(team_slug)} middle ",
         "(yellow band = middle half of team class averages, dashed = median team)"), 84),
       x = "Class Year", y = m$label,
       caption = paste0("Dot size = players added that class. Coach labels = era of the highlighted team. Data: 247Sports.", scope_note(players_note))
@@ -525,6 +536,9 @@ plot_position_dna <- function(size_data, team_slug, sport,
     size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
   }
   size_data <- dplyr::filter(size_data, as.character(PosGroup) != "Other")
+  ## violins pool only the active team's conference (all 16 at Phase 0); the
+  ## team + compare overlays stay unscoped so a cross-conference compare draws
+  conf_pool <- scope_to_conf(size_data, team_slug)
   team_data <- dplyr::filter(size_data, School == team_slug)
   hl <- highlight_colors(team_slug, compare_slug)
   has_cmp <- !is.na(hl["compare"])
@@ -547,7 +561,7 @@ plot_position_dna <- function(size_data, team_slug, sport,
 
   ## crossbar draws UNDER the interactive dots so hover/tap targets near the
   ## median (the densest region) stay clickable
-  p <- ggplot(size_data, aes(x = PosGroup, y = Weight)) +
+  p <- ggplot(conf_pool, aes(x = PosGroup, y = Weight)) +
     geom_violin(fill = "grey85", color = "grey60", alpha = 0.9, scale = "width") +
     stat_summary(fun = median, geom = "crossbar", width = 0.55,
                  color = "grey35", linewidth = 0.4) +
@@ -573,7 +587,7 @@ plot_position_dna <- function(size_data, team_slug, sport,
 
   p +
     labs(
-      title = wrap_title(glue("Position DNA: {t_lab} vs the Big 12 ({yr_rng})"), 55),
+      title = wrap_title(glue("Position DNA: {t_lab} vs the {conf_label(team_slug)} ({yr_rng})"), 55),
       subtitle = wrap_title(glue(
         "Grey violins = conference weight distribution by position group. ",
         "{t_lab} commits = colored dots, filled diamond = {t_lab} average.",
@@ -734,6 +748,10 @@ retention_board_data <- function(size_commits, roster_data, team_slug,
   ## departure from "Troy Ford" (see norm_name_key)
   nkey <- norm_name_key
 
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  size_commits <- scope_to_conf(size_commits, team_slug)
+  roster_data  <- scope_to_conf(roster_data, team_slug)
+
   roster_year <- suppressWarnings(
     max(as.numeric(roster_data$RosterYear), na.rm = TRUE))
   ## classes old enough to be enrolled but young enough to still have
@@ -849,6 +867,8 @@ plot_class_retention <- function(size_commits, roster_data, team_slug,
 ##     heights; compare listed height at commit vs the current roster
 ## ---------------------------------------------------------------------------
 height_check_stats <- function(wr_data, team_slug) {
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  wr_data <- scope_to_conf(wr_data, team_slug)
   hd <- wr_data %>% filter(!is.na(HeightDelta))
   team <- hd %>% filter(School == team_slug)
   shrunk <- function(d) if (nrow(d) == 0) NA else
@@ -868,6 +888,8 @@ height_check_stats <- function(wr_data, team_slug) {
 }
 
 plot_height_check <- function(wr_data, team_slug, sport) {
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  wr_data <- scope_to_conf(wr_data, team_slug)
   hd <- wr_data %>%
     filter(!is.na(HeightDelta)) %>%
     mutate(bin = round(HeightDelta * 2) / 2)   # half-inch bins
@@ -896,7 +918,7 @@ plot_height_check <- function(wr_data, team_slug, sport) {
       title = "The Measurement Reality Check",
       subtitle = glue(
         "Current roster height minus 247Sports commit-day listed height ",
-        "({str_to_title(sport)}).\nGrey bars = all Big 12 matched signees; ",
+        "({str_to_title(sport)}).\nGrey bars = all {conf_label(team_slug)} matched signees; ",
         "narrow colored bars = {t_lab}."),
       x = "Listed Height Change Since Commitment", y = "% of Players",
       caption = paste("Recruiting heights are often optimistic; roster heights",
@@ -914,6 +936,10 @@ wr_board_data <- function(wr_data, team_slug, sport,
                           compare_slug = NULL, logo_prefix = "www/",
                           direction = "gain") {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## capture the name-match receipt BEFORE scoping (dplyr::filter drops
+  ## attributes), then pool only the active team's conference (all 16 at Phase 0)
+  mn_note <- attr(wr_data, "match_note")
+  wr_data <- scope_to_conf(wr_data, team_slug)
   gain_fmt <- function(v) paste0(ifelse(v >= 0, "+", ""), round(v, 1),
                                  " lbs/yr")
   ## loss-mode tips must come from actual slimmers, not "smallest gainers"
@@ -971,7 +997,8 @@ wr_board_data <- function(wr_data, team_slug, sport,
   }
   ## carry the name-match receipt weight_room_data stamped on wr_data through
   ## to the board, so the chart caption + table twin can both surface it
-  attr(board, "match_note") <- attr(wr_data, "match_note")
+  ## (captured before the conference scope filter dropped the attribute)
+  attr(board, "match_note") <- mn_note
   board
 }
 
@@ -1222,7 +1249,8 @@ plot_era_timeline <- function(size_data, team_slug, sport,
         "<em>Tap the dot to pin this card</em>")
     )
 
-  conf_yrs <- size_data %>%
+  ## band pools only the active team's conference members (all 16 at Phase 0)
+  conf_yrs <- scope_to_conf(size_data, team_slug) %>%
     group_by(School, Year) %>%
     group_modify(~ data.frame(val = era_metric_value(.x, metric))) %>%
     ungroup() %>%
@@ -1231,17 +1259,19 @@ plot_era_timeline <- function(size_data, team_slug, sport,
               p50 = median(val, na.rm = TRUE),
               p75 = quantile(val, 0.75, na.rm = TRUE), .groups = "drop")
 
-  ## realignment honesty: the pooled band is today's 16 members, so any year
-  ## before the league reached 16 (2024, when the Pac-12 four joined) is a
-  ## BACKCAST. Split the median guide's linetype at that seam -- dotted while
-  ## backcast, solid once the conference is whole. Both halves share the 2024
+  ## realignment honesty: the pooled band is the conference's CURRENT
+  ## membership, so any class year before that membership was whole
+  ## (CONF_CONFIG$conf_whole -- 2024 for the Big 12, when the Pac-12 four
+  ## joined) is a BACKCAST. Split the median guide's linetype at that seam --
+  ## dotted while backcast, solid once whole. Both halves share the seam-year
   ## point so the line stays connected; empty halves draw nothing.
-  B12_WHOLE <- 2024
-  backcast <- min(conf_yrs$Year) < B12_WHOLE
-  conf_pre  <- conf_yrs %>% filter(Year <= B12_WHOLE)
-  conf_post <- conf_yrs %>% filter(Year >= B12_WHOLE)
+  whole_yr <- conf_whole_year(team_slug)
+  backcast <- min(conf_yrs$Year) < whole_yr
+  conf_pre  <- conf_yrs %>% filter(Year <= whole_yr)
+  conf_post <- conf_yrs %>% filter(Year >= whole_yr)
   backcast_clause <- if (backcast) {
-    " Band = the current 16 members, backcast before 2024 (dotted median)."
+    glue(" Band = the current {n_conf_members(team_slug)} members, ",
+         "backcast before {whole_yr} (dotted median).")
   } else ""
 
   y_rng <- range(c(team_yrs$val, commit_yrs$val, conf_yrs$p25, conf_yrs$p75),
@@ -1313,7 +1343,7 @@ plot_era_timeline <- function(size_data, team_slug, sport,
       title = glue("{t_lab} by Coaching Era: {m$label}"),
       subtitle = glue(
         "Shaded bands = head-coach eras (recruiting-class attribution). ",
-        "Grey band = Big 12 team middle (25th–75th pct), grey line = median.",
+        "Grey band = {conf_label(team_slug)} team middle (25th–75th pct), grey line = median.",
         "{backcast_clause}"),
       x = "Class Year", y = m$label,
       caption = paste0("Tap or hover a class dot for its top-5 signees; pin ",
@@ -1757,6 +1787,8 @@ plot_def_size_profile <- function(roster_size_data, team_slug,
                                   incoming = NULL, proj_gain = NULL) {
   t_lab <- team_label(team_slug)
   hl <- highlight_colors(team_slug)
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  roster_size_data <- scope_to_conf(roster_size_data, team_slug)
   rd <- roster_size_data %>%
     mutate(Role = role_335(Position, Weight)) %>%
     filter(!is.na(Role)) %>%
@@ -1808,7 +1840,7 @@ plot_def_size_profile <- function(roster_size_data, team_slug,
     labs(
       title = wrap_title(glue("Defensive Bodies vs the League — 3-3-5 Lens"), 46),
       subtitle = wrap_title(glue(
-        "Grey violins = every Big 12 defensive roster body by odd-stack ",
+        "Grey violins = every {conf_label(team_slug)} defensive roster body by odd-stack ",
         "role; colored dots = {t_lab}'s current defense.{inc_note}"), 60),
       x = "Current Weight (lbs)", y = NULL,
       caption = "Current rosters, both lines + back end. Data: 247Sports."
@@ -1953,6 +1985,8 @@ plot_state_retention <- function(size_data, team_slug, sport,
                                  compare_slug = NULL, logo_prefix = "www/", players_note = NULL) {
   st <- team_state(team_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  size_data <- scope_to_conf(size_data, team_slug)
   yr_rng <- paste0(min(size_data$Year), "–", max(size_data$Year))
 
   ## hover card per bar: that school's top-rated signees from this state
@@ -1993,12 +2027,12 @@ plot_state_retention <- function(size_data, team_slug, sport,
     scale_y_discrete(labels = logos) +
     scale_x_continuous(expand = expansion(mult = c(0.01, 0.28))) +
     labs(
-      title = wrap_title(glue("Who Signs {st} High-School Talent in the Big 12?"), 44),
+      title = wrap_title(glue("Who Signs {st} High-School Talent in the {conf_label(team_slug)}?"), 44),
       subtitle = wrap_title(glue(
         "{str_to_title(sport)} commits from {st} high schools by signing ",
         "program, classes {yr_rng}. Blue-chip = 247 rating 90+."), 58),
       x = glue("Commits from {st} High Schools"), y = NULL,
-      caption = paste0("Big 12 destinations only (players leaving for other conferences are not tracked).", scope_note(players_note))
+      caption = paste0(conf_label(team_slug), " destinations only (players leaving for other conferences are not tracked).", scope_note(players_note))
     ) +
     theme_girth_md()
 }
@@ -2039,6 +2073,9 @@ analyst_notes <- function(size_data, roster_data, team_slug, sport,
                           compare_slug = NULL) {
   t_lab <- team_label(team_slug)
   st <- team_state(team_slug)
+  ## pool only the active team's conference members (all 16 at Phase 0);
+  ## team-specific reads below (class snapshot, roster needs) are unaffected
+  size_data <- scope_to_conf(size_data, team_slug)
   notes <- character(0)
 
   snap <- class_snapshot(size_data, team_slug)
@@ -2075,7 +2112,7 @@ analyst_notes <- function(size_data, roster_data, team_slug, sport,
     total <- nrow(pool)
     leader <- pool %>% count(TeamName, sort = TRUE) %>% slice(1)
     notes <- c(notes, glue(
-      "{st} high-school talent: {own} of {total} {st} commits to Big 12 ",
+      "{st} high-school talent: {own} of {total} {st} commits to {conf_label(team_slug)} ",
       "programs signed with {t_lab} ({round(100 * own / total)}%). ",
       "Top in-state recruiter: {leader$TeamName} ({leader$n})."))
   }
@@ -2127,6 +2164,11 @@ talent_composites <- function(size_data, seasons) {
 quadrant_data <- function(team_seasons, size_data, team_slug,
                           compare_slug = NULL) {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## pool only the active team's conference members (all 16 at Phase 0): the
+  ## quadrant medians + talent panel stay within-conference (team_seasons keys
+  ## on slug, recruits on School)
+  team_seasons <- scope_to_conf(team_seasons, team_slug, "slug")
+  size_data <- scope_to_conf(size_data, team_slug)
   ## the season window shows up in the hover cards too, so a pinned card
   ## still says which seasons it summarizes
   yr_rng2 <- if (min(team_seasons$year) == max(team_seasons$year)) {
@@ -2182,11 +2224,13 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
                                   team_color(cmp_safe)),
                  other = "grey55")
   yr_rng <- paste0(min(team_seasons$year), "–", max(team_seasons$year))
-  ## realignment honesty: the median lines pool the current 16 members, so a
-  ## window reaching before 2024 backcasts programs onto seasons predating
-  ## their Big 12 membership
-  bc_note <- if (min(team_seasons$year) < 2024) {
-    " Conference = the current 16 members, backcast before 2024."
+  ## realignment honesty: the median lines pool the conference's CURRENT
+  ## membership, so a window reaching before it was whole backcasts programs
+  ## onto seasons predating their membership (count + seam year from config)
+  whole_yr <- conf_whole_year(team_slug)
+  bc_note <- if (min(team_seasons$year) < whole_yr) {
+    glue(" Conference = the current {n_conf_members(team_slug)} members, ",
+         "backcast before {whole_yr}.")
   } else ""
 
   ggplot(agg, aes(x = talent, y = win_pct)) +
@@ -2231,13 +2275,18 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
 ## attrs: value_label, value_fmt, value_fmt_fn, yr_rng, model_note.
 wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## pool only the active team's conference members (all 16 at Phase 0): the
+  ## WAT fit stays a within-conference residual (team_seasons keys on slug,
+  ## recruits on School)
+  team_seasons <- scope_to_conf(team_seasons, team_slug, "slug")
+  size_data <- scope_to_conf(size_data, team_slug)
   yr_rng2 <- if (min(team_seasons$year) == max(team_seasons$year)) {
     as.character(max(team_seasons$year))
   } else paste0(min(team_seasons$year), "-", max(team_seasons$year))
 
   ## SAME panel construction plot_talent_results uses: the rolling top-20
   ## talent composite joined to each program-season's record. One row per
-  ## program-season (~160 across the 16 members x the season window).
+  ## program-season (~160 across the conference's members x the season window).
   comp <- talent_composites(size_data, sort(unique(team_seasons$year)))
   panel <- team_seasons %>%
     left_join(comp, by = c("slug" = "School", "year")) %>%
@@ -2422,6 +2471,8 @@ make_talking_points <- function(size_data, team_slug, sport,
   if (!is.null(year_min)) {
     size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
   }
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  size_data <- scope_to_conf(size_data, team_slug)
   t_lab <- team_label(team_slug)
   yr_rng <- paste0(min(size_data$Year), "–", max(size_data$Year))
   pts <- character(0)
@@ -2437,7 +2488,7 @@ make_talking_points <- function(size_data, team_slug, sport,
     pts <- c(pts, glue(
       "{t_lab} {word} average {round(board$AvgWeight[rk], 0)} lbs at ",
       "{format_height(board$AvgHeight[rk])} — the #{rk} heaviest haul ",
-      "of the {nrow(board)} Big 12 programs ({yr_rng})."))
+      "of the {nrow(board)} {conf_label(team_slug)} programs ({yr_rng})."))
   }
 
   ## trench rank (football only)
@@ -2523,6 +2574,8 @@ ranked_insights <- function(size_data, team_slug, sport,
   if (!is.null(year_min)) {
     size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
   }
+  ## pool only the active team's conference members (all 16 at Phase 0)
+  size_data <- scope_to_conf(size_data, team_slug)
   if (nrow(size_data) == 0) return(empty)
 
   t_lab  <- team_label(team_slug)
@@ -2557,7 +2610,7 @@ ranked_insights <- function(size_data, team_slug, sport,
   if (length(rk) == 1 && nb > 1) {
     add(glue("{t_lab} averages {round(board$AvgWeight[rk])} lbs at ",
              "{format_height(board$AvgHeight[rk])} - the #{rk} heaviest ",
-             "haul of {nb} Big 12 programs ({yr_rng})."),
+             "haul of {nb} {conf_label(team_slug)} programs ({yr_rng})."),
         score = extremity(rk, nb) * 0.70, n = n_team)
   }
 
@@ -2571,7 +2624,7 @@ ranked_insights <- function(size_data, team_slug, sport,
     if (length(trk) == 1 && ntb > 1) {
       add(glue("In the trenches (OL + DL/Edge), {t_lab} signs ",
                "{round(trb$AvgWeight[trk])} lbs on average - #{trk} of ",
-               "{ntb} in the Big 12."),
+               "{ntb} in the {conf_label(team_slug)}."),
           score = extremity(trk, ntb) * 0.72, n = tr_team)
     }
   }
@@ -2602,14 +2655,14 @@ ranked_insights <- function(size_data, team_slug, sport,
   }
 
   ## (e) home-state hold -- window-wide (0.68); magnitude = distance from a
-  ## 50/50 split of the state's Big 12-bound talent
+  ## 50/50 split of the state's conference-bound talent
   st <- team_state(team_slug)
   pool <- dplyr::filter(size_data, State == st)
   if (nrow(pool) > 0) {
     own <- sum(pool$School == team_slug)
     total <- nrow(pool)
     share <- own / total
-    add(glue("{t_lab} holds {own} of {total} Big 12-bound {st} recruits ",
+    add(glue("{t_lab} holds {own} of {total} {conf_label(team_slug)}-bound {st} recruits ",
              "({round(100 * share)}%) over {yr_rng}."),
         score = min(abs(share - 0.5) * 2, 1) * 0.68, n = total)
   }

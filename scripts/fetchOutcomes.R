@@ -38,7 +38,11 @@ if (key == "") {
   quit(status = 0)
 }
 
-## TEAM_CONFIG slug -> CFBD school name (GATE 1 source of truth)
+## TEAM_CONFIG slug -> CFBD school name (GATE 1 source of truth).
+## PHASE 1 SEAM: this standalone map folds into a `cfbd_name` column on
+## TEAM_CONFIG when the config moves to data/team_config.csv (CFBD /teams/fbs
+## supplies the name for every P4 school). Kept as-is at Phase 0 -- do NOT
+## restructure yet; the stopifnot below still guards every configured slug.
 CFBD_NAMES <- c(
   "arizona" = "Arizona", "arizona-state" = "Arizona State",
   "baylor" = "Baylor", "byu" = "BYU", "central-florida" = "UCF",
@@ -102,16 +106,20 @@ for (yr in YEARS) {
     )
 
   n_valid <- sum(yr_rows$valid)
-  if (n_valid < 14) {
+  ## GATE 3 floors scale with the roster (Power-4 ready): the "mostly broken"
+  ## cutoff is 87.5% of the configured teams and the "fully populated" mark is
+  ## all of them. At the shipped 16 these are 14 and 16, exactly as before.
+  n_teams <- nrow(TEAM_CONFIG)
+  if (n_valid < ceiling(0.875 * n_teams)) {
     ## GATE 3: don't write a mostly-broken season
     problems <- c(problems, paste0(
-      yr, ": only ", n_valid, "/16 teams validated -- season NOT written (",
+      yr, ": only ", n_valid, "/", n_teams, " teams validated -- season NOT written (",
       paste(yr_rows$slug[!yr_rows$valid], collapse = ", "), ")"))
     next
   }
-  if (n_valid < 16) {
+  if (n_valid < n_teams) {
     problems <- c(problems, paste0(
-      yr, ": written with ", 16 - n_valid, " missing team(s): ",
+      yr, ": written with ", n_teams - n_valid, " missing team(s): ",
       paste(yr_rows$slug[!yr_rows$valid], collapse = ", ")))
   }
   seasons[[as.character(yr)]] <- yr_rows %>% filter(valid) %>% select(-valid)

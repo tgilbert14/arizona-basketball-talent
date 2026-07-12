@@ -19,6 +19,11 @@
 ##   Rscript scripts/refreshClassYear.R basketball 2026
 ##   Rscript scripts/refreshClassYear.R football 2027 --allow-empty
 ##
+## Optional scope filters (default = every configured team, so a no-op unless
+## passed) let a per-conference backfill target one league:
+##   Rscript scripts/refreshClassYear.R football 2026 --conference "Big 12"
+##   Rscript scripts/refreshClassYear.R football 2026 --slugs arizona,utah
+##
 ## --allow-empty: a totally empty scrape exits 0 without touching the db
 ## (no backup CSV, no delete, no write). This is how the nightly pipeline
 ## probes MAX(Year)+1 before 247 opens the next cycle's pages; without the
@@ -231,16 +236,58 @@ validate_class <- function(df, sport) {
 args <- commandArgs(trailingOnly = TRUE)
 allow_empty <- "--allow-empty" %in% args
 args <- args[args != "--allow-empty"]
+
+## optional scope filters (default: every TEAM_CONFIG slug -- a no-op unless
+## passed). --conference <name> keeps that conference's teams; --slugs <csv>
+## keeps an explicit comma-separated slug list. Both accept "--flag value" or
+## "--flag=value". These let the Phase-1 per-conference backfill target one
+## league without changing the default all-teams behavior. The per-school
+## replace below is keyed on the scraped set, so unscoped schools are untouched.
+flag_value <- function(flag, a) {
+  eq <- grep(paste0("^", flag, "="), a, value = TRUE)
+  if (length(eq)) return(sub(paste0("^", flag, "="), "", eq[1]))
+  i <- match(flag, a)
+  if (!is.na(i) && i < length(a)) return(a[i + 1])
+  NULL
+}
+drop_flag <- function(flag, a) {
+  a <- a[!grepl(paste0("^", flag, "="), a)]
+  i <- match(flag, a)
+  if (!is.na(i)) a <- a[-c(i, if (i < length(a)) i + 1)]
+  a
+}
+conf_filter  <- flag_value("--conference", args)
+slugs_filter <- flag_value("--slugs", args)
+args <- drop_flag("--conference", args)
+args <- drop_flag("--slugs", args)
+
 sport <- if (length(args) >= 1) tolower(args[1]) else "football"
 year <- if (length(args) >= 2) as.integer(args[2]) else 2026
 tbl <- paste0("recruit_class_", sport)
 
-cat("Refreshing", sport, year, "classes...\n\n")
+target_slugs <- TEAM_CONFIG$slug
+if (!is.null(conf_filter)) {
+  target_slugs <- intersect(target_slugs, conf_slugs(conf_filter))
+}
+if (!is.null(slugs_filter)) {
+  target_slugs <- intersect(target_slugs,
+                            trimws(strsplit(slugs_filter, ",")[[1]]))
+}
+if (length(target_slugs) == 0) {
+  stop("no TEAM_CONFIG slugs match the --conference/--slugs filter -- nothing ",
+       "to scrape (conference='", conf_filter %||% "", "', slugs='",
+       slugs_filter %||% "", "')")
+}
+
+scope_note <- if (length(target_slugs) < nrow(TEAM_CONFIG))
+  paste0(" [scoped to ", length(target_slugs), " of ",
+         nrow(TEAM_CONFIG), " teams]") else ""
+cat("Refreshing ", sport, " ", year, " classes", scope_note, "...\n\n", sep = "")
 
 fresh <- list()
 ok_slugs <- character(0)   # only these schools' old rows get replaced
 failed_slugs <- character(0)
-for (slug in TEAM_CONFIG$slug) {
+for (slug in target_slugs) {
   res <- NULL
   for (attempt in 1:3) {   # transient fetch failures get retried
     res <- tryCatch(scrape_class(slug, sport, year), error = function(e) {

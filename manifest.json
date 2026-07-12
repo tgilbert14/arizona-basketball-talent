@@ -3894,34 +3894,34 @@
   },
   "files": {
     "app.R": {
-      "checksum": "ac9a29a17cbf51fe37c0ff67f4ee738c"
+      "checksum": "7a36794afa3d40b0b66f653490863ab4"
     },
     "data/recruiting.db": {
-      "checksum": "89d5ee128f2e74a8a941ae8a908119b3"
+      "checksum": "3e76917db395d7928f2d8c519ad95b22"
     },
     "precomputed/beef_board_desktop.rds": {
-      "checksum": "ac6181a97b409286811dba9fb94c12f6"
+      "checksum": "38597dbcc232383c7e6293c3926ce6da"
     },
     "precomputed/beef_board_phone.rds": {
-      "checksum": "d8a39a4f5a38433a86e64c74df0df570"
+      "checksum": "d09db0469e0e5f005cd50d0c9ec6a22b"
     },
     "precomputed/body_map_desktop.rds": {
-      "checksum": "cf8861cddca2d45bc728cad78c5bf145"
+      "checksum": "82268f76992a21f5a73de19f6412c100"
     },
     "precomputed/body_map_phone.rds": {
-      "checksum": "e5d91684ff5d428accf7bf20c9b5ae57"
+      "checksum": "43c8c468e998254fd6156d798722f025"
     },
     "precomputed/dna_desktop.rds": {
-      "checksum": "8fa00cfe072a82783f513bd7719a6b74"
+      "checksum": "e31dd3761cc5b65922059c684dc10d53"
     },
     "precomputed/dna_phone.rds": {
-      "checksum": "6ca17769b45236b4ad46ff9b865cb05f"
+      "checksum": "c1acb66e8d913688d264d3fe93743fc8"
     },
     "precomputed/era_timeline_desktop.rds": {
-      "checksum": "d8b9f2373773d4274fe28a723ef88289"
+      "checksum": "d20ccac029434b1ab35974a9239338b8"
     },
     "precomputed/era_timeline_phone.rds": {
-      "checksum": "2ab56a71027d3b2461aae500096c27bf"
+      "checksum": "3893ecd87f3d9aa46abe9240ccddd4db"
     },
     "R/coach_eras.R": {
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
@@ -3930,13 +3930,13 @@
       "checksum": "eb80dba1119e5dc2431f19deea22a5d1"
     },
     "R/girth_functions.R": {
-      "checksum": "a42219a81ffb4201235fa943c1adb901"
+      "checksum": "0080462d1d66093735493b63bf64b87f"
     },
     "R/girth_plots.R": {
-      "checksum": "f63c83a8fc8b677f6503b5e1f8d933e9"
+      "checksum": "7d2eed1d19986639cd156df3e4e7e610"
     },
     "R/team_config.R": {
-      "checksum": "e6da31556e8bc14856c0ced0590cebac"
+      "checksum": "e1e5cf1a7e121637428ae13cecd30530"
     },
     "www/arizona-state.png": {
       "checksum": "5342cfb90e573b129f20939a4a8e7c01"

@@ -169,6 +169,36 @@ team_size_summary <- function(size_data) {
 }
 
 ## ---------------------------------------------------------------------------
+## conference scoping -- the pooling universe for every board / median / rank.
+## A leaderboard, conference median, or "#k of N" rank is only honest when it
+## pools the ACTIVE team's conference peers, so every pooling builder narrows
+## its team universe to conf_slugs() BEFORE it summarizes. At a single-
+## conference config (all 16 members "Big 12") conf_slugs() returns every
+## slug, so scoping keeps every row and the boards stay byte-identical to the
+## pre-conference build; the instant a second conference's rows land, each
+## team's board scopes to its own league instead of silently mixing the two.
+## school_col names the slug column: recruits + rosters use "School", the
+## CFBD outcomes panel keys on "slug".
+scope_to_conf <- function(data, team_slug, school_col = "School") {
+  keep <- conf_slugs(team_conference(team_slug))
+  dplyr::filter(data, .data[[school_col]] %in% keep)
+}
+
+## how many members the active team's conference currently has -- drives the
+## "current N members" backcast notes (16 for the Big 12 at Phase 0)
+n_conf_members <- function(team_slug) {
+  length(conf_slugs(team_conference(team_slug)))
+}
+
+## the class year the active team's conference membership was all in-conference
+## (CONF_CONFIG$conf_whole -- 2024 for the Big 12 realignment). Any conference
+## band drawn before this year is a BACKCAST; the charts read it from the
+## config instead of a hardcoded 2024 so every conference stamps its own seam.
+conf_whole_year <- function(team_slug) {
+  CONF_CONFIG$conf_whole[match(team_conference(team_slug), CONF_CONFIG$conf)]
+}
+
+## ---------------------------------------------------------------------------
 ## shared girafe builder -- used by BOTH the app's girafe_wrap() and
 ## scripts/precomputeDefaults.R, so precomputed objects can't drift from
 ## live-rendered ones. `phone` mirrors the app's <700px canvas shrink.

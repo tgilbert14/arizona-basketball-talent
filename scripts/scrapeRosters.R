@@ -15,6 +15,11 @@
 ## Run from the project root:
 ##   Rscript scripts/scrapeRosters.R                  # football, current year
 ##   Rscript scripts/scrapeRosters.R basketball 2026  # sport + roster year
+##
+## Optional scope filters (default = every configured team, so a no-op unless
+## passed) let a per-conference backfill target one league:
+##   Rscript scripts/scrapeRosters.R football --conference "Big 12"
+##   Rscript scripts/scrapeRosters.R football --slugs arizona,utah
 ## ===========================================================================
 
 suppressMessages({
@@ -102,11 +107,53 @@ scrape_roster <- function(slug, sport, year) {
 ## main: loop all Big 12 teams
 ## ---------------------------------------------------------------------------
 args <- commandArgs(trailingOnly = TRUE)
+
+## optional scope filters (default: every TEAM_CONFIG slug -- a no-op unless
+## passed). --conference <name> keeps that conference's teams; --slugs <csv>
+## keeps an explicit comma-separated slug list. Both accept "--flag value" or
+## "--flag=value". These let the Phase-1 per-conference backfill target one
+## league; the per-team replace below is keyed on the scraped set, so unscoped
+## teams keep their existing rows.
+flag_value <- function(flag, a) {
+  eq <- grep(paste0("^", flag, "="), a, value = TRUE)
+  if (length(eq)) return(sub(paste0("^", flag, "="), "", eq[1]))
+  i <- match(flag, a)
+  if (!is.na(i) && i < length(a)) return(a[i + 1])
+  NULL
+}
+drop_flag <- function(flag, a) {
+  a <- a[!grepl(paste0("^", flag, "="), a)]
+  i <- match(flag, a)
+  if (!is.na(i)) a <- a[-c(i, if (i < length(a)) i + 1)]
+  a
+}
+conf_filter  <- flag_value("--conference", args)
+slugs_filter <- flag_value("--slugs", args)
+args <- drop_flag("--conference", args)
+args <- drop_flag("--slugs", args)
+
 sport <- if (length(args) >= 1) tolower(args[1]) else "football"
 year  <- if (length(args) >= 2) as.integer(args[2]) else
   as.integer(format(Sys.Date(), "%Y"))
 
-cat("Scraping", sport, "rosters for", year, "...\n\n")
+target_slugs <- TEAM_CONFIG$slug
+if (!is.null(conf_filter)) {
+  target_slugs <- intersect(target_slugs, conf_slugs(conf_filter))
+}
+if (!is.null(slugs_filter)) {
+  target_slugs <- intersect(target_slugs,
+                            trimws(strsplit(slugs_filter, ",")[[1]]))
+}
+if (length(target_slugs) == 0) {
+  stop("no TEAM_CONFIG slugs match the --conference/--slugs filter -- nothing ",
+       "to scrape (conference='", conf_filter %||% "", "', slugs='",
+       slugs_filter %||% "", "')")
+}
+
+scope_note <- if (length(target_slugs) < nrow(TEAM_CONFIG))
+  paste0("[scoped to ", length(target_slugs), " of ",
+         nrow(TEAM_CONFIG), " teams] ") else ""
+cat("Scraping ", sport, " rosters for ", year, " ", scope_note, "...\n\n", sep = "")
 
 ## a parse that returns implausibly few rows is a stub/header-only page, not
 ## a roster -- counting it as success would wipe the team's existing rows
@@ -115,7 +162,7 @@ min_roster_rows <- if (sport == "basketball") 5 else 30
 all_rosters <- list()
 failures <- character(0)
 
-for (slug in TEAM_CONFIG$slug) {
+for (slug in target_slugs) {
   result <- NULL
   for (attempt in 1:3) {   # transient fetch failures get retried
     result <- tryCatch(scrape_roster(slug, sport, year), error = function(e) {
@@ -149,11 +196,15 @@ if (length(failures) > 0) {
   cat("FAILED teams (re-run later):", paste(failures, collapse = ", "), "\n")
 }
 
-## minimum-success gate: a mostly-failed run must not touch the db at all
-n_teams <- length(TEAM_CONFIG$slug)
-if (length(all_rosters) < 12) {
+## minimum-success gate: a mostly-failed run must not touch the db at all.
+## The floor scales with the SCRAPED set (75% of it, Power-4 ready): the full
+## 16 teams need >= 12 exactly as before; a --conference/--slugs run needs 75%
+## of its own target set rather than a fixed 12.
+n_teams <- length(target_slugs)
+floor_ok <- ceiling(0.75 * n_teams)
+if (length(all_rosters) < floor_ok) {
   stop("only ", length(all_rosters), "/", n_teams, " teams scraped ",
-       "successfully (need >= 12) -- nothing written. Failed: ",
+       "successfully (need >= ", floor_ok, ") -- nothing written. Failed: ",
        paste(failures, collapse = ", "))
 }
 

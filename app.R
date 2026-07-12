@@ -344,11 +344,15 @@ shinyOptions(cache = cachem::cache_disk(
 ## the sources & methods copy behind each info button (kept out of the UI
 ## so the boxes stay clean -- the user opens these only when curious)
 INFO_MODALS <- list(
+  ## bodies that name the DATA universe take the active conference (label +
+  ## member count) so the copy stays honest once a second conference lands;
+  ## at Phase 0 conf_lab = "Big 12" and conf_n = 16, so the rendered text is
+  ## byte-identical to the hardcoded copy it replaces.
   info_size = list(
     title = "Size Lab — sources & methods",
-    body = paste0("
+    body = function(conf_lab, conf_n) paste0("
       <p><strong>Source:</strong> 247Sports team commit pages, classes
-      2016–", SIZE_YEARS[2], ", all 16 Big 12 programs (full scrape Jan 2026; the active
+      2016–", SIZE_YEARS[2], ", all ", conf_n, " ", conf_lab, " programs (full scrape Jan 2026; the active
       class kept current by the nightly refresh",
       if (!is.null(last_refresh_label))
         paste0(" — data updated ", last_refresh_label),
@@ -357,7 +361,7 @@ INFO_MODALS <- list(
       'Players' control in the top bar can add portal transfers or isolate
       them (transfers exist for 2021 onward).</p>
       <p><strong>Caveat:</strong> heights/weights are as listed at commit
-      time. Recruiting heights run optimistic — about a quarter of Big 12
+      time. Recruiting heights run optimistic — about a quarter of ", conf_lab, "
       signees are listed shorter on the roster later (see Weight Room →
       Reality Check). Treat any listed height as ±1 inch.</p>
       <p><strong>Girth index:</strong> pounds per inch of height = weight ÷
@@ -424,7 +428,7 @@ INFO_MODALS <- list(
       signees; click it to open that class on 247Sports.</p>"),
   info_brief = list(
     title = "Defensive War Room — sources & methods",
-    body = "
+    body = function(conf_lab, conf_n) paste0("
       <p><strong>The scheme:</strong> Arizona DC Danny Gonzales (promoted
       Jan 2025; 2025 was a top-25 national turnaround with the #1 pass-
       efficiency defense and #1 turnover margin) runs the 3-3-5 odd stack he
@@ -441,10 +445,10 @@ INFO_MODALS <- list(
       Weight cutoffs are editable in <code>R/girth_plots.R</code>
       (<code>role_335</code>).</p>
       <p><strong>Roster construction / retention:</strong> current 247 roster
-      by class standing; home-state commits by Big 12 signing school
+      by class standing; home-state commits by ", conf_lab, " signing school
       (out-of-conference destinations arrive with the Power-4 expansion).</p>
       <p><strong>The brief:</strong> auto-written, defense first — nothing is
-      hand-curated.</p>"),
+      hand-curated.</p>")),
   info_results = list(
     title = "Talent vs Results — sources & methods",
     body = "
@@ -465,12 +469,12 @@ INFO_MODALS <- list(
       line are coaching, development, health, and luck.</p>"),
   info_wat = list(
     title = "Wins Above Talent - sources & methods",
-    body = "
+    body = function(conf_lab, conf_n) paste0("
       <p><strong>The idea:</strong> some staffs win more than their
       recruiting says they should, and some win less. Wins Above Talent
       (WAT) puts a number on that gap: wins per season above (or below)
       what a program's talent predicts.</p>
-      <p><strong>How the expectation is built:</strong> across every Big 12
+      <p><strong>How the expectation is built:</strong> across every ", conf_lab, "
       program-season in the window, we fit the league's own talent-to-wins
       curve -- a <em>quasibinomial</em> regression of season win rate on the
       rolling 4-class talent composite (the same top-20 HS + portal rating
@@ -494,7 +498,7 @@ INFO_MODALS <- list(
       conference</em>, not against football at large. And talent isn't
       destiny -- the gap is coaching, development, health, scheme, and luck,
       bundled together. The season-by-season Scoreboard below shows the same
-      story one year at a time.</p>"),
+      story one year at a time.</p>")),
   info_map = list(
     title = "Recruiting Map — sources & methods",
     body = "
@@ -1575,6 +1579,11 @@ ui <- dashboardPage(
             fluidRow(
               ## no inline logos here -- the summary strip carries them, and
               ## floating images broke the layout at mid widths
+              ## PHASE 2 SEAM: a global "Conference" scope selectInput slots in
+              ## as the leftmost control here (default "Big 12"); it will scope
+              ## g_team's choices to the chosen league while g_compare stays
+              ## full-P4 (Arizona-vs-Georgia works). Do NOT add it at Phase 0 --
+              ## the pickers stay the 16 Big 12 teams. team_choices feeds both.
               column(width = 2,
                      selectInput("g_team", "Your team",
                                  choices = team_choices,
@@ -1619,8 +1628,10 @@ ui <- dashboardPage(
       tabItem(tabName = "home",
               div(class = "hero",
                   uiOutput("hero_team"),
-                  p("Who are the biggest boys in the Big 12, how does each class measure up,
-                     and how does every coach recruit..."),
+                  ## data-universe tagline: names the active team's conference,
+                  ## so it stays honest when a second conference lands (Phase 0
+                  ## renders "...in the Big 12..." unchanged)
+                  uiOutput("hero_tagline"),
                   actionButton("go_sizelab", tagList(icon("ruler-combined"), "Open the Size Lab"),
                                class = "btn-warning"),
                   actionButton("go_beef", tagList(icon("dumbbell"), "Conference Beef"),
@@ -1692,6 +1703,8 @@ ui <- dashboardPage(
                   title = "Pick your team", status = "primary",
                   solidHeader = TRUE, width = 12,
                   div(style = "text-align:center;",
+                      ## PHASE 2: scope this grid to the selected conference's
+                      ## members; at Phase 0 it enumerates all 16 Big 12 teams.
                       lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
                         actionButton(
                           inputId = paste0("select_",
@@ -1785,7 +1798,11 @@ ui <- dashboardPage(
               fluidRow(
                 column(width = 5,
                        box(
-                         title = tagList("Big 12 Beef Board",
+                         ## "<conf> Beef Board": the conference name is a DATA
+                         ## label (this IS the active conference's leaderboard),
+                         ## so it tracks conf_label -- Phase 0 shows "Big 12".
+                         title = tagList(textOutput("beef_board_conf_title",
+                                                    inline = TRUE),
                                          twin_toggle("beef_board")),
                          status = "primary", solidHeader = TRUE,
                          width = NULL, collapsible = TRUE,
@@ -1794,10 +1811,11 @@ ui <- dashboardPage(
                                   color = "#0C234B")),
                          div(class = "gi-tablewrap",
                              uiOutput("beef_twin")),
-                         ctx_note("'Big 12' means today's 16 members, applied
-                           retroactively — Arizona, ASU, Colorado, and Utah
-                           joined in 2024, so their earlier classes were
-                           signed in the Pac-12.")
+                         ## the backcast-honesty note: names the conference, its
+                         ## member count, and the class year the full membership
+                         ## was finally in-conference (conf_whole). See
+                         ## output$beef_ctx_note.
+                         uiOutput("beef_ctx_note")
                        )),
                 column(width = 7,
                        box(
@@ -2172,53 +2190,11 @@ ui <- dashboardPage(
                 box(
                   title = "About the data", status = "primary",
                   solidHeader = TRUE, width = 6,
-                  HTML(paste0("
-                    <p style='font-size:13px; color:#777; border-left: 3px solid
-                      #FFD200; padding-left: 10px;'>
-                      Everything here depends on what programs report and what
-                      247Sports lists — heights, weights, ratings, and rosters
-                      are best-available numbers, not certified measurements.
-                      Treat small differences between teams accordingly.</p>
-                    <ul style='font-size:14px; line-height:1.7;'>
-                      <li><strong>Recruiting classes</strong>: 247Sports commit
-                        lists, classes from 2016 on, all 16 Big 12 programs,
-                        football and basketball. Portal transfers are included
-                        from 2021 on; the 'Players' control switches between
-                        HS commits, commits + transfers, or transfers only.
-                        Every chart caption states which pool it shows.</li>
-                      <li><strong>Current rosters</strong>: 247Sports team
-                        roster pages, refreshed nightly",
-                        if (!is.null(last_refresh_label))
-                          paste0(" (data updated ", last_refresh_label, ")"),
-                        ".</li>
-                      <li><strong>Season records and SP+</strong>:
-                        CollegeFootballData.com, seasons 2016–2025 (football).</li>
-                      <li><strong>Sizes</strong>: heights and weights are as
-                        listed. Recruiting heights run optimistic — about a
-                        quarter of Big 12 signees are listed shorter on the
-                        roster than they were as recruits (Weight Room →
-                        Reality Check). Treat any listed height as ±1 inch.</li>
-                      <li><strong>Locations</strong>: high schools are geocoded,
-                        and each result is checked against its claimed state
-                        before it can appear on the map. Transfers from recent
-                        cycles (2023 on) join the distance-based views as the
-                        nightly refresh captures hometowns from their 247Sports
-                        profiles; earlier transfer classes stay unmapped.</li>
-                      <li><strong>Blue chips (90+)</strong>: counted from the
-                        rating on 247's team pages. 247's Composite runs about
-                        a point lower for borderline players, so counts can
-                        differ by 1–2 per class depending on which you use.</li>
-                      <li><strong>Coach eras</strong>: a class belongs to the
-                        staff that ran its signing window. Mid-cycle changes
-                        are judgment calls; edit <code>R/coach_eras.R</code>
-                        to disagree.</li>
-                      <li><strong>Refreshing</strong>: ratings re-rank and late
-                        commits land all cycle. Re-run
-                        <code>scripts/refreshClassYear.R</code> for the active
-                        class, <code>scripts/scrapeRosters.R</code> for rosters,
-                        and <code>scripts/fetchOutcomes.R</code> after each
-                        season.</li>
-                    </ul>"))
+                  ## body rendered server-side (output$about_data) so the
+                  ## DATA-universe scope -- the conference label + member count --
+                  ## tracks the active conference and stays honest across the
+                  ## onboarding phases; Phase 0 renders the original copy verbatim.
+                  uiOutput("about_data")
                 ),
                 box(
                   title = "Feedback & custom builds", status = "danger",
@@ -2576,16 +2552,76 @@ server <- function(input, output, session) {
     session$sendCustomMessage("saveTeam", input$g_team)
   })
 
-  ## info buttons -> sources & methods modals
+  ## info buttons -> sources & methods modals. A body may be a plain string or
+  ## a function(conf_lab, conf_n) -- the latter names the DATA universe, so it
+  ## is resolved against the ACTIVE team's conference at open time (Phase 0:
+  ## "Big 12" / 16, so the text is unchanged).
   lapply(names(INFO_MODALS), function(id) {
     observeEvent(input[[id]], {
+      body <- INFO_MODALS[[id]]$body
+      if (is.function(body)) body <- body(active_conf_lab(), active_conf_n())
       showModal(modalDialog(
         title = INFO_MODALS[[id]]$title,
-        HTML(INFO_MODALS[[id]]$body),
+        HTML(body),
         easyClose = TRUE, footer = modalButton("Got it")
       ))
     })
   })
+
+  ## "About the data" body: the scraped universe = the active conference's
+  ## members. Its label + count route through conf_label()/conf_slugs() so the
+  ## page can never claim a stale team count or the wrong league. Phase 0 renders
+  ## "all 16 Big 12 programs" / "quarter of Big 12 signees", unchanged.
+  output$about_data <- renderUI({
+    HTML(paste0("
+                    <p style='font-size:13px; color:#777; border-left: 3px solid
+                      #FFD200; padding-left: 10px;'>
+                      Everything here depends on what programs report and what
+                      247Sports lists — heights, weights, ratings, and rosters
+                      are best-available numbers, not certified measurements.
+                      Treat small differences between teams accordingly.</p>
+                    <ul style='font-size:14px; line-height:1.7;'>
+                      <li><strong>Recruiting classes</strong>: 247Sports commit
+                        lists, classes from 2016 on, all ", active_conf_n(), " ", active_conf_lab(), " programs,
+                        football and basketball. Portal transfers are included
+                        from 2021 on; the 'Players' control switches between
+                        HS commits, commits + transfers, or transfers only.
+                        Every chart caption states which pool it shows.</li>
+                      <li><strong>Current rosters</strong>: 247Sports team
+                        roster pages, refreshed nightly",
+                        if (!is.null(last_refresh_label))
+                          paste0(" (data updated ", last_refresh_label, ")"),
+                        ".</li>
+                      <li><strong>Season records and SP+</strong>:
+                        CollegeFootballData.com, seasons 2016–2025 (football).</li>
+                      <li><strong>Sizes</strong>: heights and weights are as
+                        listed. Recruiting heights run optimistic — about a
+                        quarter of ", active_conf_lab(), " signees are listed shorter on the
+                        roster than they were as recruits (Weight Room →
+                        Reality Check). Treat any listed height as ±1 inch.</li>
+                      <li><strong>Locations</strong>: high schools are geocoded,
+                        and each result is checked against its claimed state
+                        before it can appear on the map. Transfers from recent
+                        cycles (2023 on) join the distance-based views as the
+                        nightly refresh captures hometowns from their 247Sports
+                        profiles; earlier transfer classes stay unmapped.</li>
+                      <li><strong>Blue chips (90+)</strong>: counted from the
+                        rating on 247's team pages. 247's Composite runs about
+                        a point lower for borderline players, so counts can
+                        differ by 1–2 per class depending on which you use.</li>
+                      <li><strong>Coach eras</strong>: a class belongs to the
+                        staff that ran its signing window. Mid-cycle changes
+                        are judgment calls; edit <code>R/coach_eras.R</code>
+                        to disagree.</li>
+                      <li><strong>Refreshing</strong>: ratings re-rank and late
+                        commits land all cycle. Re-run
+                        <code>scripts/refreshClassYear.R</code> for the active
+                        class, <code>scripts/scrapeRosters.R</code> for rosters,
+                        and <code>scripts/fetchOutcomes.R</code> after each
+                        season.</li>
+                    </ul>"))
+  })
+  outputOptions(output, "about_data", suspendWhenHidden = FALSE)
 
   ## the collapsed bar's one-line summary of every global setting
   output$cb_summary <- renderUI({
@@ -2617,6 +2653,21 @@ server <- function(input, output, session) {
     if (is.null(input$g_compare) || input$g_compare == "" ||
         input$g_compare == input$g_team) NULL else input$g_compare
   })
+
+  ## ---- CONFERENCE SCOPE SEAM (Power-4 Phase 0) -----------------------------
+  ## Every board/rank/median pools ONLY the active team's conference members,
+  ## and every data-universe label reads its name + size from CONF_CONFIG via
+  ## conf_label()/conf_slugs() -- never a hardcoded "Big 12"/"16". At Phase 0
+  ## all 16 teams share one conference, so conf_pool_slugs() returns all 16,
+  ## active_conf_lab() is "Big 12" and active_conf_n() is 16 -> every board,
+  ## rank and caption is byte-identical to the pre-change app. The instant a
+  ## second conference's rows land, the same code scopes + relabels itself.
+  ## PHASE 2 wires a global Conference SCOPE selectInput in here (see the
+  ## control bar) so g_team can be scoped to a chosen league; do NOT add it now.
+  active_conf     <- reactive(team_conference(input$g_team %||% "arizona"))
+  active_conf_lab <- reactive(conf_label(active_conf()))
+  conf_pool_slugs <- reactive(conf_slugs(active_conf()))
+  active_conf_n   <- reactive(length(conf_pool_slugs()))
 
   ## full prepped table for the current sport, filtered by the player-type
   ## radio (portal transfers exist for refreshed years: 2021+ after back-fill)
@@ -2734,11 +2785,21 @@ server <- function(input, output, session) {
             style = "background:white; border-radius:10px; padding:5px;"),
         h1(glue("{team_label(input$g_team)} — Big 12 Girth Index")))
   })
+  ## the hero tagline names the DATA universe (the active conference), not the
+  ## product -- so it routes through conf_label while "Big 12 Girth Index" above
+  ## stays a fixed brand.
+  output$hero_tagline <- renderUI({
+    p(glue("Who are the biggest boys in the {active_conf_lab()}, how does each ",
+           "class measure up, and how does every coach recruit..."))
+  })
 
   ## current-status boxes for the SELECTED team (season-proof: everything is
   ## derived from the window + max class year, never hardcoded)
   output$vb_home_rank <- renderValueBox({
-    board <- team_size_summary(size_window()) %>% arrange(desc(AvgWeight))
+    ## rank within the active team's conference (Phase 0: all 16 -> unchanged)
+    board <- team_size_summary(size_window() %>%
+                                 filter(School %in% conf_pool_slugs())) %>%
+      arrange(desc(AvgWeight))
     rk <- which(board$School == input$g_team)
     val <- if (length(rk) == 1) paste0("#", rk, " of ", nrow(board)) else "—"
     valueBox(val,
@@ -2752,17 +2813,18 @@ server <- function(input, output, session) {
       return(valueBox("—", "No players in this window",
                       icon = icon("star"), color = "light-blue"))
     }
-    ## rank the newest class among the conference's newest classes
+    ## rank the newest class among the active conference's newest classes
+    ## (Phase 0: all 16 members -> unchanged)
     yr <- snap$year
     cls_rank <- size_window() %>%
-      filter(Year == yr) %>%
+      filter(Year == yr, School %in% conf_pool_slugs()) %>%
       group_by(School) %>%
       summarize(r = mean(Ranking, na.rm = TRUE), .groups = "drop") %>%
       arrange(desc(r))
     rk <- which(cls_rank$School == input$g_team)
     valueBox(glue("{snap$avg_rating}"),
              glue("Class of {yr} avg rating — #{rk} of {nrow(cls_rank)} ",
-                  "in the Big 12, {snap$blue} blue-chip",
+                  "in the {active_conf_lab()}, {snap$blue} blue-chip",
                   "{ifelse(snap$blue == 1, '', 's')}"),
              icon = icon("star"), color = "light-blue")
   })
@@ -2771,7 +2833,9 @@ server <- function(input, output, session) {
       return(valueBox("—", "Weight room data not scraped yet",
                       icon = icon("dumbbell"), color = "orange"))
     }
+    ## development rank within the active conference (Phase 0: all 16 members)
     gains <- wr_data_r() %>%
+      filter(School %in% conf_pool_slugs()) %>%
       group_by(School) %>%
       summarize(g = mean(GainPerYr), .groups = "drop") %>%
       arrange(desc(g))
@@ -2951,7 +3015,10 @@ server <- function(input, output, session) {
              icon = icon("compress"), color = "orange")
   })
   output$vb_rank <- renderValueBox({
-    board <- team_size_summary(size_window()) %>% arrange(desc(AvgWeight))
+    ## beef rank within the active team's conference (Phase 0: all 16 members)
+    board <- team_size_summary(size_window() %>%
+                                 filter(School %in% conf_pool_slugs())) %>%
+      arrange(desc(AvgWeight))
     rk <- which(board$School == input$g_team)
     val <- if (length(rk) == 1) paste0("#", rk, " of ", nrow(board)) else "—"
     valueBox(val, "Beef rank (by avg weight)",
@@ -3038,6 +3105,35 @@ server <- function(input, output, session) {
     } else NULL
   })
 
+  ## "<conf> Beef Board" -- the leaderboard is the active conference's, so the
+  ## title tracks conf_label (Phase 0: "Big 12 Beef Board", unchanged). Matches
+  ## the chart title in plot_beef_board and the twin-table caption below.
+  output$beef_board_conf_title <- renderText(glue("{active_conf_lab()} Beef Board"))
+  outputOptions(output, "beef_board_conf_title", suspendWhenHidden = FALSE)
+
+  ## backcast-honesty note. Name/count/"whole" year all come from CONF_CONFIG so
+  ## the caveat can't go stale. The anchor conference (shipped Big 12) keeps its
+  ## hand-written realignment detail verbatim -- at Phase 0 this branch always
+  ## runs and, with conf_lab "Big 12" / n 16 / whole 2024, reproduces the
+  ## original note. Any later conference gets a generic (still honest) note
+  ## instead of inheriting the Pac-12-four detail as a lie.
+  output$beef_ctx_note <- renderUI({
+    conf <- active_conf(); cl <- active_conf_lab(); n <- active_conf_n()
+    whole <- CONF_CONFIG$conf_whole[match(conf, CONF_CONFIG$conf)]
+    anchor <- CONF_CONFIG$conf[which.min(CONF_CONFIG$order)]
+    note <- if (identical(conf, anchor)) {
+      glue("'{cl}' means today's {n} members, applied retroactively — ",
+           "Arizona, ASU, Colorado, and Utah joined in {whole}, so their ",
+           "earlier classes were signed in the Pac-12.")
+    } else {
+      glue("'{cl}' means today's {n} members, applied retroactively — any ",
+           "class a member signed before it joined (through {whole}) is a ",
+           "backcast from that program's former league.")
+    }
+    ctx_note(note)
+  })
+  outputOptions(output, "beef_ctx_note", suspendWhenHidden = FALSE)
+
   output$beef_board <- renderGirafe({
     req(input$size_metric, input$size_pos, input$size_source)
     ## default Conference Beef view ships precomputed (AvgWeight, all
@@ -3109,7 +3205,9 @@ server <- function(input, output, session) {
   })
   output$vb_wr_rank <- renderValueBox({
     req(!is.null(roster_now()))
+    ## weight-room rank within the active conference (Phase 0: all 16 members)
     gains <- wr_data_r() %>%
+      filter(School %in% conf_pool_slugs()) %>%
       group_by(School) %>%
       summarize(g = mean(GainPerYr), .groups = "drop") %>%
       arrange(desc(g))
@@ -3152,7 +3250,7 @@ server <- function(input, output, session) {
     hc <- height_check_stats(wr_data_r(), input$g_team)
     val <- if (is.na(hc$pct_shrunk_team)) "—" else paste0(hc$pct_shrunk_team, "%")
     valueBox(val, glue("of {team_label(input$g_team)} signees 'shrunk' ",
-                       "(Big 12: {hc$pct_shrunk_conf}%)"),
+                       "({active_conf_lab()}: {hc$pct_shrunk_conf}%)"),
              icon = icon("ruler"), color = "yellow")
   })
 
@@ -3212,7 +3310,7 @@ server <- function(input, output, session) {
     shr <- if (!is.na(hc$biggest_shrinker)) {
       glue("Biggest {team_label(input$g_team)} 'shrinker': {hc$biggest_shrinker}.")
     } else ""
-    HTML(glue("<em style='color:#888;'>{hc$pct_shrunk_conf}% of matched Big 12
+    HTML(glue("<em style='color:#888;'>{hc$pct_shrunk_conf}% of matched {active_conf_lab()}
       signees are listed SHORTER on the roster than on their recruiting profile
       — recruiting heights run optimistic. {shr}
       Players who left (transfer/NFL/graduated) can't be checked.</em>"))
@@ -3443,7 +3541,7 @@ server <- function(input, output, session) {
            "current roster weights.")
     }
     HTML(twin_table_html(
-      b, caption = glue("Big 12 Beef Board - ",
+      b, caption = glue("{active_conf_lab()} Beef Board - ",
                         "{pos_filter_label(input$size_pos)} - table view"),
       caption_note = cap_note))
   })

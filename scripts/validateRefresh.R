@@ -154,6 +154,11 @@ for (tbl in c("roster_football", "roster_basketball")) {
       "SELECT RosterYear, COUNT(*) AS n_live FROM ", tbl,
       " GROUP BY RosterYear"))
     shared <- merge(by, ly, by = "RosterYear")
+    ## POWER-4 NOTE: onboarding a new school or a whole new conference is
+    ## GROWTH, not shrinkage -- it raises per-RosterYear totals, never lowers
+    ## them. This +/-20% band compares only RosterYears present in BOTH dbs, so
+    ## rows added by an expansion land in `new_years` below (allowed as growth)
+    ## rather than tripping this gate. No behavior change at the shipped 16.
     if (nrow(shared) > 0) {
       bad <- shared[shared$n_live < 0.8 * shared$n_base |
                     shared$n_live > 1.2 * shared$n_base, , drop = FALSE]
@@ -181,6 +186,9 @@ for (tbl in c("roster_football", "roster_basketball")) {
         " GROUP BY RosterYear"))
       as.integer(scy$n[match(yr_new, scy$RosterYear)])
     }
+    ## PHASE 1: the literal 12 is 75% of the shipped 16. When teams onboard,
+    ## scale this floor to the onboarded/active count (e.g. ceiling(0.75 * n))
+    ## rather than the constant. Left as-is here -- no behavior change at 16.
     check(sprintf("%s: >= 12 distinct schools in newest live RosterYear %s (%d)",
                   tbl, yr_new, sc), sc >= 12)
   } else {
