@@ -8,6 +8,45 @@
 and Posit Connect Cloud (git-backed). Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet,
 large inline vanilla-JS layer, SQLite `data/recruiting.db`.
 
+## >>> RESUME HERE: Power-4 expansion, mid-build (paused 2026-07-12, usage limit) <<<
+
+Adding Big Ten + SEC + ACC (16 -> ~67 teams) + a conference-vs-conference "Conference Lab".
+**Full plan: [docs/p4-expansion-design.md](p4-expansion-design.md).** User decisions locked: all 67 teams
+onboarded conference-by-conference; recruiting-inputs-only comparison (NO conf win%/SP+); dedicated
+Conference Lab tab; stay on the server worker (Shinylive is the separate endgame); football gets the
+blue-chip-ratio leaderboard, basketball distributions-only.
+
+**DONE + pushed to main:**
+- **Phase 0 — the conference gate (`1e63648`).** Conference is a per-team scoping dimension; every
+  "Big 12" DATA label routes through `conf_label()`; `conf_slugs(team_conference(team))` is the pooling
+  scope. PROVEN byte-identical vs HEAD (a harness rebuilt 46 board signatures old-vs-new = same md5).
+  New helpers in R/team_config.R: `team_conference`, `conf_slugs`, `conf_label`, `CONF_CONFIG`,
+  `conf_since` (+ `team_big12_since` back-compat shim). Scrapers gained `--conference`/`--slugs` flags.
+
+**IN FLIGHT when paused — Phase 1 data foundation (a Workflow was running; its changes are UNCOMMITTED):**
+- Workflow task `wwr8e6v9i` (run id `wf_f827de34-9e2`) was building + running: `scripts/validateSlugs.R`
+  (sweep all 67 teams' 247 landing pages), `scripts/buildTeamConfig.R` (CFBD `/teams/fbs` -> 68-row
+  `data/team_config.csv` + download ~51 logos to `www/`), the `onboarded` flag wiring (new teams present
+  but HIDDEN; only the 16 Big 12 onboarded=TRUE so 16-team UX stays byte-identical), and
+  `scripts/backfillConference.R` (the lock-holding per-conference historical backfill orchestrator).
+- **ON RESUME:** run `/pickup`. Read the workflow output at
+  `~/AppData/Local/Temp/claude/.../tasks/wwr8e6v9i.output` (or re-run the Phase 1 workflow via its
+  scriptPath). Verify: `data/team_config.csv` = 68 rows, exactly 16 onboarded, ~51 logos in `www/`,
+  the needs-review slug list (247 quirks like `ole-miss`/`nc-state`/`texas-am` may need a manual fix),
+  and that the 16-team UX is still byte-identical. Then commit Phase 1 (teams present but hidden = safe).
+
+**NEXT (not started):**
+- **Phase 1 finish:** run `scripts/backfillConference.R` for SEC (then Big Ten, then ACC) as a long
+  monitored background job — it holds `logs/refresh.lock` so the nightly stands down safely.
+  ~40 min scrape + 25-40 min geocode PER conference. Flip each league's `onboarded=TRUE` on success.
+- **Phase 2:** the Conference Lab tab + `plot_conf_talent_spread` / `plot_conf_leaderboard` (distribution-
+  first; the `CONF_COMPARE_POLICY` GREEN/YELLOW/RED metric-tier registry; realignment backcast rule).
+- **Phase 3:** perf/nightly scaling (roster stage rotated by conference; per-conference aggregate rds).
+
+**Note:** the nightly 23:30 pipeline still runs on the 16 onboarded teams throughout — safe + unaffected
+until a conference is onboarded. Two spawned-task chips (wrapper silent-death, push escalation) were
+already FIXED this session (commits f57dd35, 8ed57a5).
+
 ## Shipped in v7.0 (the review-driven hardening — committed 26b9cdf)
 
 A 52-agent review produced 65 verified findings; the golden-dozen high-impact fixes are live:
