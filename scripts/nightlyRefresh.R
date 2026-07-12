@@ -14,7 +14,9 @@
 ##   no-push     no-deploy   no-alert
 ##
 ## Stages:
-##   S0 preflight   lock, quick_check, 247 reachability probe, prune
+##   S0 preflight   lock, quick_check, 247 reachability probe, git
+##                  ls-remote probe (a dead credential fails here, not
+##                  after a full scrape), prune
 ##   S1 snapshot    content hash + whole-file db copy to backups/
 ##   S2 ingest      refreshClassYear.R (both sports, newest cycle, PLUS an
 ##                  ahead-year probe of MAX(Year)+1 with --allow-empty: the
@@ -98,6 +100,7 @@ started_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
 stages         <- list()
 notes          <- character(0)
 failed_schools <- character(0)
+push_probe_ok  <- TRUE
 lock_acquired  <- FALSE
 log_written    <- FALSE
 snap           <- NULL
@@ -373,6 +376,30 @@ tryCatch({
     cat("Leftover rebase state found -- running git rebase --abort\n")
     try(git_run("rebase", "--abort"), silent = TRUE)
     notes <- c(notes, "preflight: aborted a leftover rebase from a prior run")
+  }
+
+  ## push preflight: a dead credential re-fails IDENTICALLY every night and
+  ## would otherwise only surface after a full scrape. Probe the remote now
+  ## so the failure is named from minute one. A miss is a WARN, not an
+  ## abort -- the night still earns its keep (scrape + shinyapps deploy are
+  ## git-independent) -- but S7 skips the doomed push and a second
+  ## consecutive miss escalates to failed at S10.
+  if (!no_push && Sys.which("git") != "") {
+    Sys.setenv(GIT_TERMINAL_PROMPT = "0")  # fail fast, never prompt
+    st <- suppressWarnings(system2(
+      "git", c("ls-remote", "--exit-code", "origin", "HEAD"),
+      stdout = FALSE, stderr = FALSE))
+    if (identical(st, 0L)) {
+      cat("git ls-remote probe: ok\n")
+    } else {
+      push_probe_ok <- FALSE
+      stages$push_probe <- "warn"
+      notes <- c(notes, paste0(
+        "preflight git ls-remote failed (exit ", st, ") -- expired ",
+        "credential or network; the push will be skipped this run"))
+      cat("git ls-remote probe FAILED (exit ", st,
+          ") -- the push will be skipped this run\n", sep = "")
+    }
   }
 
   scraping <- !(no_classes && no_rosters)
@@ -691,21 +718,41 @@ tryCatch({
                   "docs/brief")
     where <- "add"
     if (st == 0) { st <- git_run("commit", msg_args); where <- "commit" }
-    if (st == 0) {
-      st <- git_run("pull", "--rebase", "--autostash")
-      where <- "pull --rebase"
-      ## never leave the repo mid-rebase -- abort immediately on failure
-      if (st != 0) try(git_run("rebase", "--abort"), silent = TRUE)
-    }
-    if (st == 0) { st <- git_run("push"); where <- "push" }
-    if (st == 0) {
-      stages$push <- "ok"
-      cat("[push] committed and pushed:", msg, "\n")
-    } else {
+    if (st == 0 && !push_probe_ok) {
+      ## the S0 ls-remote probe already failed -- the local commit is the
+      ## valuable part (a checkpoint that ships when a push next lands);
+      ## attempting the doomed pull/push would only add noise
       stages$push <- "warn"
+      cat("[push] committed locally; push SKIPPED (preflight probe failed)\n")
       notes <- c(notes, paste0(
-        "git ", where, " exited ", st,
-        " -- commit stays local and self-heals on the next push"))
+        "push skipped: the preflight ls-remote probe failed (expired ",
+        "credential or network); the commit is local and ships when a ",
+        "push next lands -- Connect Cloud serves the previous data until ",
+        "then"))
+    } else {
+      if (st == 0) {
+        st <- git_run("pull", "--rebase", "--autostash")
+        where <- "pull --rebase"
+        ## never leave the repo mid-rebase -- abort immediately on failure
+        if (st != 0) try(git_run("rebase", "--abort"), silent = TRUE)
+      }
+      if (st == 0) { st <- git_run("push"); where <- "push" }
+      if (st == 0) {
+        stages$push <- "ok"
+        cat("[push] committed and pushed:", msg, "\n")
+      } else {
+        stages$push <- "warn"
+        ## honesty: only a TRANSIENT failure self-heals. A binary rebase
+        ## conflict (origin gained a data commit from another machine) or a
+        ## dead credential re-fails identically every night -- that is what
+        ## the S10 second-consecutive-miss escalation exists to catch.
+        notes <- c(notes, paste0(
+          "git ", where, " exited ", st,
+          " -- the commit stays local; a transient network blip heals on ",
+          "the next push, but a diverged origin (binary rebase conflict) ",
+          "or an expired credential will NOT -- a second consecutive miss ",
+          "escalates to failed"))
+      }
     }
   }
 
@@ -785,9 +832,34 @@ tryCatch({
   ## S10 report
   ## -------------------------------------------------------------------------
   banner("S10 report")
+  ## chronic-push escalation (ship's exam, 2026-07-11): ONE missed push is
+  ## routine; a SECOND consecutive miss is not self-healing -- a diverged
+  ## origin (binary rebase conflict) or a dead credential re-fails
+  ## identically every night while the git-independent shinyapps deploy
+  ## keeps that host fresh, so Connect Cloud silently serves aging data.
+  ## Escalate so the run reads failed (exit 1) and the alert says chronic.
+  push_escalated <- FALSE
+  if (identical(stages$push, "warn")) {
+    prev_push <- tryCatch(last_manifest_push_status("logs", run_id),
+                          error = function(e) NA_character_)
+    if (!is.na(prev_push) && prev_push %in% c("warn", "failed")) {
+      stages$push <- "failed"
+      push_escalated <- TRUE
+      notes <- c(notes, paste0(
+        "push has missed 2+ consecutive runs (previous run: ", prev_push,
+        ") -- NOT self-healing; check for a diverged origin or an expired ",
+        "credential (git ls-remote origin); Connect Cloud is serving aging ",
+        "data while shinyapps stays fresh"))
+      cat("[escalation] second consecutive push miss -> failed\n")
+    }
+  }
+
   any_bad <- any(unlist(stages) %in% c("failed", "warn"))
-  final_status <- if (any_bad) "degraded" else if (!changed) "noop" else "ok"
-  exit_code <- if (final_status == "degraded") 2L else 0L
+  final_status <- if (push_escalated) "failed"
+                  else if (any_bad) "degraded"
+                  else if (!changed) "noop" else "ok"
+  exit_code <- if (final_status == "failed") 1L
+               else if (final_status == "degraded") 2L else 0L
   finalize(final_status, exit_code)
 
 }, error = function(e) {

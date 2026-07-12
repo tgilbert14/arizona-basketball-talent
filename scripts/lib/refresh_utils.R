@@ -231,3 +231,25 @@ prune_old <- function(dir, pattern, days) {
   }
   invisible(old)
 }
+
+## push status of the most recent PRIOR run, read from the newest full
+## manifest in logs/. Feeds the S10 escalation: one missed push is routine
+## (transient network), two consecutive misses are chronic (binary rebase
+## divergence or a dead credential re-fail identically every night).
+## Returns the stage string ('ok'/'warn'/'failed'/'skipped'/'pending') or
+## NA when no prior manifest exists or it cannot be parsed.
+last_manifest_push_status <- function(log_dir = "logs",
+                                      exclude_run_id = NULL) {
+  files <- sort(list.files(log_dir,
+                           pattern = "^refresh_manifest_.*\\.json$",
+                           full.names = TRUE), decreasing = TRUE)
+  for (f in files) {
+    if (!is.null(exclude_run_id) &&
+        grepl(exclude_run_id, basename(f), fixed = TRUE)) next
+    m <- tryCatch(jsonlite::fromJSON(f), error = function(e) NULL)
+    st <- tryCatch(m$stages$push, error = function(e) NULL)
+    if (!is.null(st) && length(st) == 1) return(as.character(st))
+    return(NA_character_)   # newest prior run has no readable push stage
+  }
+  NA_character_
+}
