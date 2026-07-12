@@ -169,6 +169,11 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
   t_col <- team_color(team_slug)
   t_lab <- team_label(team_slug)
   yr_rng <- paste0(min(size_data$Year), "–", max(size_data$Year))
+  ## realignment honesty: the grey cloud is the current 16 members, so a
+  ## window reaching before 2024 shows programs that were not yet in the league
+  bc_note <- if (min(size_data$Year) < 2024) {
+    " Grey cloud = the current 16 members, backcast before 2024."
+  } else ""
 
   ## hover text for the interactive version (scraped profile URL when the
   ## frame carries one; search fallback otherwise)
@@ -257,7 +262,7 @@ plot_body_map <- function(size_data, team_slug, sport, year_min = NULL,
       subtitle = glue(
         "Big 12 players (grey cloud) vs {t_lab} (colored by position). ",
         "Tall is up, heavy is right; dashed lines = conference medians",
-        "{ifelse(pos_note == '', '', ' for this position')}."),
+        "{ifelse(pos_note == '', '', ' for this position')}.{bc_note}"),
       x = "Weight (lbs)", y = "Height",
       caption = paste0("Data: 247Sports. Tap or hover dots for player details.", scope_note(players_note))
     ) +
@@ -650,21 +655,42 @@ plot_head_to_head <- function(size_data, team1, team2, sport,
     theme_girth()
 }
 
+## normalized name-join key: lowercase, alpha-only, then a trailing
+## generational suffix stripped so "Troy Ford Jr." and "Troy Ford" resolve to
+## the same "troyford". Mirrors scripts/weeklyBrief.R's name_key + strip_gen
+## (longest suffix alternative first so "iii" never half-matches as "ii").
+## Used ONLY as a join key -- display names are never touched.
+norm_name_key <- function(x) {
+  k <- tolower(gsub("[^a-z]", "", tolower(x)))
+  sub("(iii|ii|iv|jr|sr|v)$", "", k)
+}
+
 ## ---------------------------------------------------------------------------
 ## 6) WEIGHT ROOM EFFECT -- join commit-day weight to current roster weight
 ##    (matched players = a program's own HS signees still on the roster)
 ## ---------------------------------------------------------------------------
 weight_room_data <- function(size_data, roster_data) {
+  ## suffix-stripped join key on BOTH sides (see norm_name_key). Drop roster's
+  ## Name from the carried columns so the join keeps size_data's display name
+  ## (a "Jr." on either side no longer splits a matched player into a miss).
   roster_clean <- roster_data %>%
     mutate(RosterWeight = suppressWarnings(as.numeric(Weight)),
-           RosterHeight_in = parse_height(Height)) %>%
+           RosterHeight_in = parse_height(Height),
+           key = norm_name_key(Name)) %>%
     filter(!is.na(RosterWeight), RosterWeight >= 120) %>%
-    distinct(Name, School, .keep_all = TRUE) %>%
-    select(Name, School, RosterWeight, RosterHeight_in, Class, RosterYear)
+    distinct(key, School, .keep_all = TRUE) %>%
+    select(School, key, RosterWeight, RosterHeight_in, Class, RosterYear)
 
-  size_data %>%
-    distinct(Name, School, .keep_all = TRUE) %>%
-    inner_join(roster_clean, by = c("Name", "School")) %>%
+  signees <- size_data %>%
+    mutate(key = norm_name_key(Name)) %>%
+    distinct(key, School, .keep_all = TRUE)
+
+  ## the name match itself, BEFORE the measurement sanity filter (which drops
+  ## typo weights, not match misses) -- so match_note reports true join quality
+  matched <- signees %>%
+    inner_join(roster_clean, by = c("School", "key"))
+
+  out <- matched %>%
     mutate(WeightGain = RosterWeight - Weight,
            ## a 2021 signee has had ~5 S&C years, a 2025 signee months --
            ## per-year gain is the fair strength-program comparison
@@ -677,6 +703,19 @@ weight_room_data <- function(size_data, roster_data) {
              RosterHeight_in - Height_in, NA_real_)) %>%
     ## drop junk joins / typo measurements
     filter(WeightGain > -40, WeightGain < 90)
+
+  ## scope receipt (NOT a scrape-quality score): the gains average only over
+  ## signees still on a current roster. A low share over a wide window is
+  ## graduation / portal / NFL departures, not a broken join -- phrase it so
+  ## it can never read as "the scrape missed (100-P)%".
+  n_signees <- nrow(signees)
+  n_matched <- nrow(matched)
+  attr(out, "match_note") <- if (n_signees > 0) {
+    glue("gains cover the {n_matched} of {n_signees} windowed signees ",
+         "({round(100 * n_matched / n_signees)}%) still on a current roster; ",
+         "the rest graduated, transferred, or turned pro")
+  } else NA_character_
+  out
 }
 
 ## ---------------------------------------------------------------------------
@@ -691,7 +730,9 @@ weight_room_data <- function(size_data, roster_data) {
 retention_board_data <- function(size_commits, roster_data, team_slug,
                                  compare_slug = NULL, logo_prefix = "www/") {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
-  nkey <- function(x) tolower(gsub("[^a-z]", "", tolower(x)))
+  ## suffix-stripped key on BOTH sides so "Troy Ford Jr." is not counted as a
+  ## departure from "Troy Ford" (see norm_name_key)
+  nkey <- norm_name_key
 
   roster_year <- suppressWarnings(
     max(as.numeric(roster_data$RosterYear), na.rm = TRUE))
@@ -746,6 +787,11 @@ retention_board_data <- function(size_commits, roster_data, team_slug,
   attr(board, "value_fmt_fn") <- function(v) paste0(round(v), "%")
   attr(board, "conf_avg") <- 100 * sum(per_class$kept) / sum(per_class$n)
   attr(board, "cls_years") <- cls_years
+  ## no match_note on retention: "still on the roster" IS this board's metric
+  ## (the subtitle's retention rate), so a "matched P%" receipt would just
+  ## restate it under a name that reads like a scrape-quality score. The
+  ## suffix-normalized join key is the real fix and needs no receipt here.
+  attr(board, "match_note") <- NA_character_
   board
 }
 
@@ -785,10 +831,15 @@ plot_class_retention <- function(size_commits, roster_data, team_slug,
         "{ifelse(cmp_safe == '', '', paste0(' vs ', team_label(cmp_safe)))}",
         " highlighted."), 58),
       x = "% of Signees Still on the Roster", y = NULL,
-      caption = wrap_title(paste(
-        "Name-matched to 247Sports roster pages; departures include the",
-        "portal, the NFL, medicals, and early graduation. Tap or hover a dot",
+      caption = wrap_title(paste0(
+        "Name-matched to 247Sports roster pages; departures include the ",
+        "portal, the NFL, medicals, and early graduation. Tap or hover a dot ",
         "for the class-by-class breakdown."), 95)
+        ## NB: no "join quality %" line here -- on THIS board the roster match
+        ## IS the metric (the retention rate the subtitle already prints), so a
+        ## second "matched P%" line would restate it under a misleading name.
+        ## The suffix-normalized join key (norm_name_key) is the real fix; it
+        ## needs no caption.
     ) +
     theme_girth_md()
 }
@@ -918,6 +969,9 @@ wr_board_data <- function(wr_data, team_slug, sport,
   } else {
     mean(-wr_data$WeightGain[wr_data$WeightGain < 0])
   }
+  ## carry the name-match receipt weight_room_data stamped on wr_data through
+  ## to the board, so the chart caption + table twin can both surface it
+  attr(board, "match_note") <- attr(wr_data, "match_note")
   board
 }
 
@@ -975,9 +1029,16 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
                  "Average Pounds Gained per Year on Campus",
                  "Average Weight Trimmed Among Slimmers (lbs)"),
       y = NULL,
-      caption = wrap_title(paste(
-        "Tap or hover a dot for the players behind the number. Weights are",
-        "as reported by programs and listed by 247Sports."), 95)
+      caption = wrap_title(paste0(
+        "Tap or hover a dot for the players behind the number. Weights are ",
+        "as reported by programs and listed by 247Sports.",
+        ## honest scope, not a "join quality" score: the gains are computed
+        ## only on signees still on a current roster -- the rest graduated,
+        ## transferred, or turned pro (a low share over a wide window is those
+        ## departures, NOT a broken scrape).
+        {mn <- attr(board, "match_note")
+         if (!is.null(mn) && !is.na(mn)) paste0(" ", mn, ".")
+         else ""}), 95)
     ) +
     theme_girth_md()
 }
@@ -1170,6 +1231,19 @@ plot_era_timeline <- function(size_data, team_slug, sport,
               p50 = median(val, na.rm = TRUE),
               p75 = quantile(val, 0.75, na.rm = TRUE), .groups = "drop")
 
+  ## realignment honesty: the pooled band is today's 16 members, so any year
+  ## before the league reached 16 (2024, when the Pac-12 four joined) is a
+  ## BACKCAST. Split the median guide's linetype at that seam -- dotted while
+  ## backcast, solid once the conference is whole. Both halves share the 2024
+  ## point so the line stays connected; empty halves draw nothing.
+  B12_WHOLE <- 2024
+  backcast <- min(conf_yrs$Year) < B12_WHOLE
+  conf_pre  <- conf_yrs %>% filter(Year <= B12_WHOLE)
+  conf_post <- conf_yrs %>% filter(Year >= B12_WHOLE)
+  backcast_clause <- if (backcast) {
+    " Band = the current 16 members, backcast before 2024 (dotted median)."
+  } else ""
+
   y_rng <- range(c(team_yrs$val, commit_yrs$val, conf_yrs$p25, conf_yrs$p75),
                  na.rm = TRUE)
 
@@ -1210,8 +1284,11 @@ plot_era_timeline <- function(size_data, team_slug, sport,
   p +
     geom_ribbon(data = conf_yrs, aes(x = Year, ymin = p25, ymax = p75),
                 fill = "grey75", alpha = 0.35) +
-    geom_line(data = conf_yrs, aes(x = Year, y = p50),
-              color = "grey45", linetype = "dashed", linewidth = 0.8) +
+    ## median guide: dotted across backcast years, solid once whole (2024+)
+    geom_line(data = conf_pre, aes(x = Year, y = p50),
+              color = "grey45", linetype = "dotted", linewidth = 0.8) +
+    geom_line(data = conf_post, aes(x = Year, y = p50),
+              color = "grey45", linetype = "solid", linewidth = 0.8) +
     (if (show_dash) {
       geom_line(data = commit_yrs, aes(x = Year, y = val),
                 color = hl["main"], linetype = "dashed",
@@ -1236,8 +1313,8 @@ plot_era_timeline <- function(size_data, team_slug, sport,
       title = glue("{t_lab} by Coaching Era: {m$label}"),
       subtitle = glue(
         "Shaded bands = head-coach eras (recruiting-class attribution). ",
-        "Grey band = Big 12 team middle (25th–75th pct), grey dashed = ",
-        "median."),
+        "Grey band = Big 12 team middle (25th–75th pct), grey line = median.",
+        "{backcast_clause}"),
       x = "Class Year", y = m$label,
       caption = paste0("Tap or hover a class dot for its top-5 signees; pin ",
                        "it to open that class on 247Sports. Era assignment ",
@@ -2105,6 +2182,12 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
                                   team_color(cmp_safe)),
                  other = "grey55")
   yr_rng <- paste0(min(team_seasons$year), "–", max(team_seasons$year))
+  ## realignment honesty: the median lines pool the current 16 members, so a
+  ## window reaching before 2024 backcasts programs onto seasons predating
+  ## their Big 12 membership
+  bc_note <- if (min(team_seasons$year) < 2024) {
+    " Conference = the current 16 members, backcast before 2024."
+  } else ""
 
   ggplot(agg, aes(x = talent, y = win_pct)) +
     geom_vline(xintercept = med_t, linetype = "dashed", color = "grey55") +
@@ -2129,12 +2212,154 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
       subtitle = wrap_title(glue(
         "Each dot = one program, seasons {yr_rng}. X = rolling 4-class talent ",
         "composite (mean of the window's top-20 HS + portal ratings); ",
-        "Y = win percentage. Dashed lines = conference medians."), 84),
+        "Y = win percentage. Dashed lines = conference medians.{bc_note}"), 84),
       x = "Average Talent Composite (247 rating points)",
       y = "Win Percentage",
       caption = "Records: CollegeFootballData.com. Talent: 247Sports classes 2016-2026. Tap or hover dots for the receipts."
     ) +
     theme_girth()
+}
+
+## ---------------------------------------------------------------------------
+## 10a) WINS ABOVE TALENT -- fit the league's talent-to-wins curve, then rank
+##      each program by wins per season above/below what its talent predicts
+## ---------------------------------------------------------------------------
+
+## TABLE TWIN: the EXACT per-program frame plot_wat() draws.
+## Contract columns: School, value (= WAT, wins/season above expected),
+## n (= seasons_n), plus actual/expected win pct and the chart's extras.
+## attrs: value_label, value_fmt, value_fmt_fn, yr_rng, model_note.
+wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
+  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  yr_rng2 <- if (min(team_seasons$year) == max(team_seasons$year)) {
+    as.character(max(team_seasons$year))
+  } else paste0(min(team_seasons$year), "-", max(team_seasons$year))
+
+  ## SAME panel construction plot_talent_results uses: the rolling top-20
+  ## talent composite joined to each program-season's record. One row per
+  ## program-season (~160 across the 16 members x the season window).
+  comp <- talent_composites(size_data, sort(unique(team_seasons$year)))
+  panel <- team_seasons %>%
+    left_join(comp, by = c("slug" = "School", "year")) %>%
+    mutate(games = wins + losses) %>%
+    filter(!is.na(composite), games > 0)
+
+  ## the league talent-to-wins curve: a quasibinomial fit of season win rate
+  ## on the talent composite, prior-weighted by games (base stats, no new
+  ## deps). Quasibinomial lets seasons run over/under-dispersed vs a strict
+  ## binomial without moving the fitted curve. The intercept's estimating
+  ## equation makes league expected wins equal league actual wins, so WAT
+  ## nets to ~zero across the conference (a fair over/under-achiever split).
+  fit <- stats::glm(cbind(wins, losses) ~ composite,
+                    family = stats::quasibinomial(), data = panel)
+  panel$exp_p <- as.numeric(stats::predict(fit, type = "response"))
+  panel$exp_wins <- panel$exp_p * panel$games
+
+  board <- panel %>%
+    group_by(slug) %>%
+    summarize(
+      seasons_n = dplyr::n(),
+      W = sum(wins), L = sum(losses),
+      games = sum(games),
+      exp_wins = sum(exp_wins),
+      talent = mean(composite, na.rm = TRUE),
+      .groups = "drop") %>%
+    mutate(
+      actual = 100 * W / games,
+      expected = 100 * exp_wins / games,
+      mean_games = games / seasons_n,
+      ## WAT in WINS PER SEASON = the win-rate gap x the mean season length
+      wat = (actual - expected) / 100 * mean_games,
+      School = slug,
+      TeamName = team_label(slug),
+      role = case_when(slug == team_slug ~ "main",
+                       slug == cmp_safe ~ "compare",
+                       TRUE ~ "other"),
+      value = wat,
+      n = seasons_n,
+      wat_abs = round(abs(wat), 1),
+      ## near-zero collapses to a neutral read: |WAT| < 0.05 rounds to 0.0,
+      ## and "-0.0 W/yr" / "won about 0 games more" looks like a rounding bug
+      near_even = wat_abs < 0.05,
+      tip = glue(
+        "<b>{TeamName} ({yr_rng2})</b><br/>",
+        "Actual {round(actual)}% wins  vs  expected {round(expected)}% ",
+        "given talent<br/>",
+        "{ifelse(near_even,
+                 paste0('About as many wins as expected given its talent.'),
+                 paste0('Given its talent, ', TeamName, ' won about ', wat_abs,
+                        ' ', ifelse(wat_abs == 1, 'game', 'games'),
+                        ' per season ', ifelse(wat >= 0, 'more', 'fewer'),
+                        ' than expected.'))}<br/>",
+        "<em>{W}-{L} over {seasons_n} seasons</em>"),
+      lab = ifelse(near_even, "~even",
+                   paste0(ifelse(wat >= 0, "+", "-"), wat_abs, " W/yr"))) %>%
+    arrange(wat) %>%
+    mutate(TeamName = factor(TeamName, levels = TeamName))
+
+  attr(board, "value_label") <- "Wins above talent (per season)"
+  attr(board, "value_fmt") <- "%+.1f"
+  ## chart's formatter: "+2.1" / "-1.4", matching the row label sans unit
+  attr(board, "value_fmt_fn") <- function(v) {
+    paste0(ifelse(v >= 0, "+", "-"), round(abs(v), 1))
+  }
+  attr(board, "yr_rng") <- yr_rng2
+  attr(board, "model_note") <- glue("{nrow(panel)} program-seasons")
+  board
+}
+
+## the ladder: expected win % (grey) vs actual (role color) per program,
+## ranked by wins above/below what talent predicts
+plot_wat <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
+  hl <- highlight_colors(team_slug, compare_slug)
+  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## single source of truth: the ladder draws exactly the table twin's frame
+  board <- wat_data(team_seasons, size_data, team_slug,
+                    compare_slug = compare_slug)
+  yr_rng <- attr(board, "yr_rng")
+  model_note <- attr(board, "model_note")
+  n_seasons <- length(unique(team_seasons$year))
+  logos <- team_logo_labels(width = 30, prefix = "www/")
+  ## boards keep the compare team's true primary color (rows don't overlap)
+  role_cols <- c(main = unname(hl["main"]),
+                 compare = ifelse(cmp_safe == "", "grey55",
+                                  team_color(cmp_safe)),
+                 other = "grey60")
+  ## the WAT label rides the far end of each dumbbell
+  board$lab_x <- pmax(board$actual, board$expected)
+
+  ggplot(board, aes(y = TeamName)) +
+    ## the gap from expected (grey) to actual (role color) IS the story;
+    ## color the connector by role so main/compare pop
+    geom_segment(aes(x = expected, xend = actual, yend = TeamName,
+                     color = role), linewidth = 1.4, show.legend = FALSE) +
+    geom_point(aes(x = expected), color = "grey65", size = 3.6) +
+    geom_point_interactive(aes(x = actual, color = role, tooltip = tip,
+                               data_id = School),
+                           size = 5, show.legend = FALSE) +
+    geom_text(aes(x = lab_x, label = lab, color = role), hjust = -0.2,
+              size = 3.5, fontface = "bold", show.legend = FALSE) +
+    scale_color_manual(values = role_cols) +
+    scale_y_discrete(labels = logos) +
+    scale_x_continuous(expand = expansion(mult = c(0.03, 0.2)),
+                       labels = function(x) paste0(round(x), "%")) +
+    labs(
+      title = wrap_title("Wins Above Talent: Who Beats Their Recruiting?", 44),
+      subtitle = wrap_title(glue(
+        "Seasons {yr_rng}. Grey dot = expected win % from the league ",
+        "talent-to-wins fit; colored dot = actual. Row label = wins per ",
+        "season above (+) or below (-) that expectation. ",
+        "{team_label(team_slug)}",
+        "{ifelse(cmp_safe == '', '', paste0(' vs ', team_label(cmp_safe)))}",
+        " highlighted."), 60),
+      x = "Win Percentage", y = NULL,
+      caption = wrap_title(glue(
+        "Expected = a quasibinomial fit of season wins on the rolling ",
+        "4-class talent composite ({model_note}), over {n_seasons} seasons ",
+        "in the window. Records: CollegeFootballData.com; talent: 247Sports. ",
+        "The season-by-season Scoreboard chart is unchanged."), 95)
+    ) +
+    theme_girth_md()
 }
 
 ## one team's season-by-season scoreboard: wins bars + talent line
@@ -2273,4 +2498,127 @@ make_talking_points <- function(size_data, team_slug, sport,
   }
 
   pts
+}
+
+## ---------------------------------------------------------------------------
+## 12) RANKED INSIGHTS -- the Home talking points, SCORED so the most
+##     notable rise to the top. Each candidate carries the size of the pool
+##     that backs it (n) and a notability score = magnitude x recency; only
+##     pools with at least MIN_INSIGHT_N players qualify (a two-signee
+##     "insight" isn't one). Built from the SAME summaries
+##     make_talking_points()/class_snapshot() use, so nothing here can
+##     contradict that list -- it just orders and n-gates the same facts.
+## ---------------------------------------------------------------------------
+
+## pool floor: an insight below this many players is dropped, not ranked
+MIN_INSIGHT_N <- 8L
+
+## returns data.frame(sentence, score, n) sorted by score desc (n-gated).
+## `sport` gates the football-only trench line; `year_min/max` optionally
+## re-window before scoring (the app passes an already-windowed pool).
+ranked_insights <- function(size_data, team_slug, sport,
+                            year_min = NULL, year_max = NULL) {
+  empty <- data.frame(sentence = character(0), score = numeric(0),
+                      n = integer(0), stringsAsFactors = FALSE)
+  if (!is.null(year_min)) {
+    size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
+  }
+  if (nrow(size_data) == 0) return(empty)
+
+  t_lab  <- team_label(team_slug)
+  yr_rng <- paste0(min(size_data$Year), "-", max(size_data$Year))
+
+  ## candidate accumulator: add() applies the n-gate + drops NA scores, so
+  ## every caller below can stay declarative
+  cand <- list()
+  add <- function(sentence, score, n) {
+    if (length(score) != 1 || is.na(score) || length(n) != 1 || is.na(n) ||
+        n < MIN_INSIGHT_N) {
+      return(invisible())
+    }
+    cand[[length(cand) + 1L]] <<- list(sentence = as.character(sentence),
+                                       score = as.numeric(score),
+                                       n = as.integer(n))
+  }
+  ## rank extremity: 0 dead-center of the pack, 1 at either edge -- the
+  ## magnitude term for a "#k of N" placement
+  extremity <- function(rk, nb) {
+    if (nb <= 1) return(0)
+    abs((nb + 1) / 2 - rk) / ((nb - 1) / 2)
+  }
+
+  team_rows <- dplyr::filter(size_data, School == team_slug)
+  n_team <- nrow(team_rows)
+
+  ## (a) overall beef rank -- window-wide, so a mid recency weight (0.70)
+  board <- team_size_summary(size_data) %>% dplyr::arrange(dplyr::desc(AvgWeight))
+  nb <- nrow(board)
+  rk <- which(board$School == team_slug)
+  if (length(rk) == 1 && nb > 1) {
+    add(glue("{t_lab} averages {round(board$AvgWeight[rk])} lbs at ",
+             "{format_height(board$AvgHeight[rk])} - the #{rk} heaviest ",
+             "haul of {nb} Big 12 programs ({yr_rng})."),
+        score = extremity(rk, nb) * 0.70, n = n_team)
+  }
+
+  ## (b) trenches (football only) -- games are won up front, slight boost
+  if (tolower(sport) == "football") {
+    tr <- dplyr::filter(size_data, Trench)
+    tr_team <- sum(tr$School == team_slug)
+    trb <- tr %>% team_size_summary() %>% dplyr::arrange(dplyr::desc(AvgWeight))
+    ntb <- nrow(trb)
+    trk <- which(trb$School == team_slug)
+    if (length(trk) == 1 && ntb > 1) {
+      add(glue("In the trenches (OL + DL/Edge), {t_lab} signs ",
+               "{round(trb$AvgWeight[trk])} lbs on average - #{trk} of ",
+               "{ntb} in the Big 12."),
+          score = extremity(trk, ntb) * 0.72, n = tr_team)
+    }
+  }
+
+  ## newest class vs the three before it: high recency (1.0) -- this is the
+  ## freshest signal on the board. Cap at the ARRIVING class (class of N
+  ## enrolls fall N): a seeded, still-filling future cycle (2027 today) is a
+  ## thin, volatile pool and must not headline the Home page as if it were a
+  ## settled recruiting result -- same cap the boards use.
+  snap_cap <- min(max(size_data$Year), as.integer(format(Sys.Date(), "%Y")))
+  snap <- class_snapshot(size_data, team_slug, snap_year = snap_cap)
+  if (!is.null(snap)) {
+    ## (c) rating move -- normalized by 3 rating points (a big class swing)
+    if (!is.na(snap$d_rating) && snap$d_rating != 0) {
+      add(glue("The {snap$year} class grades {sprintf('%+.1f', snap$d_rating)} ",
+               "in average 247 rating vs the prior three - {snap$avg_rating} ",
+               "avg, {snap$blue} blue-chip",
+               "{ifelse(snap$blue == 1, '', 's')} (90+)."),
+          score = min(abs(snap$d_rating) / 3, 1) * 1.0, n = snap$n)
+    }
+    ## (d) weight move -- normalized by 20 lbs (a program-shifting jump)
+    if (!is.na(snap$d_weight) && snap$d_weight != 0) {
+      add(glue("The {snap$year} {t_lab} class runs {abs(snap$d_weight)} lbs ",
+               "{ifelse(snap$d_weight > 0, 'heavier', 'lighter')} per player ",
+               "than the previous three classes."),
+          score = min(abs(snap$d_weight) / 20, 1) * 1.0, n = snap$n)
+    }
+  }
+
+  ## (e) home-state hold -- window-wide (0.68); magnitude = distance from a
+  ## 50/50 split of the state's Big 12-bound talent
+  st <- team_state(team_slug)
+  pool <- dplyr::filter(size_data, State == st)
+  if (nrow(pool) > 0) {
+    own <- sum(pool$School == team_slug)
+    total <- nrow(pool)
+    share <- own / total
+    add(glue("{t_lab} holds {own} of {total} Big 12-bound {st} recruits ",
+             "({round(100 * share)}%) over {yr_rng}."),
+        score = min(abs(share - 0.5) * 2, 1) * 0.68, n = total)
+  }
+
+  if (length(cand) == 0) return(empty)
+  out <- data.frame(
+    sentence = vapply(cand, function(x) x$sentence, character(1)),
+    score    = vapply(cand, function(x) x$score, numeric(1)),
+    n        = vapply(cand, function(x) x$n, integer(1)),
+    stringsAsFactors = FALSE)
+  out[order(-out$score), , drop = FALSE]
 }

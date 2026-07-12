@@ -33,8 +33,21 @@ TEAM_CONFIG <- data.frame(
   conference = "Big 12",
   state = c("AZ", "AZ", "TX", "UT", "FL", "OH", "CO", "TX", "IA", "KS",
             "KS", "OK", "TX", "TX", "UT", "WV"),
+  ## realignment-honest baseline: the class year each program actually joined
+  ## the Big 12. The four Pac-12 refugees (Arizona/ASU/Colorado/Utah) arrived
+  ## in 2024; the AAC four (BYU/UCF/Cincinnati/Houston) a cycle earlier in
+  ## 2023; the eight legacy members predate the app's window, stamped 2012.
+  ## Any conference-wide band drawn before a member's join is a BACKCAST --
+  ## the charts say so instead of pretending the 16-team league always existed.
+  big12_since = c(2024, 2024, 2012, 2023, 2023, 2023, 2024, 2023, 2012, 2012,
+                  2012, 2012, 2012, 2012, 2024, 2012),
   stringsAsFactors = FALSE
 )
+
+## the class year a program joined today's conference (for backcast honesty)
+team_big12_since <- function(slug) {
+  TEAM_CONFIG$big12_since[match(slug, TEAM_CONFIG$slug)]
+}
 
 ## the school's home state (for in-state recruiting share)
 team_state <- function(slug) {

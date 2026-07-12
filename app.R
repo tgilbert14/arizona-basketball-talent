@@ -61,6 +61,14 @@ last_refresh_date <- local({
 last_refresh_label <- if (is.null(last_refresh_date)) NULL else
   sub(" 0", " ", format(last_refresh_date, "%b %d, %Y"), fixed = TRUE)
 
+## attribution line appended to COPIED brief text only (never the on-screen
+## brief) -- so a pasted talking-point list carries its provenance. Rides on
+## each copy button as data-footer; the copy script tacks it on last.
+copy_footer <- if (is.null(last_refresh_label))
+  "girthindex.desertdatalab.com" else
+  paste0("data updated ", last_refresh_label,
+         " - girthindex.desertdatalab.com")
+
 ## free what startup allocated -- the deployed worker has a hard 1GB ceiling
 invisible(gc())
 
@@ -82,6 +90,68 @@ war_room_class <- min(SIZE_YEARS[2], arriving_class)
 
 ## named choices for team pickers (slug values, pretty labels)
 team_choices <- setNames(TEAM_CONFIG$slug, TEAM_CONFIG$team_name)
+
+## ---- URL DEEP LINKS: the query-string <-> global-state contract ----------
+## Every global control (+ the active tab) serializes to the query string so
+## a view is a shareable link; on load the link rehydrates the app. The
+## parser is STRICT and PURE (no reactive reads) so it can be unit-tested:
+## every param is whitelisted against the real config, and anything forged,
+## out of range, or malformed is dropped so the app silently falls back to
+## its defaults. tabName values must stay in sync with the sidebarMenu below.
+VALID_TABS <- c("home", "sizelab", "beef", "weightroom", "eras", "brief",
+                "results", "summary", "compare", "notes")
+
+parse_url_state <- function(query) {
+  out <- list()
+  if (!is.list(query)) return(out)
+  ## a single, non-NA scalar string for key k, or NULL
+  g <- function(k) {
+    v <- query[[k]]
+    if (is.null(v) || length(v) != 1 || is.na(v)) return(NULL)
+    as.character(v)
+  }
+  slugs <- TEAM_CONFIG$slug
+
+  team <- g("team")
+  if (!is.null(team) && team %in% slugs) out$team <- team
+
+  ## compare: an explicit "none" (or empty) clears it; a valid slug sets it
+  cmp <- g("cmp")
+  if (!is.null(cmp)) {
+    if (cmp %in% c("none", "")) out$compare <- ""
+    else if (cmp %in% slugs) out$compare <- cmp
+  }
+
+  sport <- g("sport")
+  if (!is.null(sport) && sport %in% c("football", "basketball")) {
+    out$sport <- sport
+  }
+
+  ## years as "y1-y2": both 4-digit, ordered, inside the slider's domain
+  yv <- g("years")
+  if (!is.null(yv)) {
+    m <- regmatches(yv, regexec("^([0-9]{4})-([0-9]{4})$", yv))[[1]]
+    if (length(m) == 3) {
+      y1 <- suppressWarnings(as.integer(m[2]))
+      y2 <- suppressWarnings(as.integer(m[3]))
+      if (!is.na(y1) && !is.na(y2) && y1 <= y2 &&
+          y1 >= SIZE_YEARS[1] && y2 <= SIZE_YEARS[2]) {
+        out$years <- c(y1, y2)
+      }
+    }
+  }
+
+  ## player pool: the real g_type radio values
+  typ <- g("type")
+  if (!is.null(typ) && typ %in% c("commit", "both", "transfer")) {
+    out$type <- typ
+  }
+
+  tab <- g("tab")
+  if (!is.null(tab) && tab %in% VALID_TABS) out$tab <- tab
+
+  out
+}
 
 ## position-group filter choices per sport
 pos_choices <- function(sport) {
@@ -393,6 +463,38 @@ INFO_MODALS <- list(
       means outplaying recruiting. The scoreboard shows whether a season's
       wins tracked the talent on hand; gaps between the bars and the dashed
       line are coaching, development, health, and luck.</p>"),
+  info_wat = list(
+    title = "Wins Above Talent - sources & methods",
+    body = "
+      <p><strong>The idea:</strong> some staffs win more than their
+      recruiting says they should, and some win less. Wins Above Talent
+      (WAT) puts a number on that gap: wins per season above (or below)
+      what a program's talent predicts.</p>
+      <p><strong>How the expectation is built:</strong> across every Big 12
+      program-season in the window, we fit the league's own talent-to-wins
+      curve -- a <em>quasibinomial</em> regression of season win rate on the
+      rolling 4-class talent composite (the same top-20 HS + portal rating
+      used in the quadrant). The curve says: given this much talent, a
+      typical program wins about this share of its games. Quasibinomial just
+      lets seasons scatter more (or less) than a coin-flip model would
+      without bending the curve.</p>
+      <p><strong>Reading the ladder:</strong> the grey dot is a program's
+      <em>expected</em> win % from that curve; the colored dot is its
+      <em>actual</em> win %. The row label is the gap converted to wins per
+      season: <code>+2.1 W/yr</code> means about two extra wins a year
+      beyond what the talent predicted. Overachievers sit on top.</p>
+      <p><strong>Honest caveats:</strong> the ladder covers only the
+      completed seasons inside your selected year window -- and the default
+      window is just the last few class years, so most programs rest on two
+      or three seasons (fewer for the 2024 realignment arrivals). With a
+      window that short, one lucky or injury-wrecked season moves a program
+      a lot; widen the window (the <em>All years</em> preset spans about a
+      decade) for a steadier read. The fit is built to net to about zero
+      across the league, so it measures each program <em>relative to the
+      conference</em>, not against football at large. And talent isn't
+      destiny -- the gap is coaching, development, health, scheme, and luck,
+      bundled together. The season-by-season Scoreboard below shows the same
+      story one year at a time.</p>"),
   info_map = list(
     title = "Recruiting Map — sources & methods",
     body = "
@@ -483,6 +585,9 @@ ui <- dashboardPage(
       .small-box h3 { font-size: 26px; font-family: 'Rubik', sans-serif;
         font-weight: 800; }
       .talking-points li { margin-bottom: 9px; font-size: 15px; }
+      /* the pool-size chip on each ranked Home insight (n-gated at 8) */
+      .talking-points .insight-n { color: #8A949C; font-size: 12px;
+        font-weight: 500; white-space: nowrap; }
 
       /* sidebar = navigation only */
       .sidebar-menu > li.active > a {
@@ -1425,6 +1530,11 @@ ui <- dashboardPage(
             var txt = Array.from(src.querySelectorAll('li'))
               .map(function(li) { return '• ' + li.innerText.trim(); })
               .join('\\n') || src.innerText.trim();
+            /* the attribution line rides on the button (data-footer) and is
+               appended to the COPIED text only -- the on-screen brief never
+               shows it */
+            var footer = btn.getAttribute('data-footer');
+            if (footer) txt = txt + '\\n\\n' + footer;
             function flash(label) {
               var old = btn.innerHTML;
               btn.innerHTML = label;
@@ -1632,6 +1742,7 @@ ui <- dashboardPage(
                   title = tagList("Insights",
                                   tags$button(class = "copy-btn", type = "button",
                                               `data-copy` = "talking_points",
+                                              `data-footer` = copy_footer,
                                               icon("copy"), " copy")),
                   status = "warning", solidHeader = TRUE,
                   width = 5, collapsible = TRUE,
@@ -1908,6 +2019,7 @@ ui <- dashboardPage(
                   title = tagList("The Brief",
                                   tags$button(class = "copy-btn", type = "button",
                                               `data-copy` = "analyst_notes_out",
+                                              `data-footer` = copy_footer,
                                               icon("copy"), " copy")),
                   status = "warning", solidHeader = TRUE,
                   width = 12, collapsible = TRUE,
@@ -1951,6 +2063,27 @@ ui <- dashboardPage(
                     seasons into the win percentages."),
                   footer = HTML("<em style='color:#888;'>Follows the class-year
                     window in the control bar (completed seasons only).</em>")
+                )
+              ),
+              fluidRow(
+                box(
+                  title = tagList("Wins Above Talent: Who Beats Their Recruiting?",
+                                  info_btn("info_wat"),
+                                  twin_toggle("wat_ladder")),
+                  status = "primary", solidHeader = TRUE,
+                  width = 12, collapsible = TRUE,
+                  div(class = "gi-chartwrap",
+                      spin(girafeOutput("wat_ladder", height = "560px"),
+                           color = "#0C234B")),
+                  div(class = "gi-tablewrap",
+                      uiOutput("wat_twin")),
+                  ctx_note("2020 was the COVID season - most programs played
+                    5-10 games, so windows that include 2020 fold shortened
+                    seasons into the win rates the model fits."),
+                  footer = HTML("<em style='color:#888;'>Grey dot = expected
+                    win % from the league's talent-to-wins fit; colored dot =
+                    actual. Follows the class-year window (completed seasons
+                    only).</em>")
                 )
               ),
               fluidRow(
@@ -2183,9 +2316,30 @@ server <- function(input, output, session) {
   ## containers) must not surface as scary sanitized errors -- show a calm
   ## retry chart instead, and log the real condition for the server logs.
   ## Changing any control makes a new cache key, so the retry works.
+  ##
+  ## AUTO-RETRY-ONCE: the first failure of a given output also schedules one
+  ## silent re-render (invalidateLater) so a one-off cold-start hiccup heals
+  ## itself without the visitor touching a control. A session-scoped ledger
+  ## (keyed by the output's `what` label) caps this at ONE auto-retry per
+  ## output per session, so a genuinely broken view still settles on the
+  ## calm chart -- no retry loop. The ledger read is isolate()d so the write
+  ## never makes THIS render a reader of the value it just set.
+  ## bindCache note: see contract_notes -- the four bindCache'd outputs
+  ## (body_map, dna_plot, beef_board, era_timeline) cache both values AND
+  ## thrown errors, so their 4s re-run is a cache hit and the auto-retry is
+  ## a no-op for them (unchanged from today); the retry heals the ~14
+  ## uncached renders, whose failure path is genuinely not cached.
+  retry_ledger <- reactiveValues()
+  retry_key <- function(what) gsub("[^a-z0-9]+", "_", tolower(what))
   girafe_try <- function(expr, what = "chart") {
     tryCatch(expr, error = function(e) {
       message("render failed (", what, "): ", conditionMessage(e))
+      k <- retry_key(what)
+      n <- isolate(retry_ledger[[k]] %||% 0L)
+      if (n < 1L) {
+        retry_ledger[[k]] <- n + 1L
+        invalidateLater(4000, session)
+      }
       girafe_build(
         ggplot2::ggplot() +
           ggplot2::annotate(
@@ -2221,6 +2375,86 @@ server <- function(input, output, session) {
     yrs <- g_years_d()
     glue("{input$g_team}-{g_sport()}-{chart}-{yrs[1]}-{yrs[2]}")
   }
+
+  ## ---- URL DEEP LINKS: hydrate once at startup, then keep in sync --------
+  ## Hydrate the global controls + active tab from the query string BEFORE
+  ## any output reads a control. High priority so this observer runs first in
+  ## the opening flush, and freezeReactiveValue on each restored input so the
+  ## charts wait for the real value instead of doing a throwaway default
+  ## render. parse_url_state already dropped anything forged/out-of-range, so
+  ## every value applied here is safe. url_init lets the team-memory logic
+  ## below defer to the URL. The at_defaults precompute gate is unaffected --
+  ## it reads the SAME resolved inputs, so a link that equals the defaults
+  ## still serves the precomputed renders.
+  ## the controls' STARTUP defaults (must match the UI + at_defaults). A URL
+  ## param that equals the default is applied by NOT touching the input:
+  ## freezing then updating an input to the value it already holds would
+  ## leave it frozen forever (the client never echoes an unchanged value back
+  ## to thaw it), blanking every downstream chart. So freeze+update fires
+  ## only when the restored value actually differs from the default.
+  URL_DEFAULTS <- list(team = "arizona", compare = "arizona-state",
+                       sport = "football", years = as.integer(DEFAULT_YEARS),
+                       type = "both")
+  url_init <- reactiveValues(done = FALSE, has_team = FALSE)
+  observeEvent(session$clientData$url_search, once = TRUE, priority = 1000, {
+    st <- parse_url_state(parseQueryString(session$clientData$url_search))
+    ## a team param present at all suppresses the first-visit picker + beats
+    ## localStorage, even when it equals the default (no update needed then)
+    url_init$has_team <- !is.null(st$team)
+    if (!is.null(st$team) && !identical(st$team, URL_DEFAULTS$team)) {
+      freezeReactiveValue(input, "g_team")
+      updateSelectInput(session, "g_team", selected = st$team)
+    }
+    if (!is.null(st$compare) && !identical(st$compare, URL_DEFAULTS$compare)) {
+      freezeReactiveValue(input, "g_compare")
+      updateSelectInput(session, "g_compare", selected = st$compare)
+    }
+    if (!is.null(st$sport) && !identical(st$sport, URL_DEFAULTS$sport)) {
+      freezeReactiveValue(input, "g_sport")
+      updateRadioButtons(session, "g_sport", selected = st$sport)
+    }
+    if (!is.null(st$years) &&
+        !identical(as.integer(st$years), URL_DEFAULTS$years)) {
+      freezeReactiveValue(input, "g_years")
+      updateSliderInput(session, "g_years", value = st$years)
+    }
+    if (!is.null(st$type) && !identical(st$type, URL_DEFAULTS$type)) {
+      freezeReactiveValue(input, "g_type")
+      updateRadioButtons(session, "g_type", selected = st$type)
+    }
+    ## tab restore carries no freeze (no downstream reactive gate), so a
+    ## no-op update to the already-active tab is harmless
+    if (!is.null(st$tab) && !identical(st$tab, "home")) {
+      updateTabItems(session, "tabs", st$tab)
+    }
+    url_init$done <- TRUE
+  })
+
+  ## write the current view back to the query string as a shareable deep
+  ## link. Debounced so slider drags don't spam; mode='replace' so it never
+  ## fills the back-button history. Gated on url_init$done so it can't clobber
+  ## the incoming link before hydration lands.
+  url_state_out <- debounce(reactive({
+    req(url_init$done)
+    yrs <- g_years_d()
+    req(input$g_team, input$g_sport, yrs, input$tabs)
+    cmp_raw <- input$g_compare %||% ""
+    list(team = input$g_team,
+         cmp = if (nzchar(cmp_raw)) cmp_raw else "none",
+         sport = g_sport(),
+         years = paste0(yrs[1], "-", yrs[2]),
+         type = input$g_type %||% "both",
+         tab = input$tabs)
+  }), 500)
+  observe({
+    s <- url_state_out()
+    ## values are all whitelisted slugs/enums/years -> URL-safe, no encoding
+    q <- c(team = s$team, cmp = s$cmp, sport = s$sport,
+           years = s$years, type = s$type, tab = s$tab)
+    updateQueryString(
+      paste0("?", paste(names(q), q, sep = "=", collapse = "&")),
+      mode = "replace")
+  })
 
   ## ---- PLAYER CARD: tap a name in any pinned card -> holographic card ----
   observeEvent(input$pc_request, tryCatch({
@@ -2289,32 +2523,46 @@ server <- function(input, output, session) {
   }))
 
   ## ---- TEAM MEMORY: restore the saved team, or ask once ------------------
-  observeEvent(input$stored_team, once = TRUE, {
-    st <- input$stored_team
-    if (!is.null(st) && st %in% TEAM_CONFIG$slug) {
-      updateSelectInput(session, "g_team", selected = st)
-    } else if (identical(st, "none")) {
-      showModal(modalDialog(
-        title = NULL, easyClose = TRUE, footer = NULL, size = "l",
-        div(style = "text-align:center;",
-            h2("Who's your team?",
-               style = "font-weight:800; color:#0C234B; margin-top:4px;"),
-            p("Saved on this device — change it any time in the bar up top.",
-              style = "color:#888;"),
-            div(style = "display:flex; flex-wrap:wrap; gap:6px;
-                         justify-content:center;",
-                lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
-                  actionButton(
-                    paste0("pick_", gsub("-", "_", TEAM_CONFIG$slug[i])),
-                    label = tagList(
-                      img(src = TEAM_CONFIG$logo[i], height = "34px"),
-                      div(TEAM_CONFIG$team_name[i],
-                          style = "font-size:11px; font-weight:600;")),
-                    class = "btn-default",
-                    style = "width:108px; padding:8px 2px;")
-                })))
-      ))
-    }
+  ## A URL ?team= WINS: it overrides this device's localStorage team AND
+  ## suppresses the first-visit picker. A plain observe (not observeEvent)
+  ## so it settles once BOTH the URL has resolved (url_init$done) and the
+  ## stored team has arrived from JS, in either order; team_memory_resolved
+  ## makes the body run exactly once.
+  team_memory_resolved <- reactiveVal(FALSE)
+  observe({
+    req(url_init$done)
+    req(!is.null(input$stored_team))
+    if (isolate(team_memory_resolved())) return()
+    isolate({
+      team_memory_resolved(TRUE)
+      ## the URL already set the team -> don't touch it, don't ask
+      if (isTRUE(url_init$has_team)) return()
+      st <- input$stored_team
+      if (!is.null(st) && st %in% TEAM_CONFIG$slug) {
+        updateSelectInput(session, "g_team", selected = st)
+      } else if (identical(st, "none")) {
+        showModal(modalDialog(
+          title = NULL, easyClose = TRUE, footer = NULL, size = "l",
+          div(style = "text-align:center;",
+              h2("Who's your team?",
+                 style = "font-weight:800; color:#0C234B; margin-top:4px;"),
+              p("Saved on this device — change it any time in the bar up top.",
+                style = "color:#888;"),
+              div(style = "display:flex; flex-wrap:wrap; gap:6px;
+                           justify-content:center;",
+                  lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
+                    actionButton(
+                      paste0("pick_", gsub("-", "_", TEAM_CONFIG$slug[i])),
+                      label = tagList(
+                        img(src = TEAM_CONFIG$logo[i], height = "34px"),
+                        div(TEAM_CONFIG$team_name[i],
+                            style = "font-size:11px; font-weight:600;")),
+                      class = "btn-default",
+                      style = "width:108px; padding:8px 2px;")
+                  })))
+        ))
+      }
+    })
   })
   lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
     slug <- TEAM_CONFIG$slug[i]
@@ -2581,11 +2829,18 @@ server <- function(input, output, session) {
   })
   output$home_points <- renderUI({
     req(input$g_team)
-    pts <- make_talking_points(size_window(), input$g_team, g_sport())
-    validate(need(length(pts) > 0, "Not enough data in this window."))
-    HTML(paste0("<ul class='talking-points'>",
-                paste0("<li>", head(pts, 4), "</li>", collapse = ""),
-                "</ul>"))
+    ## the SCORED insights: top 3 by notability (magnitude x recency),
+    ## each carrying the size of the pool that backs it (n) so the reader
+    ## sees how much data stands behind the claim. make_talking_points()
+    ## still drives the fuller Size Lab list unchanged.
+    ri <- ranked_insights(size_window(), input$g_team, g_sport())
+    validate(need(nrow(ri) > 0, "Not enough data in this window."))
+    top <- utils::head(ri, 3)
+    items <- paste0(
+      "<li>", htmltools::htmlEscape(top$sentence),
+      " <span class='insight-n'>n=", top$n, "</span></li>",
+      collapse = "")
+    HTML(paste0("<ul class='talking-points'>", items, "</ul>"))
   })
 
   ## ---- WHAT CHANGED SINCE THE LAST VISIT -----------------------------------
@@ -3132,6 +3387,34 @@ server <- function(input, output, session) {
       name = png_name("talent-vs-results-quadrant")), "talent quadrant")
   })
 
+  ## WAT LADDER: same football-only guards + season window as the quadrant.
+  ## Not bindCache'd (nor precomputed) -- it draws the whole conference from
+  ## a fresh quasibinomial fit that must reflect the exact windowed panel.
+  output$wat_ladder <- renderGirafe({
+    validate(need(g_sport() == "football",
+                  "Season outcomes are football-only for now."))
+    validate(need(!is.null(team_seasons),
+                  "Run scripts/fetchOutcomes.R (needs a free CFBD key) to add season records."))
+    yrs <- g_years_d()
+    ts_window <- team_seasons %>%
+      filter(year >= yrs[1], year <= yrs[2])
+    if (nrow(ts_window) == 0) {
+      msg <- ggplot() +
+        annotate("text", x = 0, y = 0, size = 6, color = "#46535E",
+                 label = glue("No completed seasons in ",
+                              "{yrs[1]}-{yrs[2]}.\n",
+                              "Widen the year window to see the ladder.")) +
+        theme_void()
+      return(girafe_wrap(msg, w = 10.5, h = 6.2, name = "no-seasons"))
+    }
+    girafe_try(girafe_wrap(
+      plot_wat(ts_window,
+               size_football %>% filter(Year <= max(ts_window$year)),
+               input$g_team, compare_slug = g_cmp()),
+      w = 10.5, h = 6.2,
+      name = png_name("wins-above-talent-ladder")), "wins above talent ladder")
+  })
+
   ## ---- TABLE TWINS: the numbers view behind the four boards ----------------
   ## Each twin is built from the SAME *_data() call, with the SAME reactive
   ## args, as its chart render above -- the two views cannot disagree. The
@@ -3244,6 +3527,44 @@ server <- function(input, output, session) {
       bar_ramp = c("#d8e0ea", "#0C234B")))
   })
   outputOptions(output, "quadrant_twin", suspendWhenHidden = FALSE)
+
+  output$wat_twin <- renderUI({
+    req(isTRUE(input$twin_wat_ladder))
+    validate(need(g_sport() == "football",
+                  "Season outcomes are football-only for now."))
+    validate(need(!is.null(team_seasons),
+                  "Run scripts/fetchOutcomes.R (needs a free CFBD key) to add season records."))
+    yrs <- g_years_d()
+    ts_window <- team_seasons %>%
+      filter(year >= yrs[1], year <= yrs[2])
+    if (nrow(ts_window) == 0) {
+      return(div(class = "twin-empty",
+                 glue("No completed seasons in {yrs[1]}-{yrs[2]} - widen ",
+                      "the year window to see the table.")))
+    }
+    b <- wat_data(ts_window,
+                  size_football %>% filter(Year <= max(ts_window$year)),
+                  input$g_team, compare_slug = g_cmp())
+    ## value is SIGNED WAT, so the twin ranks overachievers (+) to
+    ## underachievers (-) top-to-bottom; value_fmt_fn on the frame renders
+    ## "+2.1" / "-1.4" to match the ladder's row labels
+    HTML(twin_table_html(
+      b, caption = glue("Wins Above Talent ",
+                        "({attr(b, 'yr_rng')}) - table view"),
+      value_col = "value", n_col = "seasons_n",
+      n_chip = function(n) paste0(n, ifelse(n == 1, " season", " seasons")),
+      extras = list(
+        "Actual %" = function(d) sprintf("%.0f%%", d$actual),
+        "Expected %" = function(d) sprintf("%.0f%%", d$expected)),
+      caption_note = glue("Seasons {yrs[1]}-{yrs[2]}; wins per season above ",
+                          "(+) or below (-) the league talent-to-wins fit ",
+                          "({attr(b, 'model_note')})."),
+      ## navy neutral ramp: the ladder's colored dots already spend the
+      ## over/under-achiever vocabulary, so the twin's percentile bars stay
+      ## neutral (same choice as the quadrant twin)
+      bar_ramp = c("#d8e0ea", "#0C234B")))
+  })
+  outputOptions(output, "wat_twin", suspendWhenHidden = FALSE)
 
   output$team_scoreboard <- renderGirafe({
     validate(need(g_sport() == "football",

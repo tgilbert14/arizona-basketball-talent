@@ -649,6 +649,37 @@ tryCatch({
     }
   }
 
+  ## docs/status.json -- the machine-readable freshness beacon the landing
+  ## page reads to show an understated "data updated {date}" line. Written
+  ## whenever the night changed (an unchanged night leaves the published
+  ## beacon standing), independent of the brief above so it stays correct even
+  ## if the brief child warned. Counts come through the short-lived-connection
+  ## helpers; weeklyBrief.R writes the same shape on the manual path.
+  if (isTRUE(changed)) {
+    st_ok <- tryCatch({
+      cnts <- table_counts(db_path)
+      getn <- function(t) if (t %in% names(cnts)) as.integer(cnts[[t]]) else 0L
+      newest <- suppressWarnings(max(newest_year(db_path, "football"),
+                                     newest_year(db_path, "basketball"),
+                                     na.rm = TRUE))
+      if (!is.finite(newest)) newest <- NA_integer_
+      status <- list(updated         = format(Sys.Date()),
+                     football_rows   = getn("recruit_class_football"),
+                     basketball_rows = getn("recruit_class_basketball"),
+                     newest_class    = newest,
+                     brief           = "brief/")
+      jsonlite::write_json(status, file.path("docs", "status.json"),
+                           auto_unbox = TRUE, pretty = TRUE)
+      TRUE
+    }, error = function(e) {
+      cat("[status.json] write skipped (", conditionMessage(e), ")\n", sep = "")
+      FALSE
+    })
+    cat("[status.json]", if (isTRUE(st_ok)) "written" else "not written", "\n")
+  } else {
+    cat("[status.json] skipped -- content unchanged, beacon stands\n")
+  }
+
   ## -------------------------------------------------------------------------
   ## S7 commit + push (Connect Cloud republishes straight off the push)
   ## -------------------------------------------------------------------------
@@ -712,10 +743,15 @@ tryCatch({
     for (l in body_lines) msg_args <- c(msg_args, "-m", shQuote(l, type = "cmd"))
     ## machine-written files ONLY -- docs/index.html is human-authored and
     ## must never ride an unattended commit (auto-publishing WIP landing-page
-    ## edits is worse than a stale brief link)
-    st <- git_run("add", "--", "data/recruiting.db", "precomputed",
-                  "manifest.json", "data/refresh-manifest.json",
-                  "docs/brief")
+    ## edits is worse than a stale brief link). Only add paths that exist:
+    ## a missing pathspec (e.g. docs/status.json before its first write, or a
+    ## brief that failed to render) makes `git add` nonzero and would abort
+    ## the whole data commit -- the db must ship regardless.
+    add_paths <- c("data/recruiting.db", "precomputed", "manifest.json",
+                   "data/refresh-manifest.json", "docs/brief",
+                   "docs/status.json")
+    add_paths <- add_paths[file.exists(add_paths)]
+    st <- git_run("add", "--", add_paths)
     where <- "add"
     if (st == 0) { st <- git_run("commit", msg_args); where <- "commit" }
     if (st == 0 && !push_probe_ok) {

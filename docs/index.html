@@ -11,9 +11,9 @@
   <meta property="og:title" content="Big 12 Girth Index">
   <meta property="og:description" content="Who has the biggest bodies in the Big 12? Interactive recruiting size analytics: body maps, beef boards, coach eras, the 3-3-5 war room, and talent vs results. 2016–2026, football + basketball.">
   <meta property="og:url" content="https://girthindex.desertdatalab.com/">
-  <meta property="og:image" content="https://girthindex.desertdatalab.com/assets/og.png">
+  <meta property="og:image" content="https://girthindex.desertdatalab.com/og-card.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="https://girthindex.desertdatalab.com/assets/og.png">
+  <meta name="twitter:image" content="https://girthindex.desertdatalab.com/og-card.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -103,6 +103,7 @@
        href="https://019eb854-79ca-079b-a1d7-f5b7e4f673b0.share.connect.posit.cloud/">
        Launch the app &rarr;</a>
     <div class="sub">Free · no sign-up · works on your phone</div>
+    <div class="sub" id="freshness" hidden></div>
   </div>
 
   <div class="shot">
@@ -188,6 +189,24 @@
     /* pre-warm the app while the visitor reads this page */
     fetch(document.getElementById('launch').href, { mode: 'no-cors' })
       .catch(function() {});
+
+    /* progressive freshness line: fill "Data updated {date}" from the
+       same-origin status.json the nightly pipeline writes. Any miss
+       (file absent, offline, bad JSON) leaves the line hidden -- no error. */
+    fetch('status.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) {
+        if (!s || !s.updated) return;
+        var el = document.getElementById('freshness');
+        if (!el) return;
+        var d = new Date(s.updated + 'T00:00:00');
+        var label = isNaN(d.getTime()) ? s.updated
+          : d.toLocaleDateString('en-US',
+              { year: 'numeric', month: 'short', day: 'numeric' });
+        el.textContent = 'Data updated ' + label;
+        el.hidden = false;
+      })
+      .catch(function () {});
   </script>
 </body>
 </html>

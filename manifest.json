@@ -3894,10 +3894,10 @@
   },
   "files": {
     "app.R": {
-      "checksum": "c9d67ed05a4d866d4f0c7418fd414fe8"
+      "checksum": "ac9a29a17cbf51fe37c0ff67f4ee738c"
     },
     "data/recruiting.db": {
-      "checksum": "7ed289f19b93b0f595defa612dcf4315"
+      "checksum": "89d5ee128f2e74a8a941ae8a908119b3"
     },
     "precomputed/beef_board_desktop.rds": {
       "checksum": "ac6181a97b409286811dba9fb94c12f6"
@@ -3918,10 +3918,10 @@
       "checksum": "6ca17769b45236b4ad46ff9b865cb05f"
     },
     "precomputed/era_timeline_desktop.rds": {
-      "checksum": "4fd57e2e1dccf49098cdc467c7ba304b"
+      "checksum": "d8b9f2373773d4274fe28a723ef88289"
     },
     "precomputed/era_timeline_phone.rds": {
-      "checksum": "407b973138dcce1ae27e615397bef343"
+      "checksum": "2ab56a71027d3b2461aae500096c27bf"
     },
     "R/coach_eras.R": {
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
@@ -3933,10 +3933,10 @@
       "checksum": "a42219a81ffb4201235fa943c1adb901"
     },
     "R/girth_plots.R": {
-      "checksum": "bb773b77580801082a8a90e6f0b9548c"
+      "checksum": "f63c83a8fc8b677f6503b5e1f8d933e9"
     },
     "R/team_config.R": {
-      "checksum": "83a128bfa7aefaec66136e94ef98b2c3"
+      "checksum": "e6da31556e8bc14856c0ced0590cebac"
     },
     "www/arizona-state.png": {
       "checksum": "5342cfb90e573b129f20939a4a8e7c01"

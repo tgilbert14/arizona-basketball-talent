@@ -485,3 +485,53 @@ con <- file(out_path, open = "w", encoding = "UTF-8")
 writeLines(page, con)
 close(con)
 cat("Wrote", out_path, "\n")
+
+## ---------------------------------------------------------------------------
+## status.json -- the tiny freshness beacon docs/index.html progressively
+## enhances from ("data updated {date}"). nightlyRefresh.R writes the SAME
+## shape at S6.5; last writer wins harmlessly. Lives one level up from the
+## brief (docs/status.json for the default out path) and is fully
+## parameterized by --db/--out, so a test run writes a scratch beacon instead
+## of clobbering the published one. Counts come straight from the current db.
+## ---------------------------------------------------------------------------
+fb_cur <- sports$Football$cur
+bb_cur <- sports$Basketball$cur
+n_rows <- function(d) if (is.null(d)) 0L else nrow(d)
+max_yr <- function(d) {
+  if (is.null(d) || nrow(d) == 0) return(NA_integer_)
+  suppressWarnings(as.integer(max(d$Year, na.rm = TRUE)))
+}
+newest_class <- suppressWarnings(max(c(max_yr(fb_cur), max_yr(bb_cur)),
+                                     na.rm = TRUE))
+if (!is.finite(newest_class)) newest_class <- NA_integer_
+## "updated" = when the DATA was last scraped, not when this brief regenerated
+## -- a no-change brief rerun (or a manual regen) must never advance the
+## public freshness date. Read the newest ScrapedAt across the tables that
+## carry it (rosters always do; recruit tables gain it on their next scrape);
+## fall back to today only if nothing is stamped.
+updated_date <- local({
+  conn <- dbConnect(SQLite(), db_path)
+  on.exit(dbDisconnect(conn), add = TRUE)
+  vals <- character(0)
+  for (t in c("roster_football", "roster_basketball",
+              "recruit_class_football", "recruit_class_basketball")) {
+    v <- tryCatch(dbGetQuery(conn, paste0(
+      "SELECT MAX(ScrapedAt) m FROM ", t))$m, error = function(e) NA_character_)
+    if (length(v) == 1 && !is.na(v) && nzchar(v)) vals <- c(vals, v)
+  }
+  d <- suppressWarnings(as.Date(vals))
+  d <- d[!is.na(d)]
+  if (length(d) > 0) max(d) else Sys.Date()
+})
+status <- list(updated         = format(updated_date),
+               football_rows   = n_rows(fb_cur),
+               basketball_rows = n_rows(bb_cur),
+               newest_class    = newest_class,
+               brief           = "brief/")
+status_path <- file.path(dirname(dirname(out_path)), "status.json")
+tryCatch({
+  jsonlite::write_json(status, status_path, auto_unbox = TRUE, pretty = TRUE)
+  cat("Wrote", status_path, "\n")
+}, error = function(e) {
+  cat("status.json write skipped (", conditionMessage(e), ")\n", sep = "")
+})

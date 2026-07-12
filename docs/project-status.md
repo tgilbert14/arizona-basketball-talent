@@ -78,6 +78,25 @@ keyboard path to the pin action.
 - No `.rscignore` — the shinyapps bundle ships ~10MB of backups/insights/scripts. **Owner:** `caravan` / `ship`.
 - Showcase wow-list (from the review): one-tap 1200×630 share card, tale-of-the-tape versus poster, bump/slope rank-evolution chart, deep-link/bookmarkable state, kiosk mode, watchlist tray. **Owner:** `fable` + `bowerstone`.
 
+### Shipped 2026-07-11 evening (wave 2 — the last of the verified sweep backlog)
+
+- **Wins Above Talent ladder** on Talent vs Results: quasibinomial league talent-to-wins fit,
+  expected vs actual wins/season, table twin + info modal (window-aware caveat: the default is ~2
+  completed seasons, so one season moves a program a lot — widen for a stabler read). Scoreboard frozen.
+- **URL deep links**: the five global controls + active tab serialize to the query string and hydrate
+  on load (whitelisted; forged params fall back silently; takes precedence over localStorage).
+- **Ranked insight engine** on Home: top-3 by notability score, n-gated (MIN_INSIGHT_N=8), capped at
+  the arriving class so a seeded 2027 can't headline.
+- **Realignment-honest baselines**: backcast disclosure on era band / body map / quadrant when the
+  window spans 2024.
+- **Join suffix fix** (kills "Troy Ford Jr." false departures, 0 regressions) + honest scope notes
+  (retention drops the redundant "join quality" line; weight-room reads "gains cover X of Y still on a
+  roster; the rest graduated/transferred/turned pro" — never a scrape-failure score).
+- **Freshness remainder**: ScrapedAt on recruit tables, docs/status.json (data-dated, not regen-dated)
+  + landing "data updated" line, OG social card, copy-brief provenance footer, girafe_try auto-retry.
+- Pipeline: chronic-push escalation (S0 ls-remote probe + 2nd-consecutive-miss → failed) and the
+  wrapper silent-death fix (version-glob Rscript + last-ditch alert) — both from ship's license exam.
+
 ### Shipped 2026-07-11 PM (the v8 feature wave — sweep items 1-4 + year-ahead)
 
 - **Table-twin toggles** on beef board / class retention / weight-room board / talent quadrant:

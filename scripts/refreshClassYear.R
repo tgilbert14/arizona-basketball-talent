@@ -307,6 +307,16 @@ for (mig_tbl in c("recruit_class_football", "recruit_class_basketball")) {
                            " ADD COLUMN ProfileUrl TEXT"))
     cat("Schema migration:", mig_tbl, "gained ProfileUrl TEXT\n")
   }
+  ## ScrapedAt is the recruit-table freshness stamp the rosters already carry.
+  ## Same reasoning as ProfileUrl above: it must exist in the db BEFORE
+  ## names(old) is read, or the schema-align projection would silently drop
+  ## the stamp off every fresh row. Additive only; db_content_hash excludes
+  ## ScrapedAt so restamping never makes an unchanged night look changed.
+  if (!"ScrapedAt" %in% mig_cols) {
+    dbExecute(conn, paste0("ALTER TABLE ", mig_tbl,
+                           " ADD COLUMN ScrapedAt TEXT"))
+    cat("Schema migration:", mig_tbl, "gained ScrapedAt TEXT\n")
+  }
 }
 
 old <- dbGetQuery(conn, paste0("SELECT * FROM ", tbl))
@@ -344,7 +354,7 @@ campus <- old %>%
 if (!"ProfileUrl" %in% names(fresh)) fresh$ProfileUrl <- NA_character_
 
 fresh_full <- fresh %>%
-  mutate(sport = sport, .key = name_key(Name)) %>%
+  mutate(sport = sport, ScrapedAt = format(Sys.Date()), .key = name_key(Name)) %>%
   left_join(carry, by = c(".key", "School")) %>%
   mutate(ProfileUrl = ifelse(is.na(ProfileUrl), .old_profile, ProfileUrl)) %>%
   select(-.key, -.old_profile) %>%
