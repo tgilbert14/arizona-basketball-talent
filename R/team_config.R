@@ -50,8 +50,66 @@ TEAM_CONFIG <- data.frame(
   ## accessor team_big12_since() survives as a shim below.)
   conf_since = c(2024, 2024, 2012, 2023, 2023, 2023, 2024, 2023, 2012, 2012,
                  2012, 2012, 2012, 2012, 2024, 2012),
+  ## onboarded: the team is live in the app (data backfilled, visible in every
+  ## picker/board). The shipped 16 are all TRUE. When data/team_config.csv lands
+  ## (Phase 1) it carries the ~51 other P4 programs as onboarded = FALSE until a
+  ## per-conference backfill flips them. Present on the inline fallback too so
+  ## onboarded_slugs() works identically on BOTH load paths.
+  onboarded = TRUE,
   stringsAsFactors = FALSE
 )
+
+## ---------------------------------------------------------------------------
+## Power-4 source of truth (Phase 1): if data/team_config.csv exists it BECOMES
+## TEAM_CONFIG (68 rows -- the 16 Big 12 preserved exactly, plus the ~51 other
+## P4 programs carried as onboarded = FALSE until their data is backfilled).
+## When the CSV is absent -- back-compat, and the state during the Phase 1 build
+## itself, before buildTeamConfig.R emits it -- the inline 16-row frame above
+## stands as the fallback. Either way TEAM_CONFIG carries a logical `onboarded`
+## column, and at Phase 1 exactly the 16 Big 12 are TRUE, so the DISPLAY
+## universe (onboarded_slugs) is byte-identical to the shipped 16-team app.
+## ---------------------------------------------------------------------------
+local({
+  csv <- tryCatch(here::here("data", "team_config.csv"),
+                  error = function(e) file.path("data", "team_config.csv"))
+  if (!file.exists(csv)) return(invisible(NULL))
+  tc <- utils::read.csv(csv, stringsAsFactors = FALSE)
+  req_cols <- c("slug", "team_name", "logo", "primary", "secondary",
+                "conference", "state", "conf_since", "onboarded")
+  miss <- setdiff(req_cols, names(tc))
+  if (length(miss) > 0) {
+    stop("data/team_config.csv is missing required column(s): ",
+         paste(miss, collapse = ", "), call. = FALSE)
+  }
+  ## coerce the load-bearing columns explicitly: read.csv guesses, but a stray
+  ## quote/blank must never silently change a column's class out from under the
+  ## helpers (conf_since integer, campus coords numeric, onboarded logical).
+  tc$conf_since <- suppressWarnings(as.integer(tc$conf_since))
+  if ("campus_lat"  %in% names(tc))
+    tc$campus_lat  <- suppressWarnings(as.numeric(tc$campus_lat))
+  if ("campus_long" %in% names(tc))
+    tc$campus_long <- suppressWarnings(as.numeric(tc$campus_long))
+  ## onboarded -> strict logical; accept the common truthy/falsy encodings,
+  ## reject anything ambiguous rather than defaulting a hidden team visible
+  ob  <- trimws(tolower(as.character(tc$onboarded)))
+  onb <- rep(NA, length(ob))
+  onb[ob %in% c("true",  "t", "1", "yes")] <- TRUE
+  onb[ob %in% c("false", "f", "0", "no")]  <- FALSE
+  tc$onboarded <- onb
+  if (any(is.na(tc$onboarded))) {
+    stop("data/team_config.csv has unparseable onboarded value(s) at row(s): ",
+         paste(which(is.na(tc$onboarded)), collapse = ", "), call. = FALSE)
+  }
+  if (any(is.na(tc$slug)) || any(!nzchar(tc$slug))) {
+    stop("data/team_config.csv has a blank slug", call. = FALSE)
+  }
+  if (any(duplicated(tc$slug))) {
+    stop("data/team_config.csv has duplicate slug(s): ",
+         paste(unique(tc$slug[duplicated(tc$slug)]), collapse = ", "),
+         call. = FALSE)
+  }
+  TEAM_CONFIG <<- tc
+})
 
 ## ---------------------------------------------------------------------------
 ## CONF_CONFIG -- one row per conference. The seam that lets copy, ordering and
@@ -90,12 +148,30 @@ team_conference <- function(slug) {
   TEAM_CONFIG$conference[match(slug, TEAM_CONFIG$slug)]
 }
 
-## the slugs that belong to a conference (or set of conferences) -- the pooling
-## scope for every board / median / rank. Preserves TEAM_CONFIG order; NA-safe
-## (NA or unknown conf -> character(0)). Pass team_conference(team) to scope a
-## board to the active team's conference members.
+## the slugs that belong to a conference (or set of conferences) -- the FULL
+## membership regardless of onboarding. Preserves TEAM_CONFIG order; NA-safe
+## (NA or unknown conf -> character(0)). This is the conference primitive used
+## by the per-conference BACKFILL (scrapers' --conference flag) so it can reach
+## a league's teams BEFORE they are flipped onboarded. For the app's display /
+## pooling universe use onboarded_slugs() instead -- at Phase 1 (only Big 12
+## onboarded) the two return the same 16 slugs for "Big 12".
 conf_slugs <- function(conf) {
   TEAM_CONFIG$slug[TEAM_CONFIG$conference %in% conf]
+}
+
+## the ONBOARDED slugs -- the app's team universe: pickers, the deep-link
+## validator, every board's pooling scope, and the nightly scrapers' default
+## iteration all draw from this, so a not-yet-backfilled (onboarded = FALSE)
+## program never appears anywhere until its conference is backfilled. Optionally
+## filtered to a conference (or set of conferences); pass team_conference(team)
+## to pool only the active team's onboarded conference members (so a half-
+## onboarded league never renders partial). Preserves TEAM_CONFIG order; NA in
+## `onboarded` counts as FALSE (fail hidden, never accidentally visible). At
+## Phase 1 exactly the 16 Big 12 are TRUE -> onboarded_slugs() is the shipped 16.
+onboarded_slugs <- function(conf = NULL) {
+  keep <- TEAM_CONFIG$onboarded %in% TRUE
+  if (!is.null(conf)) keep <- keep & TEAM_CONFIG$conference %in% conf
+  TEAM_CONFIG$slug[keep]
 }
 
 ## display label for a conference OR a team slug -- the single seam where the

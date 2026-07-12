@@ -38,11 +38,15 @@ if (key == "") {
   quit(status = 0)
 }
 
-## TEAM_CONFIG slug -> CFBD school name (GATE 1 source of truth).
-## PHASE 1 SEAM: this standalone map folds into a `cfbd_name` column on
-## TEAM_CONFIG when the config moves to data/team_config.csv (CFBD /teams/fbs
-## supplies the name for every P4 school). Kept as-is at Phase 0 -- do NOT
-## restructure yet; the stopifnot below still guards every configured slug.
+## slug -> CFBD school name (GATE 1 source of truth). Phase 1 fold: when the
+## config moved to data/team_config.csv the CFBD name became a real `cfbd_name`
+## column (CFBD /teams/fbs supplies it for every P4 school), so read it straight
+## off TEAM_CONFIG. The inline map below is the back-compat FALLBACK for the
+## Phase 0 config (no CSV / no cfbd_name column) and is still guarded there.
+## The CFBD /records + /ratings/sp endpoints are bulk-per-year (one call returns
+## every FBS team), so covering all mapped teams costs no extra requests; the
+## app only ever DISPLAYS onboarded teams, so extra rows sit unused until their
+## conference onboards.
 CFBD_NAMES <- c(
   "arizona" = "Arizona", "arizona-state" = "Arizona State",
   "baylor" = "Baylor", "byu" = "BYU", "central-florida" = "UCF",
@@ -51,7 +55,14 @@ CFBD_NAMES <- c(
   "kansas-state" = "Kansas State", "oklahoma-state" = "Oklahoma State",
   "tcu" = "TCU", "texas-tech" = "Texas Tech", "utah" = "Utah",
   "west-virginia" = "West Virginia")
-stopifnot(all(TEAM_CONFIG$slug %in% names(CFBD_NAMES)))
+if ("cfbd_name" %in% names(TEAM_CONFIG)) {
+  cfbd_map <- setNames(as.character(TEAM_CONFIG$cfbd_name), TEAM_CONFIG$slug)
+  cfbd_map <- cfbd_map[!is.na(cfbd_map) & nzchar(cfbd_map)]
+  stopifnot(length(cfbd_map) > 0)
+} else {
+  stopifnot(all(TEAM_CONFIG$slug %in% names(CFBD_NAMES)))
+  cfbd_map <- CFBD_NAMES
+}
 
 cfbd_get <- function(path, ...) {
   resp <- GET(paste0("https://api.collegefootballdata.com", path),
@@ -85,8 +96,8 @@ for (yr in YEARS) {
     as.data.frame(sp) %>% select(team, sp_rating = rating)
   } else data.frame(team = character(0), sp_rating = numeric(0))
 
-  yr_rows <- data.frame(slug = names(CFBD_NAMES),
-                        team = unname(CFBD_NAMES)) %>%
+  yr_rows <- data.frame(slug = names(cfbd_map),
+                        team = unname(cfbd_map)) %>%
     left_join(rec, by = "team") %>%
     left_join(sp_df, by = "team") %>%
     transmute(
@@ -106,10 +117,11 @@ for (yr in YEARS) {
     )
 
   n_valid <- sum(yr_rows$valid)
-  ## GATE 3 floors scale with the roster (Power-4 ready): the "mostly broken"
-  ## cutoff is 87.5% of the configured teams and the "fully populated" mark is
-  ## all of them. At the shipped 16 these are 14 and 16, exactly as before.
-  n_teams <- nrow(TEAM_CONFIG)
+  ## GATE 3 floors scale with the mapped roster (Power-4 ready): the "mostly
+  ## broken" cutoff is 87.5% of the CFBD-mapped teams and the "fully populated"
+  ## mark is all of them. At the shipped 16 these are 14 and 16, exactly as
+  ## before (length(cfbd_map) == nrow(TEAM_CONFIG) == 16 on the Phase 0 config).
+  n_teams <- length(cfbd_map)
   if (n_valid < ceiling(0.875 * n_teams)) {
     ## GATE 3: don't write a mostly-broken season
     problems <- c(problems, paste0(

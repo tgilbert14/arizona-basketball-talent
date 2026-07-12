@@ -1,0 +1,68 @@
+"slug","team_name","logo","primary","secondary","conference","state","conf_since","cfbd_name","campus_lat","campus_long","onboarded"
+"arizona","Arizona","arizona.png","#CC0033","#0C234B","Big 12","AZ",2024,"Arizona",32.2288054,-110.9488677,TRUE
+"arizona-state","Arizona State","arizona-state.png","#8C1D40","#FFC627","Big 12","AZ",2024,"Arizona State",33.4264471,-111.9325005,TRUE
+"baylor","Baylor","baylor.png","#154734","#FFB81C","Big 12","TX",2012,"Baylor",31.5582015,-97.1156702,TRUE
+"byu","BYU","byu.png","#002E5D","#FFFFFF","Big 12","UT",2023,"BYU",40.2575347,-111.6545247,TRUE
+"central-florida","UCF","ucf.png","#BA9B37","#000000","Big 12","FL",2023,"UCF",28.6079765,-81.1927233,TRUE
+"cincinnati","Cincinnati","cincinnati.png","#E00122","#000000","Big 12","OH",2023,"Cincinnati",39.1312495,-84.5161913,TRUE
+"colorado","Colorado","colorado.png","#CFB87C","#000000","Big 12","CO",2024,"Colorado",40.0094746,-105.266905,TRUE
+"houston","Houston","houston.png","#C8102E","#FFFFFF","Big 12","TX",2023,"Houston",29.7219885,-95.3491623,TRUE
+"iowa-state","Iowa State","iowa-state.png","#C8102E","#F1BE48","Big 12","IA",2012,"Iowa State",42.0139977,-93.6357716,TRUE
+"kansas","Kansas","kansas.png","#0051BA","#E8000D","Big 12","KS",2012,"Kansas",38.9629418,-95.2463686,TRUE
+"kansas-state","Kansas State","kansas-state.png","#512888","#D1D1D1","Big 12","KS",2012,"Kansas State",39.2020096,-96.5938395,TRUE
+"oklahoma-state","Oklahoma State","oklahoma-state.png","#FF7300","#000000","Big 12","OK",2012,"Oklahoma State",36.125673,-97.066513,TRUE
+"tcu","TCU","tcu.png","#4D1979","#A3A9AC","Big 12","TX",2012,"TCU",32.7096604,-97.3680835,TRUE
+"texas-tech","Texas Tech","texas-tech.png","#CC0000","#000000","Big 12","TX",2012,"Texas Tech",33.5910518,-101.8728824,TRUE
+"utah","Utah","utah.png","#BE0000","#808080","Big 12","UT",2024,"Utah",40.7599724,-111.8488255,TRUE
+"west-virginia","West Virginia","west-virginia.png","#002855","#EAAA00","Big 12","WV",2012,"West Virginia",39.6502744,-79.9551873,TRUE
+"illinois","Illinois","illinois.png","#FF5F05","#13294B","Big Ten","IL",2012,"Illinois",40.0993268,-88.2359569,FALSE
+"indiana","Indiana","indiana.png","#990000","#EDEBEB","Big Ten","IN",2012,"Indiana",39.1808959,-86.5256217,FALSE
+"iowa","Iowa","iowa.png","#000000","#FFCD00","Big Ten","IA",2012,"Iowa",41.6586045,-91.5510829,FALSE
+"maryland","Maryland","maryland.png","#D5002B","#FFCD00","Big Ten","MD",2012,"Maryland",38.9903332,-76.9473792,FALSE
+"michigan","Michigan","michigan.png","#00274C","#FFCB05","Big Ten","MI",2012,"Michigan",42.2658365,-83.7486956,FALSE
+"michigan-state","Michigan State","michigan-state.png","#18453B","#FFFFFF","Big Ten","MI",2012,"Michigan State",42.7281474,-84.4848526,FALSE
+"minnesota","Minnesota","minnesota.png","#5E0A2F","#FAB41C","Big Ten","MN",2012,"Minnesota",44.976525,-93.2245462,FALSE
+"nebraska","Nebraska","nebraska.png","#D00000","#FFFFFF","Big Ten","NE",2012,"Nebraska",40.820682,-96.705594,FALSE
+"northwestern","Northwestern","northwestern.png","#582C83","#FFFFFF","Big Ten","IL",2012,"Northwestern",NA,NA,FALSE
+"ohio-state","Ohio State","ohio-state.png","#CE1141","#505056","Big Ten","OH",2012,"Ohio State",40.0016447,-83.0197266,FALSE
+"oregon","Oregon","oregon.png","#007030","#FEE11A","Big Ten","OR",2024,"Oregon",44.0582712,-123.0684883,FALSE
+"penn-state","Penn State","penn-state.png","#041E42","#FFFFFF","Big Ten","PA",2012,"Penn State",40.8121958,-77.8561023,FALSE
+"purdue","Purdue","purdue.png","#000000","#CEB888","Big Ten","IN",2012,"Purdue",40.4352253,-86.9186843,FALSE
+"rutgers","Rutgers","rutgers.png","#D21034","#FFFFFF","Big Ten","NJ",2012,"Rutgers",40.5462553,-74.4660408,FALSE
+"ucla","UCLA","ucla.png","#2774AE","#F2A900","Big Ten","CA",2024,"UCLA",34.1613284,-118.1676462,FALSE
+"usc","USC","usc.png","#9E2237","#FFCC00","Big Ten","CA",2024,"USC",34.014167,-118.287778,FALSE
+"washington","Washington","washington.png","#33006F","#E8D3A2","Big Ten","WA",2024,"Washington",47.6503235,-122.3015746,FALSE
+"wisconsin","Wisconsin","wisconsin.png","#C4012F","#FFFFFF","Big Ten","WI",2012,"Wisconsin",43.06994,-89.4126943,FALSE
+"alabama","Alabama","alabama.png","#9E1632","#FFFFFF","SEC","AL",2012,"Alabama",33.2082752,-87.5503836,FALSE
+"arkansas","Arkansas","arkansas.png","#A41F35","#FFFFFF","SEC","AR",2012,"Arkansas",36.0680662,-94.1789534,FALSE
+"auburn","Auburn","auburn.png","#002B5C","#F26522","SEC","AL",2012,"Auburn",32.6025532,-85.4897479,FALSE
+"florida","Florida","florida.png","#0021A5","#FA4616","SEC","FL",2012,"Florida",29.6499357,-82.3485788,FALSE
+"georgia","Georgia","georgia.png","#BA0C2F","#000000","SEC","GA",2012,"Georgia",33.9498197,-83.3733813,FALSE
+"kentucky","Kentucky","kentucky.png","#0033A0","#FFFFFF","SEC","KY",2012,"Kentucky",38.0220905,-84.5053408,FALSE
+"lsu","LSU","lsu.png","#461D7C","#FDD023","SEC","LA",2012,"LSU",30.412035,-91.1838163,FALSE
+"mississippi-state","Mississippi State","mississippi-state.png","#5D1725","#C1C6C8","SEC","MS",2012,"Mississippi State",33.4563403,-88.7933652,FALSE
+"missouri","Missouri","missouri.png","#F1B82D","#000000","SEC","MO",2012,"Missouri",38.9358491,-92.3332009,FALSE
+"oklahoma","Oklahoma","oklahoma.png","#A32036","#FFFFFF","SEC","OK",2024,"Oklahoma",35.2058537,-97.4423145,FALSE
+"ole-miss","Ole Miss","ole-miss.png","#13294B","#C8102E","SEC","MS",2012,"Ole Miss",34.3619837,-89.5342076,FALSE
+"south-carolina","South Carolina","south-carolina.png","#73000A","#FFFFFF","SEC","SC",2012,"South Carolina",33.9730239,-81.0191726,FALSE
+"tennessee","Tennessee","tennessee.png","#FF8200","#58595B","SEC","TN",2012,"Tennessee",35.9550131,-83.9250128,FALSE
+"texas","Texas","texas.png","#C15D26","#FFFFFF","SEC","TX",2024,"Texas",30.2836813,-97.7325345,FALSE
+"texas-am","Texas A&M","texas-am.png","#500000","#FFFFFF","SEC","TX",2012,"Texas A&M",30.6098891,-96.3403828,FALSE
+"vanderbilt","Vanderbilt","vanderbilt.png","#866D4B","#000000","SEC","TN",2012,"Vanderbilt",36.1440455,-86.8088942,FALSE
+"boston-college","Boston College","boston-college.png","#8C2232","#DBCCA6","ACC","MA",2012,"Boston College",42.335104,-71.1664413,FALSE
+"california","California","california.png","#031522","#FFC423","ACC","CA",2024,"California",37.8710434,-122.2507729,FALSE
+"clemson","Clemson","clemson.png","#F56600","#522D80","ACC","SC",2012,"Clemson",34.6787737,-82.8432428,FALSE
+"duke","Duke","duke.png","#013088","#FFFFFF","ACC","NC",2012,"Duke",35.9953688,-78.9417564,FALSE
+"florida-state","Florida State","florida-state.png","#782F40","#CEB888","ACC","FL",2012,"Florida State",30.4381692,-84.3044032,FALSE
+"georgia-tech","Georgia Tech","georgia-tech.png","#003057","#B3A369","ACC","GA",2012,"Georgia Tech",33.7724449,-84.3928054,FALSE
+"louisville","Louisville","louisville.png","#C9001F","#000000","ACC","KY",2012,"Louisville",38.2057621,-85.7588141,FALSE
+"miami","Miami","miami.png","#005030","#F47321","ACC","FL",2012,"Miami",25.9579665,-80.2388604,FALSE
+"north-carolina-state","NC State","north-carolina-state.png","#CC0000","#FFFFFF","ACC","NC",2012,"NC State",35.8008001,-78.7195655,FALSE
+"north-carolina","North Carolina","north-carolina.png","#7BAFD4","#13294B","ACC","NC",2012,"North Carolina",35.9069294,-79.0478889,FALSE
+"pittsburgh","Pittsburgh","pittsburgh.png","#003263","#231F20","ACC","PA",2012,"Pittsburgh",40.4467648,-80.0157603,FALSE
+"smu","SMU","smu.png","#354CA1","#CC0035","ACC","TX",2024,"SMU",32.8377223,-96.7827859,FALSE
+"stanford","Stanford","stanford.png","#8C1515","#FFFFFF","ACC","CA",2024,"Stanford",37.4345556,-122.1611271,FALSE
+"syracuse","Syracuse","syracuse.png","#FF6500","#000E54","ACC","NY",2012,"Syracuse",43.0362269,-76.1363161,FALSE
+"virginia","Virginia","virginia.png","#232D4B","#F84C1E","ACC","VA",2012,"Virginia",38.0311801,-78.5137897,FALSE
+"virginia-tech","Virginia Tech","virginia-tech.png","#630031","#CF4520","ACC","VA",2012,"Virginia Tech",37.2199873,-80.4180643,FALSE
+"wake-forest","Wake Forest","wake-forest.png","#9E7E38","#000000","ACC","NC",2012,"Wake Forest",36.1305507,-80.2545851,FALSE

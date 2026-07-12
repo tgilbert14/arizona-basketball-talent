@@ -1,0 +1,68 @@
+"cfbd_name","conference","candidate_slug","http_status","valid","needs_review"
+"Arizona","Big 12","arizona",200,TRUE,FALSE
+"Arizona State","Big 12","arizona-state",200,TRUE,FALSE
+"Baylor","Big 12","baylor",200,TRUE,FALSE
+"BYU","Big 12","byu",200,TRUE,FALSE
+"Cincinnati","Big 12","cincinnati",200,TRUE,FALSE
+"Colorado","Big 12","colorado",200,TRUE,FALSE
+"Houston","Big 12","houston",200,TRUE,FALSE
+"Iowa State","Big 12","iowa-state",200,TRUE,FALSE
+"Kansas","Big 12","kansas",200,TRUE,FALSE
+"Kansas State","Big 12","kansas-state",200,TRUE,FALSE
+"Oklahoma State","Big 12","oklahoma-state",200,TRUE,FALSE
+"TCU","Big 12","tcu",200,TRUE,FALSE
+"Texas Tech","Big 12","texas-tech",200,TRUE,FALSE
+"UCF","Big 12","central-florida",200,TRUE,FALSE
+"Utah","Big 12","utah",200,TRUE,FALSE
+"West Virginia","Big 12","west-virginia",200,TRUE,FALSE
+"Illinois","Big Ten","illinois",200,TRUE,FALSE
+"Indiana","Big Ten","indiana",200,TRUE,FALSE
+"Iowa","Big Ten","iowa",200,TRUE,FALSE
+"Maryland","Big Ten","maryland",200,TRUE,FALSE
+"Michigan","Big Ten","michigan",200,TRUE,FALSE
+"Michigan State","Big Ten","michigan-state",200,TRUE,FALSE
+"Minnesota","Big Ten","minnesota",200,TRUE,FALSE
+"Nebraska","Big Ten","nebraska",200,TRUE,FALSE
+"Northwestern","Big Ten","northwestern",200,TRUE,FALSE
+"Ohio State","Big Ten","ohio-state",200,TRUE,FALSE
+"Oregon","Big Ten","oregon",200,TRUE,FALSE
+"Penn State","Big Ten","penn-state",200,TRUE,FALSE
+"Purdue","Big Ten","purdue",200,TRUE,FALSE
+"Rutgers","Big Ten","rutgers",200,TRUE,FALSE
+"UCLA","Big Ten","ucla",200,TRUE,FALSE
+"USC","Big Ten","usc",200,TRUE,FALSE
+"Washington","Big Ten","washington",200,TRUE,FALSE
+"Wisconsin","Big Ten","wisconsin",200,TRUE,FALSE
+"Alabama","SEC","alabama",200,TRUE,FALSE
+"Arkansas","SEC","arkansas",200,TRUE,FALSE
+"Auburn","SEC","auburn",200,TRUE,FALSE
+"Florida","SEC","florida",200,TRUE,FALSE
+"Georgia","SEC","georgia",200,TRUE,FALSE
+"Kentucky","SEC","kentucky",200,TRUE,FALSE
+"LSU","SEC","lsu",200,TRUE,FALSE
+"Mississippi State","SEC","mississippi-state",200,TRUE,FALSE
+"Missouri","SEC","missouri",200,TRUE,FALSE
+"Oklahoma","SEC","oklahoma",200,TRUE,FALSE
+"Ole Miss","SEC","ole-miss",200,TRUE,FALSE
+"South Carolina","SEC","south-carolina",200,TRUE,FALSE
+"Tennessee","SEC","tennessee",200,TRUE,FALSE
+"Texas","SEC","texas",200,TRUE,FALSE
+"Texas A&M","SEC","texas-am",200,TRUE,FALSE
+"Vanderbilt","SEC","vanderbilt",200,TRUE,FALSE
+"Boston College","ACC","boston-college",200,TRUE,FALSE
+"California","ACC","california",200,TRUE,FALSE
+"Clemson","ACC","clemson",200,TRUE,FALSE
+"Duke","ACC","duke",200,TRUE,FALSE
+"Florida State","ACC","florida-state",200,TRUE,FALSE
+"Georgia Tech","ACC","georgia-tech",200,TRUE,FALSE
+"Louisville","ACC","louisville",200,TRUE,FALSE
+"Miami","ACC","miami",200,TRUE,FALSE
+"NC State","ACC","north-carolina-state",200,TRUE,FALSE
+"North Carolina","ACC","north-carolina",200,TRUE,FALSE
+"Pittsburgh","ACC","pittsburgh",200,TRUE,FALSE
+"SMU","ACC","smu",200,TRUE,FALSE
+"Stanford","ACC","stanford",200,TRUE,FALSE
+"Syracuse","ACC","syracuse",200,TRUE,FALSE
+"Virginia","ACC","virginia",200,TRUE,FALSE
+"Virginia Tech","ACC","virginia-tech",200,TRUE,FALSE
+"Wake Forest","ACC","wake-forest",200,TRUE,FALSE

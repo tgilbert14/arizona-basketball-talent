@@ -23,22 +23,26 @@ blue-chip-ratio leaderboard, basketball distributions-only.
   New helpers in R/team_config.R: `team_conference`, `conf_slugs`, `conf_label`, `CONF_CONFIG`,
   `conf_since` (+ `team_big12_since` back-compat shim). Scrapers gained `--conference`/`--slugs` flags.
 
-**IN FLIGHT when paused — Phase 1 data foundation (a Workflow was running; its changes are UNCOMMITTED):**
-- Workflow task `wwr8e6v9i` (run id `wf_f827de34-9e2`) was building + running: `scripts/validateSlugs.R`
-  (sweep all 67 teams' 247 landing pages), `scripts/buildTeamConfig.R` (CFBD `/teams/fbs` -> 68-row
-  `data/team_config.csv` + download ~51 logos to `www/`), the `onboarded` flag wiring (new teams present
-  but HIDDEN; only the 16 Big 12 onboarded=TRUE so 16-team UX stays byte-identical), and
-  `scripts/backfillConference.R` (the lock-holding per-conference historical backfill orchestrator).
-- **ON RESUME:** run `/pickup`. Read the workflow output at
-  `~/AppData/Local/Temp/claude/.../tasks/wwr8e6v9i.output` (or re-run the Phase 1 workflow via its
-  scriptPath). Verify: `data/team_config.csv` = 68 rows, exactly 16 onboarded, ~51 logos in `www/`,
-  the needs-review slug list (247 quirks like `ole-miss`/`nc-state`/`texas-am` may need a manual fix),
-  and that the 16-team UX is still byte-identical. Then commit Phase 1 (teams present but hidden = safe).
+**DONE + committed — Phase 1 data foundation (config only; teams present but HIDDEN):**
+- `data/team_config.csv` = **67 rows** (16 existing Big 12 preserved EXACTLY — colors + conf_since
+  verified — plus 51 new ACC/Big Ten/SEC), only the **16 Big 12 onboarded=TRUE**; 51 new logos in
+  `www/`; `data/p4_slug_map.csv` (all 67 247 slugs swept). R/team_config.R now loads TEAM_CONFIG from
+  the CSV (inline 16 kept as fallback); `onboarded_slugs()` scopes the display universe to the 16, so
+  the 51 new teams are present-but-hidden and the 16-team UX is byte-identical (verified: 16 onboarded,
+  hidden teams don't leak the pooling scope, colors preserved). New scripts: `validateSlugs.R`,
+  `buildTeamConfig.R`, `backfillConference.R` (the lock-holding per-conf backfill orchestrator, NOT yet
+  run). Committed after the resume-point commit.
+- **STILL TO VERIFY on resume (workflow was stopped before its full verify ran):** the needs-review
+  slug list in `data/p4_slug_map.csv` (any non-200 247 slug — 247 quirks like `ole-miss`/`nc-state`/
+  `texas-am` may need a manual fix before that team can scrape); a full board byte-identical re-check
+  off the CSV; a headless app smoke (picker shows 16 not 67); and read `scripts/backfillConference.R`
+  end-to-end before running it.
 
-**NEXT (not started):**
-- **Phase 1 finish:** run `scripts/backfillConference.R` for SEC (then Big Ten, then ACC) as a long
-  monitored background job — it holds `logs/refresh.lock` so the nightly stands down safely.
-  ~40 min scrape + 25-40 min geocode PER conference. Flip each league's `onboarded=TRUE` on success.
+**NEXT (not started) — Phase 1 finish (the historical backfill):**
+- Run `scripts/backfillConference.R` for **SEC first** (then Big Ten, then ACC) as a long MONITORED
+  background job — it holds `logs/refresh.lock` so the nightly stands down safely. ~40 min scrape +
+  25-40 min geocode PER conference. Flip each league's `onboarded=TRUE` on success, commit per league.
+  Fix any needs-review slugs first.
 - **Phase 2:** the Conference Lab tab + `plot_conf_talent_spread` / `plot_conf_leaderboard` (distribution-
   first; the `CONF_COMPARE_POLICY` GREEN/YELLOW/RED metric-tier registry; realignment backcast rule).
 - **Phase 3:** perf/nightly scaling (roster stage rotated by conference; per-conference aggregate rds).

@@ -88,8 +88,15 @@ DEFAULT_YEARS <- c(SIZE_YEARS[2] - 3, SIZE_YEARS[2])
 arriving_class <- as.integer(format(Sys.Date(), "%Y"))
 war_room_class <- min(SIZE_YEARS[2], arriving_class)
 
+## the DISPLAY universe: onboarded teams only. Every team picker (g_team /
+## g_compare choices, the first-visit logo grid, the "who's your team" modal)
+## and the deep-link/stored-team validators draw from this, so a not-yet-
+## backfilled (onboarded = FALSE) program never appears. At Phase 1 only the 16
+## Big 12 are onboarded, so DISPLAY_CONFIG is the shipped 16 -> byte-identical.
+DISPLAY_CONFIG <- TEAM_CONFIG[TEAM_CONFIG$onboarded %in% TRUE, , drop = FALSE]
+
 ## named choices for team pickers (slug values, pretty labels)
-team_choices <- setNames(TEAM_CONFIG$slug, TEAM_CONFIG$team_name)
+team_choices <- setNames(DISPLAY_CONFIG$slug, DISPLAY_CONFIG$team_name)
 
 ## ---- URL DEEP LINKS: the query-string <-> global-state contract ----------
 ## Every global control (+ the active tab) serializes to the query string so
@@ -110,7 +117,10 @@ parse_url_state <- function(query) {
     if (is.null(v) || length(v) != 1 || is.na(v)) return(NULL)
     as.character(v)
   }
-  slugs <- TEAM_CONFIG$slug
+  ## the team universe is the ONBOARDED set: a shared/forged link can only ever
+  ## resolve to a live team, never a hidden (not-yet-backfilled) one. At Phase 1
+  ## this is the 16 Big 12, identical to validating against the whole config.
+  slugs <- onboarded_slugs()
 
   team <- g("team")
   if (!is.null(team) && team %in% slugs) out$team <- team
@@ -1703,13 +1713,13 @@ ui <- dashboardPage(
                   title = "Pick your team", status = "primary",
                   solidHeader = TRUE, width = 12,
                   div(style = "text-align:center;",
-                      ## PHASE 2: scope this grid to the selected conference's
-                      ## members; at Phase 0 it enumerates all 16 Big 12 teams.
-                      lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
+                      ## onboarded teams only (DISPLAY_CONFIG); at Phase 1 the 16
+                      ## Big 12. PHASE 2 scopes this grid to the selected conf.
+                      lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
                         actionButton(
                           inputId = paste0("select_",
-                                           gsub("-", "_", TEAM_CONFIG$slug[i])),
-                          label = img(src = TEAM_CONFIG$logo[i], height = "62px"),
+                                           gsub("-", "_", DISPLAY_CONFIG$slug[i])),
+                          label = img(src = DISPLAY_CONFIG$logo[i], height = "62px"),
                           style = "background:transparent; border:none; padding:8px 14px;"
                         )
                       })),
@@ -2514,7 +2524,7 @@ server <- function(input, output, session) {
       ## the URL already set the team -> don't touch it, don't ask
       if (isTRUE(url_init$has_team)) return()
       st <- input$stored_team
-      if (!is.null(st) && st %in% TEAM_CONFIG$slug) {
+      if (!is.null(st) && st %in% onboarded_slugs()) {
         updateSelectInput(session, "g_team", selected = st)
       } else if (identical(st, "none")) {
         showModal(modalDialog(
@@ -2526,12 +2536,12 @@ server <- function(input, output, session) {
                 style = "color:#888;"),
               div(style = "display:flex; flex-wrap:wrap; gap:6px;
                            justify-content:center;",
-                  lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
+                  lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
                     actionButton(
-                      paste0("pick_", gsub("-", "_", TEAM_CONFIG$slug[i])),
+                      paste0("pick_", gsub("-", "_", DISPLAY_CONFIG$slug[i])),
                       label = tagList(
-                        img(src = TEAM_CONFIG$logo[i], height = "34px"),
-                        div(TEAM_CONFIG$team_name[i],
+                        img(src = DISPLAY_CONFIG$logo[i], height = "34px"),
+                        div(DISPLAY_CONFIG$team_name[i],
                             style = "font-size:11px; font-weight:600;")),
                       class = "btn-default",
                       style = "width:108px; padding:8px 2px;")
@@ -2540,8 +2550,10 @@ server <- function(input, output, session) {
       }
     })
   })
-  lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
-    slug <- TEAM_CONFIG$slug[i]
+  ## pick_ handlers pair 1:1 with the modal grid above -- iterate the same
+  ## onboarded set so no observer is wired to a button that never renders.
+  lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
+    slug <- DISPLAY_CONFIG$slug[i]
     observeEvent(input[[paste0("pick_", gsub("-", "_", slug))]], {
       updateSelectInput(session, "g_team", selected = slug)
       removeModal()
@@ -2666,7 +2678,11 @@ server <- function(input, output, session) {
   ## control bar) so g_team can be scoped to a chosen league; do NOT add it now.
   active_conf     <- reactive(team_conference(input$g_team %||% "arizona"))
   active_conf_lab <- reactive(conf_label(active_conf()))
-  conf_pool_slugs <- reactive(conf_slugs(active_conf()))
+  ## pool the active team's ONBOARDED conference members only -- a partially
+  ## backfilled league never renders a half-populated board. At Phase 1 the
+  ## active team is always Big 12 and all 16 are onboarded, so this is the
+  ## shipped 16 and active_conf_n() is 16 -> every board/caption byte-identical.
+  conf_pool_slugs <- reactive(onboarded_slugs(active_conf()))
   active_conf_n   <- reactive(length(conf_pool_slugs()))
 
   ## full prepped table for the current sport, filtered by the player-type
@@ -2745,9 +2761,10 @@ server <- function(input, output, session) {
   })
 
   ## ---- navigation -------------------------------------------------------------
-  ## logo quick-pick: set the global team + open Size Lab
-  lapply(seq_len(nrow(TEAM_CONFIG)), function(i) {
-    slug <- TEAM_CONFIG$slug[i]
+  ## logo quick-pick: set the global team + open Size Lab. Pairs 1:1 with the
+  ## first-visit logo grid (DISPLAY_CONFIG) -- onboarded teams only.
+  lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
+    slug <- DISPLAY_CONFIG$slug[i]
     btn_id <- paste0("select_", gsub("-", "_", slug))
     observeEvent(input[[btn_id]], {
       updateSelectInput(session, "g_team", selected = slug)

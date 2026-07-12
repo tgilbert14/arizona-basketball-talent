@@ -265,13 +265,23 @@ sport <- if (length(args) >= 1) tolower(args[1]) else "football"
 year <- if (length(args) >= 2) as.integer(args[2]) else 2026
 tbl <- paste0("recruit_class_", sport)
 
-target_slugs <- TEAM_CONFIG$slug
-if (!is.null(conf_filter)) {
-  target_slugs <- intersect(target_slugs, conf_slugs(conf_filter))
-}
-if (!is.null(slugs_filter)) {
-  target_slugs <- intersect(target_slugs,
-                            trimws(strsplit(slugs_filter, ",")[[1]]))
+## default (nightly): only ONBOARDED teams -- the nightly never scrapes a
+## hidden program. A --conference/--slugs flag OVERRIDES to an explicit set that
+## MAY include not-yet-onboarded teams: that is how the per-conference backfill
+## (backfillConference.R) reaches a league BEFORE it is flipped onboarded. With
+## a flag the base set is the FULL config; without one it is onboarded_slugs()
+## (= the shipped 16 at Phase 1, so the nightly is byte-identical).
+if (!is.null(conf_filter) || !is.null(slugs_filter)) {
+  target_slugs <- TEAM_CONFIG$slug
+  if (!is.null(conf_filter)) {
+    target_slugs <- intersect(target_slugs, conf_slugs(conf_filter))
+  }
+  if (!is.null(slugs_filter)) {
+    target_slugs <- intersect(target_slugs,
+                              trimws(strsplit(slugs_filter, ",")[[1]]))
+  }
+} else {
+  target_slugs <- onboarded_slugs()
 }
 if (length(target_slugs) == 0) {
   stop("no TEAM_CONFIG slugs match the --conference/--slugs filter -- nothing ",
@@ -279,9 +289,10 @@ if (length(target_slugs) == 0) {
        slugs_filter %||% "", "')")
 }
 
-scope_note <- if (length(target_slugs) < nrow(TEAM_CONFIG))
-  paste0(" [scoped to ", length(target_slugs), " of ",
-         nrow(TEAM_CONFIG), " teams]") else ""
+## note only when a --conference/--slugs flag scoped the run (backfill/manual);
+## the unflagged nightly runs the full onboarded universe and needs no note.
+scope_note <- if (!is.null(conf_filter) || !is.null(slugs_filter))
+  paste0(" [scoped to ", length(target_slugs), " team(s)]") else ""
 cat("Refreshing ", sport, " ", year, " classes", scope_note, "...\n\n", sep = "")
 
 fresh <- list()
