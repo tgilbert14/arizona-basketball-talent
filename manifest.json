@@ -3894,34 +3894,34 @@
   },
   "files": {
     "app.R": {
-      "checksum": "7a36794afa3d40b0b66f653490863ab4"
+      "checksum": "b28f923c7b6c2bd5e7d9f6e4f331b668"
     },
     "data/recruiting.db": {
-      "checksum": "3e76917db395d7928f2d8c519ad95b22"
+      "checksum": "7352ed8f5a2e63dbf88b448ec1c46488"
     },
     "precomputed/beef_board_desktop.rds": {
-      "checksum": "38597dbcc232383c7e6293c3926ce6da"
+      "checksum": "a55e79ef383c978e6b41ed02c35c1557"
     },
     "precomputed/beef_board_phone.rds": {
-      "checksum": "d09db0469e0e5f005cd50d0c9ec6a22b"
+      "checksum": "992c7d3ae48b6ebf591383b886f84059"
     },
     "precomputed/body_map_desktop.rds": {
-      "checksum": "82268f76992a21f5a73de19f6412c100"
+      "checksum": "f315bfac4d847e984e53b2161285f63b"
     },
     "precomputed/body_map_phone.rds": {
-      "checksum": "43c8c468e998254fd6156d798722f025"
+      "checksum": "4595189825da0a267d9338b33b94ea3c"
     },
     "precomputed/dna_desktop.rds": {
-      "checksum": "e31dd3761cc5b65922059c684dc10d53"
+      "checksum": "466d482adc4adbb9f12eff92ea243fd9"
     },
     "precomputed/dna_phone.rds": {
-      "checksum": "c1acb66e8d913688d264d3fe93743fc8"
+      "checksum": "1fd854970c3b440b2ee67e69531eeb6f"
     },
     "precomputed/era_timeline_desktop.rds": {
-      "checksum": "d20ccac029434b1ab35974a9239338b8"
+      "checksum": "6d5c80390500589252fbc8546dd4d5d1"
     },
     "precomputed/era_timeline_phone.rds": {
-      "checksum": "3893ecd87f3d9aa46abe9240ccddd4db"
+      "checksum": "6548606d574966a030e862e2c7aee63e"
     },
     "R/coach_eras.R": {
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
@@ -3936,7 +3936,10 @@
       "checksum": "7d2eed1d19986639cd156df3e4e7e610"
     },
     "R/team_config.R": {
-      "checksum": "e1e5cf1a7e121637428ae13cecd30530"
+      "checksum": "ce331767d027d2865c4bd32a37d73af6"
+    },
+    "www/alabama.png": {
+      "checksum": "9ad9c25b423114cadc425a6e6cb2e570"
     },
     "www/arizona-state.png": {
       "checksum": "5342cfb90e573b129f20939a4a8e7c01"
@@ -3944,17 +3947,47 @@
     "www/arizona.png": {
       "checksum": "f4e6b301b466d0c49a2298629bd6d87d"
     },
+    "www/arkansas.png": {
+      "checksum": "8344c1233d46166f3a54060a1bb8f4bc"
+    },
+    "www/auburn.png": {
+      "checksum": "8f6bd01b47f9cb69ac71a06e225fb0bd"
+    },
     "www/baylor.png": {
       "checksum": "6eb7417f60c7b1125203f1a4e121aeac"
+    },
+    "www/boston-college.png": {
+      "checksum": "dd97202ef8b6321e4d7603a57e0790ce"
     },
     "www/byu.png": {
       "checksum": "f3ee168c27881f1e460cf933b8891ff1"
     },
+    "www/california.png": {
+      "checksum": "723051dca50d6449ec336b0a7175f052"
+    },
     "www/cincinnati.png": {
       "checksum": "ff1d6b50e11ffcf7ae329b4e13b12d2e"
     },
+    "www/clemson.png": {
+      "checksum": "f6262383b57032240c19c7dcbf60d7b1"
+    },
     "www/colorado.png": {
       "checksum": "510e016a7fbe7fa0e273bfeacb5431c3"
+    },
+    "www/duke.png": {
+      "checksum": "fa5b0ca6c082f1e795d5b1d9ff60a8aa"
+    },
+    "www/florida-state.png": {
+      "checksum": "7807adc4df78ca46ad621697f41ae4e3"
+    },
+    "www/florida.png": {
+      "checksum": "af0f30c3fff0e40c4c4e6c715d71b4c7"
+    },
+    "www/georgia-tech.png": {
+      "checksum": "af243df583e6bdfac7c291d1bab7fedc"
+    },
+    "www/georgia.png": {
+      "checksum": "2cd7afb9b4269810ea72df0ac51805d5"
     },
     "www/houston.png": {
       "checksum": "9d47bacf884e8b1b32f58faebd2beea1"
@@ -3962,8 +3995,17 @@
     "www/html-to-image.min.js": {
       "checksum": "fc6a43f64cc0f48b9852d5610ea89b0e"
     },
+    "www/illinois.png": {
+      "checksum": "e4dabfad1af8c57f1494057aa09752f7"
+    },
+    "www/indiana.png": {
+      "checksum": "064d2581616d3fb1a275d79f184ace8f"
+    },
     "www/iowa-state.png": {
       "checksum": "fc45892be566cceb8e2789bac3a3788a"
+    },
+    "www/iowa.png": {
+      "checksum": "af351cd23862acfea68377e0cdc1002a"
     },
     "www/kansas-state.png": {
       "checksum": "90e90275d54fc583d093a0742d182b46"
@@ -3971,23 +4013,134 @@
     "www/kansas.png": {
       "checksum": "a15b08c57e70d280b69f4990b2a0afbb"
     },
+    "www/kentucky.png": {
+      "checksum": "4c4d8f7a4efef22673cdaf54481c473f"
+    },
+    "www/louisville.png": {
+      "checksum": "d733af93767dcba2f399d9cdc1944a7d"
+    },
+    "www/lsu.png": {
+      "checksum": "5950828c0ce6a0edcf67ad343f634a2c"
+    },
+    "www/maryland.png": {
+      "checksum": "4e64e1909a134b9b8740788631b96695"
+    },
+    "www/miami.png": {
+      "checksum": "61cdbb59fccb2dfd665576fe732f8219"
+    },
+    "www/michigan-state.png": {
+      "checksum": "344a3cf807e6c3c98dca69f6d2276d12"
+    },
+    "www/michigan.png": {
+      "checksum": "8902c0c5b7b74b74dc92d72764050fb3"
+    },
+    "www/minnesota.png": {
+      "checksum": "f12c0b95654fb59292f609219e1cecb0"
+    },
+    "www/mississippi-state.png": {
+      "checksum": "3b06f5156d06f987be583a80c69e33d3"
+    },
+    "www/missouri.png": {
+      "checksum": "453b2a115a432ed132603d1182cfb1d6"
+    },
+    "www/nebraska.png": {
+      "checksum": "e29bb04377a980bd3e6d4b6a2a8b2dca"
+    },
+    "www/north-carolina-state.png": {
+      "checksum": "ba3bd241f5611e5542860371f3b3849b"
+    },
+    "www/north-carolina.png": {
+      "checksum": "0058cc57ed08e2fa222f60f25d0822e3"
+    },
+    "www/northwestern.png": {
+      "checksum": "a9f7256076b8c04bb8f7c3492b809820"
+    },
+    "www/ohio-state.png": {
+      "checksum": "404013d90038fabc26565b1641b8fd58"
+    },
     "www/oklahoma-state.png": {
       "checksum": "3f65e17224148d7a8b0346a7497213c6"
+    },
+    "www/oklahoma.png": {
+      "checksum": "35c94930bbbb0a9213ce4dd41404cebc"
+    },
+    "www/ole-miss.png": {
+      "checksum": "3b35f7de25e1eca2018c3091b5e2e507"
+    },
+    "www/oregon.png": {
+      "checksum": "215d579875125a27e4d0e66c168b630b"
+    },
+    "www/penn-state.png": {
+      "checksum": "513d353c0120c078cc0c24c870ce707c"
+    },
+    "www/pittsburgh.png": {
+      "checksum": "04f5199a5f4256e882e5e5a4a30ff425"
+    },
+    "www/purdue.png": {
+      "checksum": "d2aa5dacb7f564fd72213d657c422f2d"
+    },
+    "www/rutgers.png": {
+      "checksum": "ab2c6296402020d4336c8d9f370d4d47"
+    },
+    "www/smu.png": {
+      "checksum": "5667bddb4b2b3ed480fb017e2793533c"
+    },
+    "www/south-carolina.png": {
+      "checksum": "d1d4f3cc5a1a75f97096fe55a63beda8"
+    },
+    "www/stanford.png": {
+      "checksum": "f35e1b67e799ebb70950d7c6d63e7ce4"
+    },
+    "www/syracuse.png": {
+      "checksum": "23b1f09d18eb7d1e2fd935eec71eda40"
     },
     "www/tcu.png": {
       "checksum": "78ebd55f1e6cca862c50e4fc07c1d812"
     },
+    "www/tennessee.png": {
+      "checksum": "c6196ebf78235257b2d9dffa89a2df51"
+    },
+    "www/texas-am.png": {
+      "checksum": "36387ddc3704332382fbaf87d4062c52"
+    },
     "www/texas-tech.png": {
       "checksum": "c6464a295459e61b62a5beb411a78f76"
+    },
+    "www/texas.png": {
+      "checksum": "c0af14893a3d0e43ac7a39efaae61ee0"
     },
     "www/ucf.png": {
       "checksum": "634486997c3330c4e8c44e1e871b4e54"
     },
+    "www/ucla.png": {
+      "checksum": "1b0f6321f9cdc963763212939ca31099"
+    },
+    "www/usc.png": {
+      "checksum": "cf924e29dd6f9410533eeb06dadd9d5b"
+    },
     "www/utah.png": {
       "checksum": "893af478cf2cfa0fd943e27828a29ffe"
     },
+    "www/vanderbilt.png": {
+      "checksum": "cdf70a67d803e6adc29b3d0c7fe9acfd"
+    },
+    "www/virginia-tech.png": {
+      "checksum": "efe5e828813b0b3ea3929629ec384ae1"
+    },
+    "www/virginia.png": {
+      "checksum": "3ae3118894a62155fdd0331875a7e676"
+    },
+    "www/wake-forest.png": {
+      "checksum": "7d9e00ff795e60101d9036223d36bde2"
+    },
+    "www/washington.png": {
+      "checksum": "f84e2586c525d4fac04f80a59af5d1c0"
+    },
     "www/west-virginia.png": {
       "checksum": "ebae9b9f052668f8076f1a3a932b7f27"
+    },
+    "www/wisconsin.png": {
+      "checksum": "eafdfb7930f25b83a735e3bf085f6dae"
     }
   },
   "users": null

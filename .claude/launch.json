@@ -6,6 +6,12 @@
       "runtimeExecutable": "C:\\Program Files\\R\\R-4.5.2\\bin\\Rscript.exe",
       "runtimeArgs": ["-e", "options(shiny.port=8123); shiny::runApp('.', host='127.0.0.1', launch.browser=FALSE)"],
       "port": 8123
+    },
+    {
+      "name": "old-pueblo",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8130", "--directory", "C:/Users/tsgil/OneDrive/Documents/VGS - R/old-pueblo-scroll"],
+      "port": 8130
     }
   ]
 }
