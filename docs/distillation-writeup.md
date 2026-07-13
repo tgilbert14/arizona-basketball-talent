@@ -22,18 +22,25 @@ and monotonically closable**.
    know which model produced which. Every "tell" that distinguishes the small model
    becomes a new checklist line, gate check, or exam — then re-run.
 
-## Measured results (three cycles, one task class)
+## Measured results (four cycles, one task class)
 | Cycle | Small-model score | Frontier ref | Finding |
 |---|---|---|---|
 | 1 | 65 / 100 | 92 | Blind judge correctly identified the small model; 4 tells named (velocity flattening, internal contradictions, blanket-negative safety, intention mismatch) |
 | 2 (after checklist patches) | 65 | 90 | Old tells eliminated — **failure migrated** to numeric self-consistency & round-number drift: checklists alone don't close the gap |
-| 3 (after gates made the new tells machine-checkable) | **68** | 92 | Numeric tell class **extinct** (judge praised the gate-forced truthNotes); failure migrated to cross-file coherence — 'strong local prose, weak global bookkeeping.' Taxonomy complete: style → numeric → coherence → open synthesis (the floor) |
+| 3 (after gates made the new tells machine-checkable) | 68 | 92 | Numeric tell class **extinct** (judge praised the gate-forced truthNotes); failure migrated to cross-file coherence — 'strong local prose, weak global bookkeeping.' Taxonomy complete: style → numeric → coherence → open synthesis (the floor) |
+| 4 (coherence gate live + gate-forced repair pass) | **74** | 89 | Biggest single-cycle jump; gap nearly halved (24 → 15). The coherence gate caught a live contradiction **the small model produced despite being warned about that exact failure class in its prompt** — instruction did not prevent the tell; the executable gate did, and a one-pass small-model repair fixed it. The small model **won the honesty dimension outright** (0.93 vs 0.82; the blind honesty judge guessed it was the frontier film) — gate-forced sourcing discipline now *exceeds* frontier default behavior on that axis. Residual gap concentrated in craft/synthesis (0.62 vs 0.88: stock titles, a reframe announced rather than landed, no fusion image) — the taxonomy's predicted floor. Judging upgraded this cycle to five per-dimension **isolated** judges (0–1 + pass/fail + reason-then-discard + Unknown escape), which localized the gap per-axis and also caught two bookkeeping slips in the frontier reference itself |
 
 **Exam-bank result (same day):** the small-model agent passed 3/3 real-failure licensing
 exams at full marks — exact root causes, complete prescriptions, calibration-aware
-routing. Refined thesis: **explicit knowledge distills ~losslessly through doctrine +
-worked examples; the persistent frontier gap is confined to open-ended synthesis** —
-which is precisely what the blind-judged tournament isolates and measures.
+routing. Refined thesis after cycle 4: **explicit knowledge distills ~losslessly through
+doctrine + worked examples; gate-enforced disciplines can push the small model PAST
+frontier default behavior on their axis (measured: honesty, 0.93 vs 0.82); the persistent
+frontier gap is confined to open-ended synthesis** — which is precisely what the
+blind-judged tournament isolates and measures. Corollary with cost implications: the
+small model failed to follow an explicit warning about a failure class but repaired it
+perfectly when a gate pointed at the instance — **verification is cheaper than
+generation**, so gates + small-model repair loops beat frontier-model generation for
+every checkable quality axis.
 
 Secondary validated result (same week): **data-true generative terrain** — real database
 metrics rendered as literal landform heightmaps (R/rayshader), used as conditioning
