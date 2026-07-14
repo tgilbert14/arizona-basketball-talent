@@ -1,17 +1,17 @@
 {
-  "run_id": "20260712_233004",
-  "started_at": "2026-07-12 23:30:04",
-  "finished_at": "2026-07-12 23:42:34",
-  "status": "degraded",
+  "run_id": "20260714_064725",
+  "started_at": "2026-07-14 06:47:25",
+  "finished_at": "2026-07-14 06:56:27",
+  "status": "ok",
   "changed": true,
   "row_counts": {
-    "recruit_class_football": 5463,
+    "recruit_class_football": 5465,
     "recruit_class_basketball": 845,
-    "roster_football": 1718,
+    "roster_football": 1719,
     "roster_basketball": 230,
     "team_seasons_football": 670
   },
-  "failed_schools": ["arizona", "arizona-state", "baylor", "byu", "central-florida", "colorado", "houston", "tcu", "texas-tech", "utah", "west-virginia"],
+  "failed_schools": ["arizona-state", "baylor", "byu", "central-florida", "colorado", "houston", "iowa-state", "kansas", "kansas-state", "oklahoma-state", "tcu", "texas-tech", "utah", "arizona", "west-virginia"],
   "stages": {
     "preflight": "ok",
     "snapshot": "ok",
@@ -28,8 +28,8 @@
     "validate": "ok",
     "precompute": "ok",
     "brief": "ok",
-    "push": "warn",
-    "deploy": "ok",
-    "verify": "ok"
+    "push": "pending",
+    "deploy": "pending",
+    "verify": "pending"
   }
 }
