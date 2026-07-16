@@ -22,10 +22,21 @@
 db_path <- here("data", "recruiting.db")
 conn <- dbConnect(RSQLite::SQLite(), db_path)
 
+## the display ceiling: the app tracks at most ONE cycle ahead of the
+## calendar (the class of N signs Dec N-1 and enrolls fall N). The nightly
+## pipeline enforces the same cap at scrape time; this WHERE is defense in
+## depth so a stray future-year row can never stretch the year slider, the
+## default window, or the class previews (in July 2026 a few real class-of-
+## 2028 commits leaked in via an uncapped ahead-year probe and did exactly
+## that).
+CYCLE_CAP <- as.integer(format(Sys.Date(), "%Y")) + 1L
+
 ## preload + prep both sports once at startup (small tables, fast)
-size_football <- safe_query(conn, "SELECT * FROM recruit_class_football") %>%
+size_football <- safe_query(conn, paste0(
+  "SELECT * FROM recruit_class_football WHERE Year <= ", CYCLE_CAP)) %>%
   prep_size_data("football")
-size_basketball <- safe_query(conn, "SELECT * FROM recruit_class_basketball") %>%
+size_basketball <- safe_query(conn, paste0(
+  "SELECT * FROM recruit_class_basketball WHERE Year <= ", CYCLE_CAP)) %>%
   prep_size_data("basketball")
 
 ## current rosters (from scripts/scrapeRosters.R); NULL if not scraped yet

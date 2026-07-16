@@ -160,6 +160,21 @@ diff_sport <- function(cur, base) {
     }
   }
 
+  ## the mirror case: a class YEAR in the baseline but gone from the current
+  ## db is a coverage CONTRACTION (a cycle retired from tracking -- e.g. the
+  ## July 2026 cleanup that removed beyond-ceiling 2028 rows), not decommit
+  ## activity. Reporting those under "no longer listed" would read as false
+  ## decommits, so pull them out and disclose them in one line instead.
+  old_years <- setdiff(unique(b2$Year), unique(c2$Year))
+  contraction <- NULL
+  if (length(old_years) > 0 && nrow(gone) > 0) {
+    con_rows <- gone$Year %in% old_years
+    if (any(con_rows)) {
+      contraction <- gone[con_rows, , drop = FALSE]
+      gone <- gone[!con_rows, , drop = FALSE]
+    }
+  }
+
   ## name-drift collapse: 247 relabeling a player ("Kevin Moorer" ->
   ## "Kevin Moorer II") lands as one add + one remove sharing
   ## School+Year+Type. When one name key is a prefix of the other, or the
@@ -202,6 +217,9 @@ diff_sport <- function(cur, base) {
   }
 
   yr <- suppressWarnings(max(cur$Year, na.rm = TRUE))
+  ## the movers table keys on the newest tracked cycle; never let a stray
+  ## beyond-ceiling row (calendar+2) move the goalposts
+  yr <- min(yr, as.integer(format(Sys.Date(), "%Y")) + 1L)
   mov <- full_join(
     cur %>% filter(Year == yr, Type == "Commit") %>%
       group_by(School) %>%
@@ -221,7 +239,7 @@ diff_sport <- function(cur, base) {
 
   blue <- adds %>% filter(!is.na(Ranking), Ranking >= 90)
   list(adds = adds, gone = gone, renamed = renamed, mov = mov, blue = blue,
-       yr = yr, coverage = coverage)
+       yr = yr, coverage = coverage, contraction = contraction)
 }
 
 ## ---------------------------------------------------------------------------
@@ -270,6 +288,18 @@ sport_html <- function(sport_name, cur, base, base_label) {
       nrow(d$coverage), " players entered the database as a coverage ",
       "expansion, not as this week's recruiting activity, and are ",
       "excluded from the counts below.</p>"))
+  }
+
+  ## coverage contraction, same honesty rule in the other direction
+  if (!is.null(d$contraction) && nrow(d$contraction) > 0) {
+    con_yrs <- sort(unique(d$contraction$Year))
+    h <- c(h, paste0(
+      "<p class='coverage'>No longer tracking the ",
+      paste(con_yrs, collapse = " and "), " class",
+      if (length(con_yrs) > 1) "es" else "", ": ",
+      nrow(d$contraction), " players left the database as a coverage ",
+      "change, not as decommits, and are excluded from the counts ",
+      "below.</p>"))
   }
 
   ## additions, grouped per team, commits and transfers labeled separately

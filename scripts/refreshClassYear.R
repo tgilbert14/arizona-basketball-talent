@@ -265,6 +265,18 @@ sport <- if (length(args) >= 1) tolower(args[1]) else "football"
 year <- if (length(args) >= 2) as.integer(args[2]) else 2026
 tbl <- paste0("recruit_class_", sport)
 
+## hard ceiling: the app tracks at most ONE cycle ahead of the calendar
+## (class of N signs Dec N-1). 247 lists early commits two cycles out, so
+## without this guard an uncapped caller keeps rolling the db forward
+## (2028 rows landed in July 2026). Refuse rather than write.
+cycle_cap <- as.integer(format(Sys.Date(), "%Y")) + 1L
+if (!is.na(year) && year > cycle_cap) {
+  cat("refreshClassYear: ", year, " is beyond the calendar+1 ceiling (",
+      cycle_cap, ") -- refusing to scrape a cycle more than one year out\n",
+      sep = "")
+  quit(save = "no", status = 1)
+}
+
 ## default (nightly): only ONBOARDED teams -- the nightly never scrapes a
 ## hidden program. A --conference/--slugs flag OVERRIDES to an explicit set that
 ## MAY include not-yet-onboarded teams: that is how the per-conference backfill

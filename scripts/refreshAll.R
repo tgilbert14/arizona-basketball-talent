@@ -49,10 +49,16 @@ table_counts <- function() {
   })
 }
 
+## the newest cycle the refresh may touch: calendar+1 (the class of N signs
+## Dec N-1). 247 lists early commits two cycles out, so an uncapped
+## MAX(Year)+1 probe compounds a year every time it finds rows.
+cycle_cap <- as.integer(format(Sys.Date(), "%Y")) + 1L
+
 newest_year <- function(sport) {
   conn <- dbConnect(SQLite(), db_path)
   on.exit(dbDisconnect(conn))
-  dbGetQuery(conn, paste0("SELECT MAX(Year) y FROM recruit_class_", sport))$y
+  y <- dbGetQuery(conn, paste0("SELECT MAX(Year) y FROM recruit_class_", sport))$y
+  min(y, cycle_cap)
 }
 
 run_step <- function(label, script, args = character(0)) {
@@ -75,10 +81,16 @@ if (!"no-classes" %in% skip) {
     results[paste("classes", sp, yr)] <-
       run_step(paste("classes:", sp, yr), "refreshClassYear.R", c(sp, yr))
   }
-  ## probe one cycle ahead (same rollover mechanics as the nightly run):
-  ## exits 0 without touching the db until 247 opens the ahead-year pages
+  ## probe one cycle ahead (same rollover mechanics as the nightly run),
+  ## capped at calendar+1: exits 0 without touching the db until 247 opens
+  ## the ahead-year pages
   for (sp in c("football", "basketball")) {
     yr <- newest_year(sp) + 1L
+    if (yr > cycle_cap) {
+      cat("[classes ahead: ", sp, "] skipped -- ", yr,
+          " is beyond the calendar+1 ceiling (", cycle_cap, ")\n", sep = "")
+      next
+    }
     results[paste("classes ahead", sp, yr)] <-
       run_step(paste("classes ahead:", sp, yr), "refreshClassYear.R",
                c(sp, yr, "--allow-empty"))

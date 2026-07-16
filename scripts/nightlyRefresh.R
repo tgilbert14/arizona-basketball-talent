@@ -116,10 +116,20 @@ counts_before  <- NULL
 ## ---------------------------------------------------------------------------
 banner <- function(x) cat("\n==== ", x, " ====\n", sep = "")
 
+## the newest cycle the pipeline may touch: recruiting runs ONE year ahead of
+## the calendar (the class of N signs Dec N-1 and enrolls fall N), so
+## calendar+1 is the active ceiling. 247 opens pages -- with real early
+## commits -- up to TWO cycles out, so an uncapped MAX(Year)+1 probe finds
+## rows, MAX(Year) advances, and the rollover compounds a year every time
+## (this is how 2028 rows landed in July 2026). The cap makes the rollover
+## calendar-governed: the ahead probe only fires while MAX(Year) < calendar+1.
+cycle_cap <- as.integer(format(Sys.Date(), "%Y")) + 1L
+
 newest_year <- function(db, sport) {
   conn <- dbConnect(SQLite(), db)
   on.exit(dbDisconnect(conn), add = TRUE)
-  dbGetQuery(conn, paste0("SELECT MAX(Year) y FROM recruit_class_", sport))$y
+  y <- dbGetQuery(conn, paste0("SELECT MAX(Year) y FROM recruit_class_", sport))$y
+  min(y, cycle_cap)
 }
 
 quick_check <- function(db) {
@@ -460,13 +470,21 @@ tryCatch({
                                  " exited ", r$status))
       }
     }
-    ## probe one cycle ahead with --allow-empty: before 247 opens the pages
-    ## the child exits 0 without touching the db; the night rows first land,
-    ## MAX(Year) advances and the loop above owns the new cycle from the
-    ## NEXT run -- that is the rollover, no manual seed. Ahead-year problems
-    ## are only ever a warn: the current cycle's data must publish anyway.
+    ## probe one cycle ahead with --allow-empty, CAPPED at calendar+1: before
+    ## 247 opens the pages the child exits 0 without touching the db; the
+    ## night rows first land, MAX(Year) advances and the loop above owns the
+    ## new cycle from the NEXT run -- that is the rollover, no manual seed.
+    ## The cap stops the compounding (247 lists commits two cycles out, so an
+    ## uncapped probe kept rolling: 2027 -> 2028 in July 2026). Ahead-year
+    ## problems are only ever a warn: the current cycle must publish anyway.
     for (sp in c("football", "basketball")) {
       yr_ahead <- newest_year(db_path, sp) + 1L
+      if (yr_ahead > cycle_cap) {
+        stages[[paste0("classes_ahead_", sp)]] <- "skipped"
+        cat("[classes ahead: ", sp, "] skipped -- ", yr_ahead,
+            " is beyond the calendar+1 ceiling (", cycle_cap, ")\n", sep = "")
+        next
+      }
       r <- run_child(paste("classes ahead:", sp, yr_ahead),
                      "refreshClassYear.R",
                      c(sp, as.character(yr_ahead), "--allow-empty"),
