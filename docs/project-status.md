@@ -8,7 +8,30 @@
 and Posit Connect Cloud (git-backed). Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet,
 large inline vanilla-JS layer, SQLite `data/recruiting.db`.
 
-## >>> RESUME HERE: Power-4 expansion, mid-build (paused 2026-07-12, usage limit) <<<
+## Shipped 2026-07-16 AM: the cycle-cap fix (2028 preview-year leak) — commit a4455a5
+
+The v8 year-ahead probe scraped MAX(Year)+1 uncapped; 247 lists early commits two cycles out, so
+once 2027 seeded, the probe rolled to 2028 and wrote 3 real class-of-2028 commits (incl. Arizona's
+Karmello Calloway) — stretching the slider/default window/previews to 2028 and making the nightly
+treat 2028 as "the current cycle" (2027 went stale for a day). **Rule: the app tracks at most ONE
+cycle ahead of the calendar (calendar+1).** Fixes: calendar+1 cap in nightlyRefresh/refreshAll
+(`newest_year()` + skip beyond-ceiling probes), hard refuse-guard in refreshClassYear, `CYCLE_CAP`
+WHERE-filter on app.R startup loads (defense in depth), weeklyBrief coverage-CONTRACTION mirror
+(a retired class year discloses as coverage change, never as decommits), 3 rows deleted (snapshot
+`backups/pre_2028fix_*`), precompute rebuilt on 2024–2027, manifest updated. Verified live on
+Connect Cloud (slider max 2027, window 2024–2027); shinyapps picks it up on the next nightly deploy
+(or run `Rscript scripts/deployApp.R` by hand). The 2028 class re-enters naturally in Jan 2027.
+
+## >>> IN FLIGHT 2026-07-16: Power-4 Phase 1 — SEC backfill running (detached PID 20392) <<<
+
+`scripts/backfillConference.R "SEC"` launched 06:45 as a detached background job — console log at
+`logs/backfill_sec_console.log`, checkpoint `logs/backfill_sec.json`, holds `logs/refresh.lock`
+(nightly stands down). Pre-run verify done: slug map = all 67 slugs HTTP 200 / zero needs-review;
+config smoke = 67 rows, 16 onboarded, 16 SEC targets; orchestrator read end-to-end (validates vs
+snapshot, flips onboarded LAST, 20-row floor). On success it commits locally (no push — the nightly
+ships it). Then: Big Ten → ACC, same procedure.
+
+## Power-4 expansion plan (paused 2026-07-12, resumed 2026-07-16)
 
 Adding Big Ten + SEC + ACC (16 -> ~67 teams) + a conference-vs-conference "Conference Lab".
 **Full plan: [docs/p4-expansion-design.md](p4-expansion-design.md).** User decisions locked: all 67 teams
@@ -32,11 +55,12 @@ blue-chip-ratio leaderboard, basketball distributions-only.
   hidden teams don't leak the pooling scope, colors preserved). New scripts: `validateSlugs.R`,
   `buildTeamConfig.R`, `backfillConference.R` (the lock-holding per-conf backfill orchestrator, NOT yet
   run). Committed after the resume-point commit.
-- **STILL TO VERIFY on resume (workflow was stopped before its full verify ran):** the needs-review
-  slug list in `data/p4_slug_map.csv` (any non-200 247 slug — 247 quirks like `ole-miss`/`nc-state`/
-  `texas-am` may need a manual fix before that team can scrape); a full board byte-identical re-check
-  off the CSV; a headless app smoke (picker shows 16 not 67); and read `scripts/backfillConference.R`
-  end-to-end before running it.
+- **VERIFIED 2026-07-16:** slug map clean (all 67 slugs HTTP 200, zero needs-review — the
+  `ole-miss`/`nc-state`/`texas-am` worries didn't materialize); config smoke (67 rows, 16 onboarded,
+  hidden teams absent from the picker universe); app booted + boards rendered locally off the CSV
+  config (plus three nightly deploys since 941c22b ran through it live); `backfillConference.R`
+  read end-to-end — sound (lock heartbeat, per-stage checkpoints, validate-vs-snapshot, onboard
+  flip LAST, 20-row floor, calendar-capped ahead probe).
 
 **NEXT (not started) — Phase 1 finish (the historical backfill):**
 - Run `scripts/backfillConference.R` for **SEC first** (then Big Ten, then ACC) as a long MONITORED
