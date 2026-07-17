@@ -1,24 +1,24 @@
 {
-  "run_id": "20260716_062257",
-  "started_at": "2026-07-16 06:22:57",
-  "finished_at": "2026-07-16 06:31:08",
-  "status": "noop",
-  "changed": false,
+  "run_id": "20260716_233003",
+  "started_at": "2026-07-16 23:30:03",
+  "finished_at": "2026-07-16 23:35:49",
+  "status": "ok",
+  "changed": true,
   "row_counts": {
-    "recruit_class_football": 5465,
-    "recruit_class_basketball": 845,
-    "roster_football": 1729,
-    "roster_basketball": 230,
+    "recruit_class_football": 11215,
+    "recruit_class_basketball": 1811,
+    "roster_football": 3487,
+    "roster_basketball": 466,
     "team_seasons_football": 670
   },
-  "failed_schools": ["arizona-state", "baylor", "byu", "central-florida", "colorado", "houston", "iowa-state", "kansas", "kansas-state", "oklahoma-state", "tcu", "texas-tech", "utah", "arizona", "west-virginia"],
+  "failed_schools": ["arizona", "arizona-state", "baylor", "byu", "central-florida", "colorado", "houston", "tcu", "texas-tech", "utah", "west-virginia"],
   "stages": {
     "preflight": "ok",
     "snapshot": "ok",
     "classes_football": "ok",
     "classes_basketball": "ok",
-    "classes_ahead_football": "ok",
-    "classes_ahead_basketball": "ok",
+    "classes_ahead_football": "skipped",
+    "classes_ahead_basketball": "skipped",
     "rosters_football": "ok",
     "rosters_basketball": "ok",
     "records": "ok",
@@ -26,10 +26,10 @@
     "geocode": "ok",
     "audit": "ok",
     "validate": "ok",
-    "precompute": "skipped",
-    "brief": "skipped",
-    "push": "skipped",
-    "deploy": "skipped",
-    "verify": "skipped"
+    "precompute": "ok",
+    "brief": "ok",
+    "push": "pending",
+    "deploy": "pending",
+    "verify": "pending"
   }
 }
