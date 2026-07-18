@@ -47,10 +47,25 @@ it was in its current league, wide windows disclose dropped backcast rows); `plo
 info modal. Verified: SEC 88.9 > B1G 87.8 > ACC 87.1 > B12 86.6 avg rating; blue-chip SEC 37 > B1G 24 >
 ACC 15 > B12 10; YELLOW caveat fires; RED absent; no regressions.
 
-**Remaining Phase 2 polish (nice-to-have, not blocking):** the global Conference SCOPE selector for the
-OTHER tabs' team pickers (the Lab itself is self-contained); `plot_conf_era_timeline` (4 median lines);
-`group='conference'` modes on Position DNA + faceted Body Map. Phase 3 = perf/scale hardening (roster
-stage rotated by conference; per-conference aggregate rds).
+**TEAM PICKER REBUILT (commit `062a0c8`, live):** both g_team/g_compare are now `selectizeInput` with
+conference optgroups (Big 12 first, alphabetized within), per-team logos in the dropdown + selected
+item, type-to-search, `maxOptions=100` (67 > selectize's default 50 cap), and `allowEmptyOption` for
+compare's "— none —". First-visit modal + Home "Pick your team" grid grouped into conference sections
+(was a flat 67-logo wall). Helpers `conf_grouped_choices`/`gi_logo_map_js`/`gi_picker_render` ~app.R:110.
+
+**UI/UX SWEEP (Alyssa audit → commit `1de1e73`, live):** amber caveat banner for YELLOW context metrics
+(surfaces "reads geography, not talent" above the chart); the active team's dot ringed in gold in the
+67-dot Lab so you find yourself; conference color language (Okabe-Ito per league) unified across picker
+headers + Home grid + Lab chart from CONF_CONFIG; dynamic conference counts in the honesty modal;
+Conference Lab empty state names the fix; picker item title tooltips; first-visit "Skip" link; ⓘ glyph
++ stale "16 Big 12" comment cleaned. All verified live, 0 errors, no regressions.
+
+**Remaining polish (nice-to-have, not blocking):** the global Conference SCOPE selector for the OTHER
+tabs' team pickers (the Lab itself is self-contained); `plot_conf_era_timeline` (4 median lines);
+`group='conference'` modes on Position DNA + faceted Body Map; a client-side text filter on the
+first-visit modal (Alyssa #6 — the bar picker already searches, so lower value); widen picker columns
+on tablet (title tooltips ship now as the cheaper fix). Phase 3 = perf/scale hardening (roster stage
+rotated by conference; per-conference aggregate rds).
 
 ## Shipped 2026-07-16 AM: the cycle-cap fix (2028 preview-year leak) — commit a4455a5
 
