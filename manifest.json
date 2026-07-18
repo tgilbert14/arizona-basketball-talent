@@ -3894,7 +3894,7 @@
   },
   "files": {
     "app.R": {
-      "checksum": "04d114f2159de00264de1ae35f268fef"
+      "checksum": "88b20fccb093be2999a49c9e49b5ad62"
     },
     "data/recruiting.db": {
       "checksum": "450443e27020c7001b3f80ae932c1d88"
@@ -3933,10 +3933,10 @@
       "checksum": "0080462d1d66093735493b63bf64b87f"
     },
     "R/girth_plots.R": {
-      "checksum": "7d2eed1d19986639cd156df3e4e7e610"
+      "checksum": "a301e8dcfb542d6589e6a20d05dcb3be"
     },
     "R/team_config.R": {
-      "checksum": "ce331767d027d2865c4bd32a37d73af6"
+      "checksum": "34039519fc3e415adcacbd56748ee533"
     },
     "www/alabama.png": {
       "checksum": "9ad9c25b423114cadc425a6e6cb2e570"

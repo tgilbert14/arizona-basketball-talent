@@ -116,8 +116,8 @@ team_choices <- setNames(DISPLAY_CONFIG$slug, DISPLAY_CONFIG$team_name)
 ## every param is whitelisted against the real config, and anything forged,
 ## out of range, or malformed is dropped so the app silently falls back to
 ## its defaults. tabName values must stay in sync with the sidebarMenu below.
-VALID_TABS <- c("home", "sizelab", "beef", "weightroom", "eras", "brief",
-                "results", "summary", "compare", "notes")
+VALID_TABS <- c("home", "sizelab", "beef", "conflab", "weightroom", "eras",
+                "brief", "results", "summary", "compare", "notes")
 
 parse_url_state <- function(query) {
   out <- list()
@@ -351,6 +351,46 @@ twin_table_html <- function(frame, caption, value_col = "value",
     "<tbody>", rows, "</tbody></table></div>")
 }
 
+## the Conference Lab table twin -- conference-keyed (4 rows), a different
+## shape from the team boards, so it gets its own small renderer. Reuses the
+## twin-table CSS. `tbl` is a conf_spread_table() frame.
+conf_twin_html <- function(tbl, caption, caption_note = NULL) {
+  esc <- htmltools::htmlEscape
+  if (is.null(tbl) || nrow(tbl) == 0)
+    return("<p class=\"twin-empty\">No conference data in this window.</p>")
+  mlab <- attr(tbl, "metric_label") %||% "Value"
+  cols <- conf_color(tbl$Conference)
+  aria <- esc(paste0(tbl$Conference, ", mean ", tbl$Mean, ", median ",
+                     tbl$Median, ", range ", tbl$Range, ", top team ", tbl$Top,
+                     ", bottom team ", tbl$Bottom, ", ", tbl$Teams, " teams, ",
+                     tbl$Players, " players"), attribute = TRUE)
+  chip <- paste0("<span style=\"display:inline-block;width:11px;height:11px;",
+                 "border-radius:2px;vertical-align:middle;margin-right:7px;",
+                 "background:", cols, ";\"></span>")
+  rows <- paste0(
+    "<tr tabindex=\"0\" aria-label=\"", aria, "\">",
+    "<td class=\"twin-rank\">", seq_len(nrow(tbl)), "</td>",
+    "<td class=\"twin-team\">", chip, esc(tbl$Conference), "</td>",
+    "<td class=\"twin-val\">", esc(tbl$Mean), "</td>",
+    "<td>", esc(tbl$Median), "</td>",
+    "<td>", esc(tbl$Range), "</td>",
+    "<td>", esc(tbl$Top), "</td>",
+    "<td>", esc(tbl$Bottom), "</td>",
+    "<td><span class=\"twin-n\">", tbl$Teams, " tm · ", tbl$Players,
+    "</span></td></tr>", collapse = "")
+  cap_note <- if (is.null(caption_note) || !nzchar(caption_note)) "" else
+    paste0(" <span class=\"twin-cap-note\">", esc(caption_note), "</span>")
+  paste0(
+    "<div class=\"twin-scroll\"><table class=\"twin-table\">",
+    "<caption>", esc(caption), cap_note, "</caption>",
+    "<thead><tr><th scope=\"col\">#</th><th scope=\"col\">Conference</th>",
+    "<th scope=\"col\">Mean ", esc(mlab), "</th>",
+    "<th scope=\"col\">Median</th><th scope=\"col\">Range</th>",
+    "<th scope=\"col\">Top</th><th scope=\"col\">Bottom</th>",
+    "<th scope=\"col\">n</th></tr></thead>",
+    "<tbody>", rows, "</tbody></table></div>")
+}
+
 ## public app: visitors see a generic error message, never raw R errors
 ## (full errors still reach the server logs for debugging)
 options(shiny.sanitize.errors = TRUE)
@@ -387,6 +427,37 @@ INFO_MODALS <- list(
       Reality Check). Treat any listed height as ±1 inch.</p>
       <p><strong>Girth index:</strong> pounds per inch of height = weight ÷
       height. BMI = 703 × weight ÷ height².</p>")),
+  info_conflab = list(
+    title = "Conference Lab — how it compares leagues honestly",
+    body = paste0("
+      <p><strong>Distribution-first, always.</strong> A conference IS its
+      members, and their ranges overlap — a top-15 Big 12 class beats the SEC
+      floor. So every league is drawn as a spread: each dot is one team's
+      average, the shaded box is the middle 50%, the bar is the median, and the
+      hollow diamond is the mean (with the top and bottom team named). The mean
+      is never a lone bar that hides the overlap.</p>
+      <p><strong>What you can and can't compare.</strong> The metric menu only
+      offers what's honest to rank across leagues:</p>
+      <ul>
+      <li><strong>Green (head-to-head OK):</strong> 247 rating, blue-chip share
+      (≥90), weight, pounds-per-inch — a 92 is a 92 in any league.</li>
+      <li><strong>Amber (context only):</strong> in-state share and portal
+      share read <em>geography and strategy</em>, not talent, and carry that
+      caveat in the caption.</li>
+      <li><strong>Red — deliberately absent:</strong> win %, SP+, and
+      wins-above-talent are <em>not</em> in the menu. A conference plays itself,
+      so its win% averages ~.500 by construction; SP+ uses recruiting as a
+      prior (circular). These can't be picked, so they can't mislead.</li>
+      </ul>
+      <p><strong>Realignment-honest.</strong> Every aggregate is over
+      <em>today's</em> membership. A team contributes only the class years it
+      was actually in its current league — Texas's pre-2024 classes count for
+      the Big 12 it was in then, never the SEC it joined in 2024. Widen the year
+      window past 2024 and the caption tells you how many rows were excluded as
+      backcast.</p>
+      <p><strong>n:</strong> SEC 16 · Big Ten 18 · ACC 17 · Big 12 16. The
+      Pac-12 collapsed in 2024; its former members are split across all four
+      leagues, so it has no column here.</p>")),
   info_beef = list(
     title = "Conference Beef — sources & methods",
     body = "
@@ -564,6 +635,7 @@ ui <- dashboardPage(
                 menuItem("Home", tabName = "home", icon = icon("house")),
                 menuItem("Size Lab", tabName = "sizelab", icon = icon("ruler-combined")),
                 menuItem("Conference Beef", tabName = "beef", icon = icon("dumbbell")),
+                menuItem("Conference Lab", tabName = "conflab", icon = icon("layer-group")),
                 menuItem("Weight Room", tabName = "weightroom", icon = icon("weight-hanging")),
                 menuItem("Coach Eras", tabName = "eras", icon = icon("user-tie")),
                 menuItem("War Room (3-3-5)", tabName = "brief", icon = icon("shield-halved")),
@@ -1857,6 +1929,49 @@ ui <- dashboardPage(
                          width = NULL, collapsible = TRUE,
                          spin(girafeOutput("h2h_plot", height = "300px"),
                                      color = "#0C234B")
+                       ))
+              )
+      ),
+
+      ## CONFERENCE LAB ------------------------------------------------------------
+      tabItem(tabName = "conflab",
+              fluidRow(
+                box(
+                  width = 12, status = "primary", solidHeader = TRUE,
+                  title = tagList("Conference Lab: how do the leagues stack up?",
+                                  info_btn("info_conflab")),
+                  fluidRow(
+                    column(width = 5,
+                           selectInput("conf_metric", "Compare leagues by",
+                                       choices = conf_metric_choices(),
+                                       selected = "AvgRating", width = "100%")),
+                    column(width = 7,
+                           div(style = "padding-top:25px; color:#777;",
+                               HTML("<em>All four Power-4 leagues, side by side —
+                                    each dot is one team's average, so you see the
+                                    spread, not just the headline. Uses the global
+                                    Sport, Players, and year-window controls. Win%
+                                    and SP+ are deliberately absent (a league plays
+                                    itself). Tap the ⓘ for the honesty rules.</em>")))
+                  )
+                )
+              ),
+              fluidRow(
+                column(width = 12,
+                       box(
+                         title = tagList("The Power-4 talent spread",
+                                         twin_toggle("conf_spread")),
+                         status = "primary", solidHeader = TRUE,
+                         width = NULL, collapsible = TRUE,
+                         div(class = "gi-chartwrap",
+                             spin(girafeOutput("conf_spread", height = "560px"),
+                                  color = "#0C234B")),
+                         div(class = "gi-tablewrap",
+                             uiOutput("conf_twin")),
+                         ctx_note("Every league aggregate is over TODAY's ",
+                                  "membership; a team counts only the class years ",
+                                  "it was actually in its current conference. ",
+                                  "Ranges overlap by design — the chart shows it.")
                        ))
               )
       ),
@@ -3192,6 +3307,41 @@ server <- function(input, output, session) {
   }) %>% bindCache(input$g_team, g_sport(), g_years_d(), input$g_type,
                    g_cmp(), input$size_metric, input$size_pos,
                    input$size_source, (input$client_w %||% 1200) < 700)
+
+  ## ---- CONFERENCE LAB: all four leagues, distribution-first -----------------
+  ## conference-wide (not team-scoped): uses the global sport, year window, and
+  ## Players toggle. The metric comes from CONF_COMPARE_POLICY via the selector,
+  ## so a RED metric can never reach the builder.
+  output$conf_spread <- renderGirafe({
+    req(input$conf_metric)
+    yr <- g_years_d()
+    girafe_try(girafe_wrap(
+      plot_conf_talent_spread(size_all(), metric = input$conf_metric,
+                              year_min = yr[1], year_max = yr[2],
+                              sport = g_sport(), type = input$g_type %||% "both"),
+      w = 10.5, h = 6.5,
+      name = png_name(glue("conference-lab-{tolower(input$conf_metric)}"))),
+      "conference lab")
+  }) %>% bindCache(g_sport(), input$conf_metric, g_years_d(),
+                   input$g_type, (input$client_w %||% 1200) < 700)
+
+  output$conf_twin <- renderUI({
+    req(isTRUE(input$twin_conf_spread), input$conf_metric)
+    yr <- g_years_d()
+    tbl <- conf_spread_table(size_all(), metric = input$conf_metric,
+                             year_min = yr[1], year_max = yr[2],
+                             type = input$g_type %||% "both")
+    pol <- CONF_COMPARE_POLICY[[input$conf_metric]]
+    cap_note <- paste0(
+      str_to_title(g_sport()), ", ", yr[1], "–", yr[2], ". ",
+      if (identical(pol$tier, "YELLOW"))
+        "Context metric — reads geography/strategy, not talent." else
+        "Aggregates over today's membership; realignment-honest.")
+    HTML(conf_twin_html(
+      tbl, caption = glue("Conference Lab — {pol$label} — table view"),
+      caption_note = cap_note))
+  })
+  outputOptions(output, "conf_twin", suspendWhenHidden = FALSE)
 
   output$size_trend <- renderGirafe({
     req(input$size_metric, input$size_pos)

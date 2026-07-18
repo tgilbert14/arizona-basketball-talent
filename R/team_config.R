@@ -124,12 +124,82 @@ local({
 ## Phase 0 has ONE row (Big 12); Phase 2 adds Big Ten / SEC / ACC.
 ## ---------------------------------------------------------------------------
 CONF_CONFIG <- data.frame(
-  conf       = "Big 12",
-  order      = 1L,
-  color      = "#0072B2",  ## Okabe-Ito blue
-  conf_whole = 2024L,
+  conf       = c("Big 12",  "SEC",     "Big Ten", "ACC"),
+  order      = c(1L,        2L,        3L,        4L),
+  ## Okabe-Ito aggregate hues — CVD-safe, mutually distinct
+  color      = c("#0072B2", "#D55E00", "#009E73", "#CC79A7"),
+  conf_whole = c(2024L,     2024L,     2024L,     2024L),
   stringsAsFactors = FALSE
 )
+
+## the aggregate color for a conference (Conference Lab charts); NA-safe grey.
+conf_color <- function(conf) {
+  i <- match(conf, CONF_CONFIG$conf)
+  ifelse(is.na(i), "grey60", CONF_CONFIG$color[i])
+}
+
+## conferences in display order (Big 12 first — Arizona is the default team).
+conf_order <- function() CONF_CONFIG$conf[order(CONF_CONFIG$order)]
+
+## ---------------------------------------------------------------------------
+## CONF_COMPARE_POLICY -- the metric-tier registry that makes a dishonest
+## conference-vs-conference chart UNBUILDABLE. Every Conference Lab metric is
+## classified; the tab's metric selector is populated FROM this table, so a RED
+## metric (win%, SP+, wins-above-talent) is physically absent from the axis --
+## it can't be picked, so it can't mislead. See docs/p4-expansion-design.md
+## "Honesty guardrails".
+##   tier    : GREEN  = head-to-head honest (a 92 is a 92 in any league)
+##             YELLOW = shown only with a "reflects geography/strategy, not
+##                      talent" caveat baked into the caption
+##             RED    = refused as a conference leaderboard (never in the list)
+##   col     : the player-level column reduced per team (NA => a custom reducer
+##             handled in conf_spread_data)
+##   reducer : how a team's value is computed from its players
+##   fmt     : value formatter
+##   caveat  : YELLOW-only caption line (NULL for GREEN)
+## ---------------------------------------------------------------------------
+CONF_COMPARE_POLICY <- list(
+  AvgRating = list(
+    label = "Average 247 rating", tier = "GREEN", reducer = "mean_rating",
+    fmt = function(v) sprintf("%.1f", v), caveat = NULL),
+  BlueChipShare = list(
+    label = "Blue-chip share (rating ≥ 90)", tier = "GREEN",
+    reducer = "blue_share", fmt = function(v) paste0(round(v), "%"),
+    caveat = NULL),
+  AvgWeight = list(
+    label = "Average weight (lbs)", tier = "GREEN", reducer = "mean_weight",
+    fmt = function(v) paste0(round(v), " lbs"), caveat = NULL),
+  AvgLbsPerIn = list(
+    label = "Pounds per inch of height", tier = "GREEN",
+    reducer = "mean_lpi", fmt = function(v) sprintf("%.2f", v), caveat = NULL),
+  InStateShare = list(
+    label = "In-state share", tier = "YELLOW", reducer = "instate_share",
+    fmt = function(v) paste0(round(v), "%"),
+    caveat = paste("In-state share reflects a state's high-school talent",
+                   "supply and a program's geography — NOT recruiting quality.",
+                   "Texas and Florida programs sit in dense talent beds; a",
+                   "Northwestern or a Boston College cannot.")),
+  TransferShare = list(
+    label = "Portal-transfer share", tier = "YELLOW", reducer = "transfer_share",
+    fmt = function(v) paste0(round(v), "%"),
+    caveat = paste("Transfer share reflects roster STRATEGY (portal-heavy",
+                   "rebuilds vs. high-school development), not talent. A high",
+                   "share is a philosophy, not a grade."))
+)
+
+## the metrics offered in the Conference Lab selector, in a sensible order,
+## GREEN first then YELLOW -- RED metrics are simply never listed. Returns a
+## named character vector (label -> key) for selectInput choices.
+conf_metric_choices <- function() {
+  keys <- names(CONF_COMPARE_POLICY)
+  tier <- vapply(keys, function(k) CONF_COMPARE_POLICY[[k]]$tier, character(1))
+  keys <- keys[order(match(tier, c("GREEN", "YELLOW")))]
+  labs <- vapply(keys, function(k) {
+    p <- CONF_COMPARE_POLICY[[k]]
+    if (p$tier == "YELLOW") paste0(p$label, "  (context metric)") else p$label
+  }, character(1))
+  setNames(keys, labs)
+}
 
 ## the class year a program joined today's conference (for backcast honesty);
 ## vectorized + NA-safe (unknown/NA slug -> NA).

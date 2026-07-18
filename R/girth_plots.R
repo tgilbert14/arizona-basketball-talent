@@ -2675,3 +2675,208 @@ ranked_insights <- function(size_data, team_slug, sport,
     stringsAsFactors = FALSE)
   out[order(-out$score), , drop = FALSE]
 }
+
+## ===========================================================================
+## CONFERENCE LAB -- conference-vs-conference, distribution-first
+##
+## Every cross-conference mark is a TEAM AGGREGATE (~67 dots), never a raw
+## player row: that satisfies both honesty (a conference is its members, and
+## their ranges overlap) and the 1GB worker ceiling (one small aggregate scan).
+## The metric axis is governed by CONF_COMPARE_POLICY -- a RED metric (win%,
+## SP+) can't reach this builder because it's never in the selector. Realignment
+## honesty: a team contributes only the class years it was actually IN its
+## current conference (a 2024 mover's Big-12 years don't pad its SEC line).
+## ===========================================================================
+
+## reduce one team's rows to its scalar value for a policy metric.
+conf_reduce <- function(d, reducer) {
+  switch(reducer,
+    mean_rating    = mean(d$Ranking,    na.rm = TRUE),
+    blue_share     = 100 * mean(d$Ranking >= BLUE_CHIP, na.rm = TRUE),
+    mean_weight    = mean(d$Weight,     na.rm = TRUE),
+    mean_lpi       = mean(d$LbsPerInch, na.rm = TRUE),
+    instate_share  = 100 * mean(d$InState, na.rm = TRUE),
+    transfer_share = 100 * mean(d$Type == "Transfer", na.rm = TRUE),
+    NA_real_)
+}
+
+## per-team aggregates for a conference-spread metric, scoped + realignment-
+## honest. Returns one row per onboarded team (value, n, conference), with
+## attributes carrying the per-conference summary, the metric policy, and the
+## backcast disclosure. `type` mirrors the global commits/transfers toggle for
+## the talent + measurable metrics; the YELLOW context metrics force their
+## natural scope (in-state = commits only; transfer-share = both).
+conf_spread_data <- function(size_data, metric = "AvgRating",
+                             year_min = NULL, year_max = NULL, type = "both") {
+  pol <- CONF_COMPARE_POLICY[[metric]]
+  if (is.null(pol)) stop("unknown conference metric: ", metric)
+
+  if (!is.null(year_min)) {
+    size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
+  }
+  ## onboarded universe + each row's current conference
+  size_data <- dplyr::filter(size_data, School %in% onboarded_slugs())
+  size_data$conference <- team_conference(size_data$School)
+  size_data <- dplyr::filter(size_data, !is.na(conference))
+
+  ## realignment honesty: drop rows from years BEFORE a team joined its current
+  ## conference (a mover's pre-join classes are not this conference's talent)
+  since <- team_conf_since(size_data$School)
+  backcast_dropped <- sum(!is.na(since) & size_data$Year < since)
+  size_data <- size_data[is.na(since) | size_data$Year >= since, , drop = FALSE]
+
+  ## per-metric type scope
+  d <- switch(pol$reducer,
+    instate_share  = dplyr::filter(size_data, Type == "Commit"),
+    transfer_share = size_data,
+    switch(type, commit   = dplyr::filter(size_data, Type == "Commit"),
+                 transfer = dplyr::filter(size_data, Type == "Transfer"),
+                 size_data))
+
+  ## per-team scalar + n
+  team <- d %>%
+    dplyr::group_by(School, TeamName, conference) %>%
+    dplyr::group_modify(~ data.frame(
+      value = conf_reduce(.x, pol$reducer), n = nrow(.x))) %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(is.finite(value), n > 0)
+
+  ## per-conference distribution summary (the crossbars + diamonds)
+  summ <- team %>%
+    dplyr::group_by(conference) %>%
+    dplyr::summarize(
+      p25 = stats::quantile(value, .25, names = FALSE),
+      p50 = stats::median(value),
+      p75 = stats::quantile(value, .75, names = FALSE),
+      mean = mean(value), n_teams = dplyr::n(),
+      n_players = sum(n),
+      top_team = TeamName[which.max(value)],
+      bot_team = TeamName[which.min(value)],
+      top_val = max(value), bot_val = min(value),
+      .groups = "drop")
+
+  attr(team, "summary") <- summ
+  attr(team, "policy") <- pol
+  attr(team, "metric") <- metric
+  attr(team, "backcast_dropped") <- backcast_dropped
+  attr(team, "yr_rng") <- if (nrow(d)) paste0(min(d$Year), "–", max(d$Year)) else ""
+  team
+}
+
+## the Conference Lab distribution chart: one column per conference, a
+## clickable dot per member team, an IQR box + median crossbar, the mean as a
+## diamond with n, and the top/bottom team named. girafe-ready (interactive
+## points); pair with a table twin for the ranked read + keyboard path.
+plot_conf_talent_spread <- function(size_data, metric = "AvgRating",
+                                    year_min = NULL, year_max = NULL,
+                                    sport = "football", type = "both",
+                                    highlight_conf = NULL) {
+  team <- conf_spread_data(size_data, metric, year_min, year_max, type)
+  summ <- attr(team, "summary"); pol <- attr(team, "policy")
+  yr_rng <- attr(team, "yr_rng")
+  if (nrow(team) == 0) {
+    return(ggplot() + annotate("text", 0, 0,
+      label = "No conference data in this window.") + theme_void())
+  }
+
+  ## fixed conference order (Big 12 first); numeric x for jittered dots
+  confs <- conf_order()
+  confs <- confs[confs %in% team$conference]
+  xmap <- setNames(seq_along(confs), confs)
+  team$cx <- xmap[team$conference]
+  summ$cx <- xmap[summ$conference]
+  summ <- summ[!is.na(summ$cx), , drop = FALSE]
+
+  ## deterministic horizontal spread: fan each conference's dots out by the
+  ## RANK of their value (no RNG => stable data_id positions across re-renders,
+  ## and dots never stack). A singleton conference sits on its center line.
+  team$jit <- team$cx + stats::ave(team$value, team$conference,
+    FUN = function(v) {
+      k <- length(v)
+      if (k == 1) return(0)
+      scales::rescale(rank(v, ties.method = "first"), to = c(-0.26, 0.26))
+    })
+
+  fmt <- pol$fmt
+  team$tip <- glue("<b>{team$TeamName}</b> ({team$conference})<br>",
+                   "{fmt(team$value)} &middot; n={team$n}")
+  cols <- setNames(conf_color(confs), confs)
+
+  ## caption: source, n per conference, the honesty line, backcast disclosure
+  n_line <- paste(sprintf("%s n=%d", summ$conference, summ$n_teams),
+                  collapse = " &middot; ")
+  bc <- attr(team, "backcast_dropped")
+  bits <- c(
+    if (pol$tier == "YELLOW") pol$caveat,
+    paste0("Each dot is one team's average; the box is the middle 50% of the ",
+           "conference, the bar its median, the diamond its mean. Ranges ",
+           "overlap — a top team in one league beats the floor of another."),
+    paste0("Teams (", n_line, "). Every aggregate is over TODAY's membership."),
+    if (bc > 0) paste0("Realignment-honest: ", bc, " class rows from before a ",
+                       "team joined its current league were excluded."),
+    "Pac-12 collapsed in 2024; its members are split across all four leagues.",
+    "Data: 247Sports.")
+  cap <- wrap_title(paste(bits, collapse = "  "), 110)
+
+  tier_tag <- if (pol$tier == "YELLOW") "  (context metric)" else ""
+
+  ggplot() +
+    ## IQR box + median crossbar per conference
+    geom_crossbar(data = summ,
+      aes(x = cx, y = p50, ymin = p25, ymax = p75, fill = conference),
+      width = 0.62, alpha = 0.22, color = NA, show.legend = FALSE) +
+    geom_segment(data = summ,
+      aes(x = cx - 0.31, xend = cx + 0.31, y = p50, yend = p50, color = conference),
+      linewidth = 1.1, show.legend = FALSE) +
+    ## team dots (interactive)
+    geom_point_interactive(data = team,
+      aes(x = jit, y = value, color = conference, tooltip = tip, data_id = School),
+      size = 3.1, alpha = 0.9, show.legend = FALSE) +
+    ## mean diamond + value/n label
+    geom_point(data = summ, aes(x = cx, y = mean),
+      shape = 23, size = 4.2, fill = "white", color = "grey20", stroke = 1) +
+    geom_text(data = summ, aes(x = cx, y = mean,
+      label = paste0(vapply(mean, fmt, character(1)))),
+      vjust = -1.4, size = 3.5, fontface = "bold", color = "grey20") +
+    ## top / bottom team labels
+    geom_text_interactive(data = summ, aes(x = cx, y = top_val, label = top_team,
+      data_id = paste0("top_", conference)),
+      vjust = -0.9, size = 3, color = "grey30") +
+    geom_text_interactive(data = summ, aes(x = cx, y = bot_val, label = bot_team,
+      data_id = paste0("bot_", conference)),
+      vjust = 1.7, size = 3, color = "grey45") +
+    scale_x_continuous(breaks = xmap, labels = names(xmap),
+                       expand = expansion(mult = c(0.08, 0.08))) +
+    scale_color_manual(values = cols) + scale_fill_manual(values = cols) +
+    labs(
+      title = wrap_title(glue("Conference Lab — {pol$label}{tier_tag}"), 46),
+      subtitle = wrap_title(glue(
+        "{str_to_title(sport)}, {yr_rng} — each conference's spread of ",
+        "team averages"), 60),
+      x = NULL, y = pol$label, caption = cap) +
+    theme_girth_md()
+}
+
+## table twin: the ranked conference-summary rows behind the spread chart.
+conf_spread_table <- function(size_data, metric = "AvgRating",
+                              year_min = NULL, year_max = NULL, type = "both") {
+  team <- conf_spread_data(size_data, metric, year_min, year_max, type)
+  summ <- attr(team, "summary"); pol <- attr(team, "policy")
+  if (nrow(summ) == 0) return(data.frame())
+  summ <- summ[order(-summ$mean), , drop = FALSE]
+  fmt <- pol$fmt
+  out <- data.frame(
+    Conference = summ$conference,
+    Mean = vapply(summ$mean, fmt, character(1)),
+    Median = vapply(summ$p50, fmt, character(1)),
+    Range = paste0(vapply(summ$bot_val, fmt, character(1)), " – ",
+                   vapply(summ$top_val, fmt, character(1))),
+    Top = as.character(summ$top_team),
+    Bottom = as.character(summ$bot_team),
+    Teams = summ$n_teams,
+    Players = summ$n_players,
+    stringsAsFactors = FALSE, check.names = FALSE)
+  attr(out, "metric_label") <- pol$label
+  attr(out, "tier") <- pol$tier
+  out
+}
