@@ -1871,9 +1871,9 @@ ui <- dashboardPage(
                 conditionalPanel(
                   condition = "input.tabs === 'origins'",
                   div(class = "gi-fixed-control gi-origin-scope-control",
-                      span("Analysis scope"),
+                      shiny::span("Analysis scope"),
                       strong("All 67 destinations"),
-                      small("Team and comparison do not filter this story"))
+                      tags$small("Team and comparison do not filter this story"))
                 ),
                 class = "col-sm-4"
               ),
@@ -1908,9 +1908,9 @@ ui <- dashboardPage(
                      conditionalPanel(
                        condition = "input.tabs === 'origins'",
                        div(class = "gi-fixed-control",
-                           span("Player pool"),
+                           shiny::span("Player pool"),
                            strong("HS/prep only"),
-                           small("Portal, JUCO, and review queue excluded"))
+                           tags$small("Portal, JUCO, and review queue excluded"))
                      ),
                      checkboxInput("show_context", "Context notes",
                                    value = TRUE))
@@ -1959,19 +1959,19 @@ ui <- dashboardPage(
                   href = "#shiny-tab-beef", class = "vb-link",
                   title = "Open Conference Beef",
                   onclick = "document.querySelector('a[href=\"#shiny-tab-beef\"]').click(); return false;",
-                  span(class = "sr-only", "Open Conference Beef. "),
+                  shiny::span(class = "sr-only", "Open Conference Beef. "),
                   valueBoxOutput("vb_home_rank", width = NULL))),
                 column(width = 4, tags$a(
                   href = "#shiny-tab-sizelab", class = "vb-link",
                   title = "Open the Size Lab",
                   onclick = "document.querySelector('a[href=\"#shiny-tab-sizelab\"]').click(); return false;",
-                  span(class = "sr-only", "Open the Size Lab. "),
+                  shiny::span(class = "sr-only", "Open the Size Lab. "),
                   valueBoxOutput("vb_home_class", width = NULL))),
                 column(width = 4, tags$a(
                   href = "#shiny-tab-weightroom", class = "vb-link",
                   title = "Open the Weight Room",
                   onclick = "document.querySelector('a[href=\"#shiny-tab-weightroom\"]').click(); return false;",
-                  span(class = "sr-only", "Open the Weight Room. "),
+                  shiny::span(class = "sr-only", "Open the Weight Room. "),
                   valueBoxOutput("vb_home_dev", width = NULL)))
               ),
               fluidRow(
@@ -2038,7 +2038,7 @@ ui <- dashboardPage(
                                                  gsub("-", "_", d$slug[i])),
                                 label = tagList(
                                   img(src = d$logo[i], alt = ""),
-                                  span(d$team_name[i])),
+                                  shiny::span(d$team_name[i])),
                                 class = "gi-home-team",
                                 title = paste("Select", d$team_name[i])
                               )
@@ -3215,7 +3215,7 @@ server <- function(input, output, session) {
         glue(" ({input$g_years[2]} open)") else ""
       return(tags$span(
         class = "cb-summary-text cb-summary-origin",
-        span(class = "cb-origin-mark", icon("location-dot")),
+        shiny::span(class = "cb-origin-mark", icon("location-dot")),
         strong("Power-4 talent origins"),
         tags$span(
           class = "cb-dim",
@@ -3620,9 +3620,9 @@ server <- function(input, output, session) {
         class = paste("gi-coverage__item gi-pulse__item",
                       if (nzchar(state)) paste0("gi-pulse__item--", state)),
         role = "listitem", style = paste0("--conf-color:", color),
-        span(class = "gi-pulse__label", label),
+        shiny::span(class = "gi-pulse__label", label),
         strong(value),
-        span(class = "gi-pulse__detail", detail),
+        shiny::span(class = "gi-pulse__detail", detail),
         tags$small(class = "gi-pulse__meta", meta)
       )
     }
@@ -3665,7 +3665,7 @@ server <- function(input, output, session) {
                       paste0("gi-data-note--", pipeline$state)),
         role = "status", "aria-live" = "polite",
         icon("circle-info"),
-        span(strong(pipeline$label), paste0(". ", pipeline$detail))
+        shiny::span(strong(pipeline$label), paste0(". ", pipeline$detail))
       )
     )
   })
@@ -3677,13 +3677,13 @@ server <- function(input, output, session) {
       actionButton(
         id,
         label = tagList(
-          span(class = "gi-path__icon", icon(icon_name)),
-          span(
+          shiny::span(class = "gi-path__icon", icon(icon_name)),
+          shiny::span(
             class = "gi-path__copy",
             strong(title),
-            span(detail)
+            shiny::span(detail)
           ),
-          span(class = "gi-path__arrow", icon("arrow-right"))
+          shiny::span(class = "gi-path__arrow", icon("arrow-right"))
         ),
         class = "gi-path"
       )
