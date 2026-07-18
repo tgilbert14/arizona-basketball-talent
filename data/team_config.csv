@@ -33,22 +33,22 @@
 "usc","USC","usc.png","#9E2237","#FFCC00","Big Ten","CA",2024,"USC",34.014167,-118.287778,FALSE
 "washington","Washington","washington.png","#33006F","#E8D3A2","Big Ten","WA",2024,"Washington",47.6503235,-122.3015746,FALSE
 "wisconsin","Wisconsin","wisconsin.png","#C4012F","#FFFFFF","Big Ten","WI",2012,"Wisconsin",43.06994,-89.4126943,FALSE
-"alabama","Alabama","alabama.png","#9E1632","#FFFFFF","SEC","AL",2012,"Alabama",33.2082752,-87.5503836,FALSE
-"arkansas","Arkansas","arkansas.png","#A41F35","#FFFFFF","SEC","AR",2012,"Arkansas",36.0680662,-94.1789534,FALSE
-"auburn","Auburn","auburn.png","#002B5C","#F26522","SEC","AL",2012,"Auburn",32.6025532,-85.4897479,FALSE
-"florida","Florida","florida.png","#0021A5","#FA4616","SEC","FL",2012,"Florida",29.6499357,-82.3485788,FALSE
-"georgia","Georgia","georgia.png","#BA0C2F","#000000","SEC","GA",2012,"Georgia",33.9498197,-83.3733813,FALSE
-"kentucky","Kentucky","kentucky.png","#0033A0","#FFFFFF","SEC","KY",2012,"Kentucky",38.0220905,-84.5053408,FALSE
-"lsu","LSU","lsu.png","#461D7C","#FDD023","SEC","LA",2012,"LSU",30.412035,-91.1838163,FALSE
-"mississippi-state","Mississippi State","mississippi-state.png","#5D1725","#C1C6C8","SEC","MS",2012,"Mississippi State",33.4563403,-88.7933652,FALSE
-"missouri","Missouri","missouri.png","#F1B82D","#000000","SEC","MO",2012,"Missouri",38.9358491,-92.3332009,FALSE
-"oklahoma","Oklahoma","oklahoma.png","#A32036","#FFFFFF","SEC","OK",2024,"Oklahoma",35.2058537,-97.4423145,FALSE
-"ole-miss","Ole Miss","ole-miss.png","#13294B","#C8102E","SEC","MS",2012,"Ole Miss",34.3619837,-89.5342076,FALSE
-"south-carolina","South Carolina","south-carolina.png","#73000A","#FFFFFF","SEC","SC",2012,"South Carolina",33.9730239,-81.0191726,FALSE
-"tennessee","Tennessee","tennessee.png","#FF8200","#58595B","SEC","TN",2012,"Tennessee",35.9550131,-83.9250128,FALSE
-"texas","Texas","texas.png","#C15D26","#FFFFFF","SEC","TX",2024,"Texas",30.2836813,-97.7325345,FALSE
-"texas-am","Texas A&M","texas-am.png","#500000","#FFFFFF","SEC","TX",2012,"Texas A&M",30.6098891,-96.3403828,FALSE
-"vanderbilt","Vanderbilt","vanderbilt.png","#866D4B","#000000","SEC","TN",2012,"Vanderbilt",36.1440455,-86.8088942,FALSE
+"alabama","Alabama","alabama.png","#9E1632","#FFFFFF","SEC","AL",2012,"Alabama",33.2082752,-87.5503836,TRUE
+"arkansas","Arkansas","arkansas.png","#A41F35","#FFFFFF","SEC","AR",2012,"Arkansas",36.0680662,-94.1789534,TRUE
+"auburn","Auburn","auburn.png","#002B5C","#F26522","SEC","AL",2012,"Auburn",32.6025532,-85.4897479,TRUE
+"florida","Florida","florida.png","#0021A5","#FA4616","SEC","FL",2012,"Florida",29.6499357,-82.3485788,TRUE
+"georgia","Georgia","georgia.png","#BA0C2F","#000000","SEC","GA",2012,"Georgia",33.9498197,-83.3733813,TRUE
+"kentucky","Kentucky","kentucky.png","#0033A0","#FFFFFF","SEC","KY",2012,"Kentucky",38.0220905,-84.5053408,TRUE
+"lsu","LSU","lsu.png","#461D7C","#FDD023","SEC","LA",2012,"LSU",30.412035,-91.1838163,TRUE
+"mississippi-state","Mississippi State","mississippi-state.png","#5D1725","#C1C6C8","SEC","MS",2012,"Mississippi State",33.4563403,-88.7933652,TRUE
+"missouri","Missouri","missouri.png","#F1B82D","#000000","SEC","MO",2012,"Missouri",38.9358491,-92.3332009,TRUE
+"oklahoma","Oklahoma","oklahoma.png","#A32036","#FFFFFF","SEC","OK",2024,"Oklahoma",35.2058537,-97.4423145,TRUE
+"ole-miss","Ole Miss","ole-miss.png","#13294B","#C8102E","SEC","MS",2012,"Ole Miss",34.3619837,-89.5342076,TRUE
+"south-carolina","South Carolina","south-carolina.png","#73000A","#FFFFFF","SEC","SC",2012,"South Carolina",33.9730239,-81.0191726,TRUE
+"tennessee","Tennessee","tennessee.png","#FF8200","#58595B","SEC","TN",2012,"Tennessee",35.9550131,-83.9250128,TRUE
+"texas","Texas","texas.png","#C15D26","#FFFFFF","SEC","TX",2024,"Texas",30.2836813,-97.7325345,TRUE
+"texas-am","Texas A&M","texas-am.png","#500000","#FFFFFF","SEC","TX",2012,"Texas A&M",30.6098891,-96.3403828,TRUE
+"vanderbilt","Vanderbilt","vanderbilt.png","#866D4B","#000000","SEC","TN",2012,"Vanderbilt",36.1440455,-86.8088942,TRUE
 "boston-college","Boston College","boston-college.png","#8C2232","#DBCCA6","ACC","MA",2012,"Boston College",42.335104,-71.1664413,FALSE
 "california","California","california.png","#031522","#FFC423","ACC","CA",2024,"California",37.8710434,-122.2507729,FALSE
 "clemson","Clemson","clemson.png","#F56600","#522D80","ACC","SC",2012,"Clemson",34.6787737,-82.8432428,FALSE
