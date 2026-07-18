@@ -47,7 +47,15 @@ high-severity flags exit 2 → manifest note). Findings triaged, 201 flags → 0
   GEO-BOUNDS international-aware + AS/PR/GU/VI territory bboxes; new STATE-CONFLICT rule catches
   the team-page wrong-state pattern even when the pin agrees with the wrong side.
 
-**NEXT: Big Ten backfill (same procedure), then ACC, then Phase 2 Conference Lab.**
+**IN FLIGHT: Big Ten backfill (PID 35596, detached, monitored)** — all 18 teams' classes + rosters
+scraped clean, now in the profile-hometown + geocode stretch, then validate → onboard (commits local,
+nightly ships). **NEXT after it lands: ACC (17 teams), then Phase 2 Conference Lab.**
+
+**Fleet training shipped (2026-07-17, canonical repo commit `fea2336`):** the app-timeout + geo-QC
+lessons taught to the agent fleet. connor +42 (Connect Cloud idle-sleep/wake-race doctrine + fix
+ladder) and tukey +34 ("far but real vs wrong" geo-outlier doctrine) both LICENSED WITH HONORS on
+live exams — tukey's exam found + fixed a real severity-refresh bug in `qcSweep.R` (app commit
+`d833d20`). Curriculum also landed in the caravan + bowerstone playbooks (+89) and 5 LESSONS lines.
 
 ## QUEUED (user-directed 2026-07-16): post-backfill QC sweep + nightly QC ledger
 
