@@ -3894,7 +3894,7 @@
   },
   "files": {
     "app.R": {
-      "checksum": "57823fb19ea43db1e66605d1d0846f10"
+      "checksum": "43aca4a73618b87b8186f717d8773c08"
     },
     "data/recruiting.db": {
       "checksum": "450443e27020c7001b3f80ae932c1d88"
@@ -3933,7 +3933,7 @@
       "checksum": "0080462d1d66093735493b63bf64b87f"
     },
     "R/girth_plots.R": {
-      "checksum": "a301e8dcfb542d6589e6a20d05dcb3be"
+      "checksum": "de5c2e069c716cd478f5d3dba256d67c"
     },
     "R/team_config.R": {
       "checksum": "34039519fc3e415adcacbd56748ee533"

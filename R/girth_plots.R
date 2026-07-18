@@ -2770,13 +2770,14 @@ conf_spread_data <- function(size_data, metric = "AvgRating",
 plot_conf_talent_spread <- function(size_data, metric = "AvgRating",
                                     year_min = NULL, year_max = NULL,
                                     sport = "football", type = "both",
-                                    highlight_conf = NULL) {
+                                    highlight_team = NULL) {
   team <- conf_spread_data(size_data, metric, year_min, year_max, type)
   summ <- attr(team, "summary"); pol <- attr(team, "policy")
   yr_rng <- attr(team, "yr_rng")
   if (nrow(team) == 0) {
-    return(ggplot() + annotate("text", 0, 0,
-      label = "No conference data in this window.") + theme_void())
+    return(ggplot() + annotate("text", 0, 0, size = 4.4, color = "grey35",
+      label = "No teams in this window.\nWiden the Class years or switch Sport in the bar above.") +
+      theme_void())
   }
 
   ## fixed conference order (Big 12 first); numeric x for jittered dots
@@ -2820,7 +2821,14 @@ plot_conf_talent_spread <- function(size_data, metric = "AvgRating",
 
   tier_tag <- if (pol$tier == "YELLOW") "  (context metric)" else ""
 
-  ggplot() +
+  ## the active team: highlighted so a user finds THEIR dot in a 67-dot field
+  me <- if (!is.null(highlight_team) && nzchar(highlight_team))
+    team[team$School == highlight_team, , drop = FALSE] else team[0, ]
+
+  sub_extra <- if (nrow(me))
+    glue(" — {me$TeamName[1]} ringed in gold") else ""
+
+  g <- ggplot() +
     ## IQR box + median crossbar per conference
     geom_crossbar(data = summ,
       aes(x = cx, y = p50, ymin = p25, ymax = p75, fill = conference),
@@ -2852,9 +2860,21 @@ plot_conf_talent_spread <- function(size_data, metric = "AvgRating",
       title = wrap_title(glue("Conference Lab — {pol$label}{tier_tag}"), 46),
       subtitle = wrap_title(glue(
         "{str_to_title(sport)}, {yr_rng} — each conference's spread of ",
-        "team averages"), 60),
+        "team averages{sub_extra}"), 60),
       x = NULL, y = pol$label, caption = cap) +
     theme_girth_md()
+
+  ## draw the active team's dot on top: gold ring so "you" pops out of the field
+  if (nrow(me)) {
+    g <- g +
+      geom_point_interactive(data = me,
+        aes(x = jit, y = value, tooltip = tip, data_id = School),
+        size = 4.8, shape = 21, fill = conf_color(me$conference),
+        color = "#FFD200", stroke = 1.9) +
+      geom_text(data = me, aes(x = jit, y = value, label = TeamName),
+        vjust = -1.25, size = 3, fontface = "bold", color = "#0C234B")
+  }
+  g
 }
 
 ## table twin: the ranked conference-summary rows behind the spread chart.

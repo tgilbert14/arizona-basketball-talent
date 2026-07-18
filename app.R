@@ -125,6 +125,13 @@ conf_grouped_choices <- function() {
 }
 team_choices_grouped <- conf_grouped_choices()
 
+## the standing "n per conference" line for the Conference Lab honesty modal,
+## built from the data so it can't drift from the onboarded set
+CONF_COUNT_LINE <- paste(
+  vapply(conf_order(), function(cf)
+    paste0(cf, " ", length(onboarded_slugs(cf))), character(1)),
+  collapse = " · ")
+
 ## slug -> logo URL map for the selectize render (JS looks logos up by option
 ## value). Logos live in www/ and serve from the app root, so the bare filename
 ## is a valid <img src>.
@@ -147,8 +154,8 @@ gi_picker_render <- I("{
   item: function(item, escape) {
     var lg = (window.GI_LOGOS || {})[item.value];
     var img = lg ? '<img class=\"gi-opt-logo\" src=\"' + lg + '\" alt=\"\"/>' : '';
-    return '<div class=\"gi-item\">' + img + '<span>' + escape(item.label) +
-           '</span></div>';
+    return '<div class=\"gi-item\" title=\"' + escape(item.label) + '\">' +
+           img + '<span>' + escape(item.label) + '</span></div>';
   }
 }")
 
@@ -498,7 +505,7 @@ INFO_MODALS <- list(
       the Big 12 it was in then, never the SEC it joined in 2024. Widen the year
       window past 2024 and the caption tells you how many rows were excluded as
       backcast.</p>
-      <p><strong>n:</strong> SEC 16 · Big Ten 18 · ACC 17 · Big 12 16. The
+      <p><strong>n:</strong> ", CONF_COUNT_LINE, ". The
       Pac-12 collapsed in 2024; its former members are split across all four
       leagues, so it has no column here.</p>")),
   info_beef = list(
@@ -703,6 +710,15 @@ ui <- dashboardPage(
       ## slug -> logo map for the selectize team-picker render (logos in the
       ## dropdown + on the selected item)
       tags$script(HTML(gi_logo_map_js)),
+      ## per-conference color cue on the picker optgroup headers AND the Home
+      ## grid section headers, driven from CONF_CONFIG so it matches the
+      ## Conference Lab's color language (SEC orange, Big Ten green, ...)
+      tags$style(HTML(paste(vapply(seq_len(nrow(CONF_CONFIG)), function(i)
+        sprintf(paste0(".selectize-dropdown .optgroup[data-group=\"%s\"] ",
+                       ".optgroup-header, .gi-pick-conf[data-conf=\"%s\"] ",
+                       "{ border-left-color: %s; }"),
+                CONF_CONFIG$conf[i], CONF_CONFIG$conf[i], CONF_CONFIG$color[i]),
+        character(1)), collapse = "\n"))),
       tags$style(HTML("
       body, .content-wrapper { font-family: 'Rubik', 'Helvetica Neue', sans-serif; }
       .main-header .logo { font-family: 'Rubik', sans-serif; font-weight: 800;
@@ -725,6 +741,19 @@ ui <- dashboardPage(
       .selectize-dropdown .option.active { background: #e8eef7; }
       /* keep the selected item's logo from inflating the control height */
       .selectize-input .gi-item .gi-opt-logo { width: 18px; height: 18px; }
+      /* Home 'Pick your team' conference section headers */
+      .gi-pick-conf { font-weight: 700; color: #0C234B; text-transform: uppercase;
+        font-size: 12px; letter-spacing: .05em; margin: 14px 0 6px;
+        padding: 3px 0 3px 10px; border-left: 4px solid #0C234B;
+        text-align: left; }
+      /* amber context-metric caveat banner (Conference Lab, YELLOW tier) */
+      .gi-caveat { background: #FFF8E6; border-left: 4px solid #e6b800;
+        border-radius: 4px; padding: 9px 12px; margin: 12px 2px 2px;
+        font-size: 13px; color: #6b5800; display: flex; gap: 9px;
+        align-items: flex-start; line-height: 1.45; }
+      .gi-caveat .fa-triangle-exclamation { color: #c9a300; margin-top: 2px;
+        flex: 0 0 auto; }
+      .gi-caveat strong { color: #5a4a00; }
 
       /* boxes: rounded, soft shadow, sporty headers */
       .box { border-radius: 10px; box-shadow: 0 2px 8px rgba(12,35,75,0.08);
@@ -1736,25 +1765,30 @@ ui <- dashboardPage(
             fluidRow(
               ## no inline logos here -- the summary strip carries them, and
               ## floating images broke the layout at mid widths
-              ## PHASE 2 SEAM: a global "Conference" scope selectInput slots in
-              ## as the leftmost control here (default "Big 12"); it will scope
-              ## g_team's choices to the chosen league while g_compare stays
-              ## full-P4 (Arizona-vs-Georgia works). Do NOT add it at Phase 0 --
-              ## the pickers stay the 16 Big 12 teams. team_choices feeds both.
+              ## both pickers are grouped by conference (optgroups) + logos +
+              ## search over all 67 onboarded Power-4 teams (team_choices_grouped).
+              ## FUTURE: a global "Conference" SCOPE selector could still slot in
+              ## here to narrow g_team's list to one league while g_compare stays
+              ## full-P4 (Arizona-vs-Georgia works) — see docs/p4-expansion-design.md.
               column(width = 2,
                      selectizeInput("g_team", "Your team",
                                     choices = team_choices_grouped,
                                     selected = "arizona", width = "100%",
-                                    options = list(render = gi_picker_render))),
+                                    ## maxOptions default (50) < 67 teams -> the
+                                    ## last ACC entries can vanish on scroll
+                                    options = list(render = gi_picker_render,
+                                                   maxOptions = 100))),
               column(width = 2,
                      selectizeInput("g_compare", "Compare to",
                                     choices = c(list("— none —" = ""),
                                                 team_choices_grouped),
                                     selected = "arizona-state", width = "100%",
                                     ## selectize drops empty-value options by
-                                    ## default; the "— none —" clear needs this
+                                    ## default; the "— none —" clear needs this.
+                                    ## maxOptions 100 > 67 so no team truncates.
                                     options = list(render = gi_picker_render,
-                                                   allowEmptyOption = TRUE))),
+                                                   allowEmptyOption = TRUE,
+                                                   maxOptions = 100))),
               column(width = 2,
                      radioButtons("g_sport", "Sport",
                                   choices = c("Football" = "football",
@@ -1864,17 +1898,31 @@ ui <- dashboardPage(
                 box(
                   title = "Pick your team", status = "primary",
                   solidHeader = TRUE, width = 12,
-                  div(style = "text-align:center;",
-                      ## onboarded teams only (DISPLAY_CONFIG); at Phase 1 the 16
-                      ## Big 12. PHASE 2 scopes this grid to the selected conf.
-                      lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
-                        actionButton(
-                          inputId = paste0("select_",
-                                           gsub("-", "_", DISPLAY_CONFIG$slug[i])),
-                          label = img(src = DISPLAY_CONFIG$logo[i], height = "62px"),
-                          style = "background:transparent; border:none; padding:8px 14px;"
-                        )
-                      })),
+                  ## grouped by conference (Big 12 first), matching the bar
+                  ## picker + first-visit modal — 67 logos in one flat row was a
+                  ## wall. Each league gets a header; the bar picker up top is
+                  ## the fast search-driven path, this is the browse-by-logo one.
+                  p(style = "text-align:center; color:#888; margin-bottom:4px;",
+                    "Click a logo — or search in the bar up top."),
+                  lapply(conf_order(), function(cf) {
+                    d <- DISPLAY_CONFIG[DISPLAY_CONFIG$conference == cf, ,
+                                        drop = FALSE]
+                    d <- d[order(d$team_name), , drop = FALSE]
+                    if (!nrow(d)) return(NULL)
+                    tagList(
+                      div(cf, class = "gi-pick-conf",
+                          `data-conf` = cf),
+                      div(style = "text-align:center; margin-bottom:6px;",
+                          lapply(seq_len(nrow(d)), function(i) {
+                            actionButton(
+                              inputId = paste0("select_",
+                                               gsub("-", "_", d$slug[i])),
+                              label = img(src = d$logo[i], height = "50px",
+                                          title = d$team_name[i], alt = d$team_name[i]),
+                              style = "background:transparent; border:none; padding:6px 12px;"
+                            )
+                          })))
+                  }),
                   footer = HTML("<em style='color:#888;'>Clicking a logo sets
                     your team everywhere and opens the Size Lab.</em>")
                 )
@@ -2021,8 +2069,13 @@ ui <- dashboardPage(
                                     spread, not just the headline. Uses the global
                                     Sport, Players, and year-window controls. Win%
                                     and SP+ are deliberately absent (a league plays
-                                    itself). Tap the ⓘ for the honesty rules.</em>")))
-                  )
+                                    itself). See the info icon at the top-right of
+                                    this box for the honesty rules.</em>")))
+                  ),
+                  ## amber caveat: only when a YELLOW context metric is picked,
+                  ## so the "reads geography/strategy, not talent" warning lands
+                  ## in the eye's path, not just inside the plot caption
+                  uiOutput("conf_caveat")
                 )
               ),
               fluidRow(
@@ -2757,11 +2810,17 @@ server <- function(input, output, session) {
                               class = "btn-default",
                               style = "width:104px; padding:8px 2px;")
                           })))
-                  })))
+                  })),
+              ## an explicit escape hatch: the bar picker up top searches, so
+              ## the modal doesn't have to be the path -- default stays Arizona
+              actionLink("skip_team_pick", "Skip — I'll pick from the bar up top",
+                         style = "display:inline-block; margin-top:14px;
+                                  color:#888; font-size:13px;"))
         ))
       }
     })
   })
+  observeEvent(input$skip_team_pick, removeModal())
   ## pick_ handlers pair 1:1 with the modal grid above -- iterate the same
   ## onboarded set so no observer is wired to a button that never renders.
   lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
@@ -3402,12 +3461,27 @@ server <- function(input, output, session) {
     girafe_try(girafe_wrap(
       plot_conf_talent_spread(size_all(), metric = input$conf_metric,
                               year_min = yr[1], year_max = yr[2],
-                              sport = g_sport(), type = input$g_type %||% "both"),
+                              sport = g_sport(), type = input$g_type %||% "both",
+                              highlight_team = input$g_team),
       w = 10.5, h = 6.5,
       name = png_name(glue("conference-lab-{tolower(input$conf_metric)}"))),
       "conference lab")
   }) %>% bindCache(g_sport(), input$conf_metric, g_years_d(),
-                   input$g_type, (input$client_w %||% 1200) < 700)
+                   input$g_type, input$g_team,
+                   (input$client_w %||% 1200) < 700)
+
+  ## amber caveat banner, shown only for a YELLOW context metric (in-state /
+  ## portal share) — surfaces the "reads geography, not talent" warning above
+  ## the chart, not just in the plot caption
+  output$conf_caveat <- renderUI({
+    req(input$conf_metric)
+    pol <- CONF_COMPARE_POLICY[[input$conf_metric]]
+    if (is.null(pol) || !identical(pol$tier, "YELLOW")) return(NULL)
+    div(class = "gi-caveat",
+        icon("triangle-exclamation"),
+        tags$span(tags$strong(pol$label, " is a context metric. "), pol$caveat))
+  })
+  outputOptions(output, "conf_caveat", suspendWhenHidden = FALSE)
 
   output$conf_twin <- renderUI({
     req(isTRUE(input$twin_conf_spread), input$conf_metric)
