@@ -69,8 +69,34 @@ expand_files <- function(roots) {
 files <- expand_files(runtime_roots)
 files <- sort(unique(files))
 
-## tools::md5sum returns the same lowercase hex MD5 rsconnect embeds.
-checks <- unname(tools::md5sum(files))
+## Git stores text as LF, while a Windows checkout can expose the same tracked
+## bytes as CRLF.  Connect deploys the committed form, so normalize CRLF to LF
+## for known text assets before hashing.  This keeps --check deterministic on
+## Windows and Linux without ever changing a runtime file in the worktree.
+text_extensions <- c("r", "css", "js", "csv", "html", "htm", "json",
+                     "svg", "txt")
+
+runtime_md5 <- function(path) {
+  ext <- tolower(tools::file_ext(path))
+  if (!ext %in% text_extensions) {
+    return(unname(tools::md5sum(path)))
+  }
+
+  bytes <- readBin(path, what = "raw", n = file.info(path)$size)
+  if (length(bytes) > 1L) {
+    cr <- as.raw(0x0D)
+    lf <- as.raw(0x0A)
+    drop_cr <- c(bytes[-length(bytes)] == cr & bytes[-1L] == lf, FALSE)
+    bytes <- bytes[!drop_cr]
+  }
+
+  normalized <- tempfile(fileext = paste0(".", ext))
+  on.exit(unlink(normalized), add = TRUE)
+  writeBin(bytes, normalized)
+  unname(tools::md5sum(normalized))
+}
+
+checks <- vapply(files, runtime_md5, character(1), USE.NAMES = FALSE)
 if (any(is.na(checks))) {
   stop("could not checksum: ", paste(files[is.na(checks)], collapse = ", "))
 }
