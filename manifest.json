@@ -3897,7 +3897,7 @@
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
     },
     "R/dashboard_status.R": {
-      "checksum": "0d0085165b7019469cf8b404df02357d"
+      "checksum": "adbd74e6a568c59bc9292b6fc1d4afce"
     },
     "R/functions.R": {
       "checksum": "776fe4b0dcb64beab43dc633d04a5b7f"
@@ -3918,7 +3918,7 @@
       "checksum": "023b50dfa8b3e60bcdb654ebd0f1b415"
     },
     "app.R": {
-      "checksum": "66356c9e38ac7a2b71927b90ae08eed1"
+      "checksum": "ac0c26823fca35c28181336b9e24cfab"
     },
     "data/recruiting.db": {
       "checksum": "450443e27020c7001b3f80ae932c1d88"
