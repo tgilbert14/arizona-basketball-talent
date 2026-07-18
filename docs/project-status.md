@@ -8,6 +8,36 @@
 and Posit Connect Cloud (git-backed). Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet,
 large inline vanilla-JS layer, SQLite `data/recruiting.db`.
 
+## ✅ POWER-4 EXPANSION COMPLETE (2026-07-18) — all 67 teams live
+
+SEC, Big Ten, and ACC onboarded conference-by-conference (16→67 teams: Big 12 16 + SEC 16 + Big Ten
+18 + ACC 17). Live + verified on Connect Cloud (picker=67, all four conferences pool correctly:
+Alabama→SEC, Michigan→Big Ten, Clemson→ACC boards, 0 errors). shinyapps rides tonight's nightly.
+
+**Full-dataset audit (clean bill of health):** DB integrity `ok`; 17,296 football + 2,386 basketball
+commits (~248–274/team, balanced across conferences); **zero** duplicate keys; **zero** zero-commit
+team-years; geocode 99.3% football / 95.5% basketball (unmapped = internationals); MAX(Year)=2027,
+zero rows beyond (cycle-cap holds); rosters 7,322 fb + 970 bb across 67 schools; 670 team-seasons.
+**External-validity proof the conference attribution is correct:** blue-chip share ranks SEC 44.5% >
+Big Ten 28.3% > ACC 17.6% > Big 12 12.1% — the exact real-world recruiting hierarchy. QC ledger:
+0 open, 58 accepted (verified-legit outliers incl. USC/Wash 2022 transition classes, Colorado 2024
+Prime portal year, Marcis Ponder 6-11/328 FSU center, 54 internationals), 149 auto-resolved.
+
+**Nightly is Power-4-ready:** roster success floor scales (`ceiling(0.75 * n_teams)` = 51/67), the
+validate roster gate is growth-aware (baseline-schools-scoped), the QC sweep runs non-blocking as
+S3.5. Lock released; fires at 23:30.
+
+**Phase 1 pipeline fixes shipped en route:** `backfillConference.R` shQuotes run_child args (repo-path
+space split the validate baseline); `validateRefresh.R` roster gate scoped to baseline schools
+(conference onboarding doubles a current-season RosterYear = legit growth); `qcSweep.R` refreshes
+severity on re-observed flags (tukey's exam find).
+
+**⚑ ONE OPEN ITEM FOR THE USER — branding (not blocking, app fully functional):** the title "Big 12
+Girth Index" + the landing page's "all 16 programs"/"Big 12" copy are now misnomers for a 67-team
+Power-4 app. A rebrand (title + `docs/index.html` copy + og card) is a Phase-2 identity call left to
+the user. **Phase 2 proper = the Conference Lab tab** (`plot_conf_talent_spread`, the CONF_COMPARE_POLICY
+GREEN/YELLOW/RED tier registry, realignment backcast) per `docs/p4-expansion-design.md`.
+
 ## Shipped 2026-07-16 AM: the cycle-cap fix (2028 preview-year leak) — commit a4455a5
 
 The v8 year-ahead probe scraped MAX(Year)+1 uncapped; 247 lists early commits two cycles out, so
