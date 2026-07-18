@@ -49,20 +49,20 @@
 "texas","Texas","texas.png","#C15D26","#FFFFFF","SEC","TX",2024,"Texas",30.2836813,-97.7325345,TRUE
 "texas-am","Texas A&M","texas-am.png","#500000","#FFFFFF","SEC","TX",2012,"Texas A&M",30.6098891,-96.3403828,TRUE
 "vanderbilt","Vanderbilt","vanderbilt.png","#866D4B","#000000","SEC","TN",2012,"Vanderbilt",36.1440455,-86.8088942,TRUE
-"boston-college","Boston College","boston-college.png","#8C2232","#DBCCA6","ACC","MA",2012,"Boston College",42.335104,-71.1664413,FALSE
-"california","California","california.png","#031522","#FFC423","ACC","CA",2024,"California",37.8710434,-122.2507729,FALSE
-"clemson","Clemson","clemson.png","#F56600","#522D80","ACC","SC",2012,"Clemson",34.6787737,-82.8432428,FALSE
-"duke","Duke","duke.png","#013088","#FFFFFF","ACC","NC",2012,"Duke",35.9953688,-78.9417564,FALSE
-"florida-state","Florida State","florida-state.png","#782F40","#CEB888","ACC","FL",2012,"Florida State",30.4381692,-84.3044032,FALSE
-"georgia-tech","Georgia Tech","georgia-tech.png","#003057","#B3A369","ACC","GA",2012,"Georgia Tech",33.7724449,-84.3928054,FALSE
-"louisville","Louisville","louisville.png","#C9001F","#000000","ACC","KY",2012,"Louisville",38.2057621,-85.7588141,FALSE
-"miami","Miami","miami.png","#005030","#F47321","ACC","FL",2012,"Miami",25.9579665,-80.2388604,FALSE
-"north-carolina-state","NC State","north-carolina-state.png","#CC0000","#FFFFFF","ACC","NC",2012,"NC State",35.8008001,-78.7195655,FALSE
-"north-carolina","North Carolina","north-carolina.png","#7BAFD4","#13294B","ACC","NC",2012,"North Carolina",35.9069294,-79.0478889,FALSE
-"pittsburgh","Pittsburgh","pittsburgh.png","#003263","#231F20","ACC","PA",2012,"Pittsburgh",40.4467648,-80.0157603,FALSE
-"smu","SMU","smu.png","#354CA1","#CC0035","ACC","TX",2024,"SMU",32.8377223,-96.7827859,FALSE
-"stanford","Stanford","stanford.png","#8C1515","#FFFFFF","ACC","CA",2024,"Stanford",37.4345556,-122.1611271,FALSE
-"syracuse","Syracuse","syracuse.png","#FF6500","#000E54","ACC","NY",2012,"Syracuse",43.0362269,-76.1363161,FALSE
-"virginia","Virginia","virginia.png","#232D4B","#F84C1E","ACC","VA",2012,"Virginia",38.0311801,-78.5137897,FALSE
-"virginia-tech","Virginia Tech","virginia-tech.png","#630031","#CF4520","ACC","VA",2012,"Virginia Tech",37.2199873,-80.4180643,FALSE
-"wake-forest","Wake Forest","wake-forest.png","#9E7E38","#000000","ACC","NC",2012,"Wake Forest",36.1305507,-80.2545851,FALSE
+"boston-college","Boston College","boston-college.png","#8C2232","#DBCCA6","ACC","MA",2012,"Boston College",42.335104,-71.1664413,TRUE
+"california","California","california.png","#031522","#FFC423","ACC","CA",2024,"California",37.8710434,-122.2507729,TRUE
+"clemson","Clemson","clemson.png","#F56600","#522D80","ACC","SC",2012,"Clemson",34.6787737,-82.8432428,TRUE
+"duke","Duke","duke.png","#013088","#FFFFFF","ACC","NC",2012,"Duke",35.9953688,-78.9417564,TRUE
+"florida-state","Florida State","florida-state.png","#782F40","#CEB888","ACC","FL",2012,"Florida State",30.4381692,-84.3044032,TRUE
+"georgia-tech","Georgia Tech","georgia-tech.png","#003057","#B3A369","ACC","GA",2012,"Georgia Tech",33.7724449,-84.3928054,TRUE
+"louisville","Louisville","louisville.png","#C9001F","#000000","ACC","KY",2012,"Louisville",38.2057621,-85.7588141,TRUE
+"miami","Miami","miami.png","#005030","#F47321","ACC","FL",2012,"Miami",25.9579665,-80.2388604,TRUE
+"north-carolina-state","NC State","north-carolina-state.png","#CC0000","#FFFFFF","ACC","NC",2012,"NC State",35.8008001,-78.7195655,TRUE
+"north-carolina","North Carolina","north-carolina.png","#7BAFD4","#13294B","ACC","NC",2012,"North Carolina",35.9069294,-79.0478889,TRUE
+"pittsburgh","Pittsburgh","pittsburgh.png","#003263","#231F20","ACC","PA",2012,"Pittsburgh",40.4467648,-80.0157603,TRUE
+"smu","SMU","smu.png","#354CA1","#CC0035","ACC","TX",2024,"SMU",32.8377223,-96.7827859,TRUE
+"stanford","Stanford","stanford.png","#8C1515","#FFFFFF","ACC","CA",2024,"Stanford",37.4345556,-122.1611271,TRUE
+"syracuse","Syracuse","syracuse.png","#FF6500","#000E54","ACC","NY",2012,"Syracuse",43.0362269,-76.1363161,TRUE
+"virginia","Virginia","virginia.png","#232D4B","#F84C1E","ACC","VA",2012,"Virginia",38.0311801,-78.5137897,TRUE
+"virginia-tech","Virginia Tech","virginia-tech.png","#630031","#CF4520","ACC","VA",2012,"Virginia Tech",37.2199873,-80.4180643,TRUE
+"wake-forest","Wake Forest","wake-forest.png","#9E7E38","#000000","ACC","NC",2012,"Wake Forest",36.1305507,-80.2545851,TRUE
