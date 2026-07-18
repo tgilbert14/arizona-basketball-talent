@@ -552,7 +552,7 @@ era_metric_choices <- c("Average 247 Rating" = "AvgRating",
 ## UI ========================================================================
 ui <- dashboardPage(
 
-  dashboardHeader(title = "Big 12 Girth Index"),
+  dashboardHeader(title = "Power-4 Girth Index"),
   skin = "blue",
 
   ## ---- sidebar: navigation only (global controls live in the top bar) -----
@@ -2282,7 +2282,7 @@ server <- function(input, output, session) {
   ## On phones (client width < 700px) the SVG canvas shrinks so text and tap
   ## targets render ~60% larger after the browser scales it to the screen.
   is_phone <- function() isTRUE((input$client_w %||% 1200) < 700)
-  girafe_wrap <- function(p, w = 11.5, h = 6.5, name = "big12-girth-index") {
+  girafe_wrap <- function(p, w = 11.5, h = 6.5, name = "power4-girth-index") {
     girafe_build(p, w = w, h = h, name = name, phone = is_phone())
   }
 
@@ -2813,10 +2813,10 @@ server <- function(input, output, session) {
         img(src = TEAM_CONFIG$logo[match(input$g_team, TEAM_CONFIG$slug)],
             height = "64px",
             style = "background:white; border-radius:10px; padding:5px;"),
-        h1(glue("{team_label(input$g_team)} — Big 12 Girth Index")))
+        h1(glue("{team_label(input$g_team)} — Power-4 Girth Index")))
   })
   ## the hero tagline names the DATA universe (the active conference), not the
-  ## product -- so it routes through conf_label while "Big 12 Girth Index" above
+  ## product -- so it routes through conf_label while "Power-4 Girth Index" above
   ## stays a fixed brand.
   output$hero_tagline <- renderUI({
     p(glue("Who are the biggest boys in the {active_conf_lab()}, how does each ",

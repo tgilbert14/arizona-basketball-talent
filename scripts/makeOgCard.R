@@ -18,9 +18,9 @@ cardinal <- "#AB0520"   # the single accent
 mist     <- "#c3d0e6"   # muted blue-white for secondary text
 dim      <- "#7f93b4"   # dimmer still for the footer
 
-title_txt <- "Big 12 Girth Index"
-sub_txt   <- paste0("Size, talent and recruiting flow -- all 16 programs, ",
-                    "updated nightly")
+title_txt <- "Power-4 Girth Index"
+sub_txt   <- paste0("Size, talent and recruiting flow -- all 67 SEC, Big Ten, ",
+                    "ACC & Big 12 programs, updated nightly")
 foot_txt  <- "Desert Data Labs   |   girthindex.desertdatalab.com"
 
 card <- ggplot() +
