@@ -47,9 +47,23 @@ high-severity flags exit 2 → manifest note). Findings triaged, 201 flags → 0
   GEO-BOUNDS international-aware + AS/PR/GU/VI territory bboxes; new STATE-CONFLICT rule catches
   the team-page wrong-state pattern even when the pin agrees with the wrong side.
 
-**IN FLIGHT: Big Ten backfill (PID 35596, detached, monitored)** — all 18 teams' classes + rosters
-scraped clean, now in the profile-hometown + geocode stretch, then validate → onboard (commits local,
-nightly ships). **NEXT after it lands: ACC (17 teams), then Phase 2 Conference Lab.**
+**DONE: Big Ten ONBOARDED (18/18, pushed `12a8f02`, verified live on Connect Cloud).** 50 teams now
+onboarded (16 Big 12 + 16 SEC + 18 Big Ten); only ACC's 17 hidden. Validate passed first try (the
+SEC growth-aware roster-gate fix held). QC sweep on the fresh data: 2 thin-class flags (USC 2022,
+Washington 2022 — both verified REAL portal-era transition classes, Riley/DeBoer hired Nov 2021,
+neighbor years full; accepted in the ledger). Live checks: Michigan Home hero reads "biggest boys in
+the Big Ten" + "#16 of 18"; Beef Board titled "Big Ten Beef Board — Big Ten avg 228 lbs", 18-team
+pool, 0 errors. Alabama (SEC) confirmed prior. Ledger: 0 open, 57 accepted, 149 fixed.
+
+**IN FLIGHT: ACC backfill (PID 9204, detached, monitored)** — final conference (17 teams); the
+`smu`/`stanford`/`north-carolina-state` slugs the map flagged all scrape clean. On DONE → 67/67
+onboarded → Phase 2 Conference Lab.
+
+**⚑ FOR THE USER — branding decision (not blocking):** the conference-aware DATA routing is flawless
+across all confs, but the app's brand title is still "Big 12 Girth Index" and the GitHub-Pages
+landing page (`docs/index.html`) still says "all 16 programs" / "Big 12" throughout — both now
+misnomers when viewing a Big Ten/SEC/ACC team. A Power-4 rebrand (title + landing copy + og card)
+is a Phase-2 identity call left to the user; the app FUNCTIONS correctly under the current name.
 
 **Fleet training shipped (2026-07-17, canonical repo commit `fea2336`):** the app-timeout + geo-QC
 lessons taught to the agent fleet. connor +42 (Connect Cloud idle-sleep/wake-race doctrine + fix
