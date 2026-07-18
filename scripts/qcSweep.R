@@ -340,12 +340,20 @@ new_mask  <- !(f_id %in% exist_id)
 new_flags <- f[new_mask, , drop = FALSE]
 
 if (!report_only) {
-  ## refresh last_seen on re-observed flags (status untouched -> accepted stays)
+  ## refresh re-observed flags: last_seen AND severity + details (status
+  ## untouched -> accepted stays). Rewriting severity is load-bearing: when a
+  ## rule's severity is edited in code (GEO-BOUNDS high -> med when it went
+  ## international-aware), a last_seen-only upsert leaves every pre-existing
+  ## flag carrying the STALE severity, so a ledger query for "open high" reads
+  ## a label the code no longer assigns. details refreshes for the same reason
+  ## (a row's coordinates/hometown can change between sweeps).
   seen_old <- f[!new_mask, , drop = FALSE]
   if (nrow(seen_old) > 0) {
-    dbExecute(con, "UPDATE qc_flags SET last_seen = ? WHERE rule = ? AND tbl = ? AND row_key = ?",
-              params = list(rep(now, nrow(seen_old)), seen_old$rule,
-                            seen_old$tbl, seen_old$row_key))
+    dbExecute(con,
+      "UPDATE qc_flags SET last_seen = ?, severity = ?, details = ? WHERE rule = ? AND tbl = ? AND row_key = ?",
+      params = list(rep(now, nrow(seen_old)), seen_old$severity,
+                    seen_old$details, seen_old$rule, seen_old$tbl,
+                    seen_old$row_key))
   }
   if (nrow(new_flags) > 0) {
     dbExecute(con,
