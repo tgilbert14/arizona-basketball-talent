@@ -1,25 +1,18 @@
 ## ===========================================================================
-## Big 12 Talent Lab — v3
-## New in v3:
-##   * GLOBAL settings in the sidebar: your team, compare-to team, sport,
-##     class-year range — every tab obeys them
-##   * Home tab that leads with the insights (conference superlatives, your
-##     team's talking points, logo quick-pick)
-##   * Weight Room tab — pounds added per signee (commit day -> current
-##     roster) + the Measurement Reality Check (listed-height honesty)
-##   * Coach Eras tab — how each head coach recruits differently (rating,
-##     size, footprint, in-state share, position mix) with era-shaded charts
-##   * Compare-to team gets a secondary highlight on boards/trends/DNA
-##   * Football is now the default sport; sport modal replaced by a sidebar
-##     radio; v1/v2 preserved as app_v1.R / app_v2.R
-## Plot builders: R/girth_plots.R | Eras: R/coach_eras.R | Team meta:
-## R/team_config.R (conference + state columns = multi-conference ready)
+## Power-4 Girth Index — v9
+## Recruiting size, talent, geography, development, and results for all 67
+## SEC, Big Ten, ACC, and Big 12 programs in football and basketball.
+## v9 adds the editorial Home, Program Fingerprint, direct task routes,
+## responsive global controls, page orientation, and exact-view sharing.
+## Core analytics remain conference-aware and realignment-honest.
+## Plot builders: R/girth_plots.R | Home: R/home_fingerprint.R
+## Team/conference metadata: R/team_config.R
 ## ===========================================================================
 
 #rsconnect::deployApp()
 
-# connect to .db (works locally + on shinyapps.io) -->
-db_path <- here("data", "recruiting.db")
+# connect to .db (works locally and in the hosted Shiny deployment) -->
+db_path <- file.path("data", "recruiting.db")
 conn <- dbConnect(RSQLite::SQLite(), db_path)
 
 ## the display ceiling: the app tracks at most ONE cycle ahead of the
@@ -31,13 +24,21 @@ conn <- dbConnect(RSQLite::SQLite(), db_path)
 ## that).
 CYCLE_CAP <- as.integer(format(Sys.Date(), "%Y")) + 1L
 
-## preload + prep both sports once at startup (small tables, fast)
-size_football <- safe_query(conn, paste0(
-  "SELECT * FROM recruit_class_football WHERE Year <= ", CYCLE_CAP)) %>%
-  prep_size_data("football")
-size_basketball <- safe_query(conn, paste0(
-  "SELECT * FROM recruit_class_basketball WHERE Year <= ", CYCLE_CAP)) %>%
-  prep_size_data("basketball")
+## Preload both sports once. Talent Origins must start from RAW recruiting
+## rows: prep_size_data() intentionally drops missing/implausible body fields,
+## which is correct for body charts but would bias geography. We derive a
+## dedicated origin frame before freeing each temporary raw table.
+raw_football <- safe_query(conn, paste0(
+  "SELECT * FROM recruit_class_football WHERE Year <= ", CYCLE_CAP))
+origin_football <- prep_origin_data(raw_football, "football")
+size_football <- prep_size_data(raw_football, "football")
+rm(raw_football)
+
+raw_basketball <- safe_query(conn, paste0(
+  "SELECT * FROM recruit_class_basketball WHERE Year <= ", CYCLE_CAP))
+origin_basketball <- prep_origin_data(raw_basketball, "basketball")
+size_basketball <- prep_size_data(raw_basketball, "basketball")
+rm(raw_basketball)
 
 ## current rosters (from scripts/scrapeRosters.R); NULL if not scraped yet
 load_roster <- function(tbl) {
@@ -50,34 +51,34 @@ roster_basketball <- load_roster("roster_basketball")
 ## CFBD season outcomes (from scripts/fetchOutcomes.R); NULL until fetched
 team_seasons <- load_roster("team_seasons_football")
 
-## last successful data refresh: the nightly pipeline logs each run in
-## refresh_log; before that table exists, fall back to the roster scrape
-## stamp. NULL when neither is available (the badge then renders nothing).
-last_refresh_date <- local({
-  raw <- NULL
-  if (dbExistsTable(conn, "refresh_log")) {
-    raw <- dbGetQuery(conn, paste(
-      "SELECT MAX(finished_at) AS d FROM refresh_log",
-      "WHERE status IN ('ok','degraded')"))$d
-  }
-  if ((length(raw) == 0 || is.na(raw)) &&
-      dbExistsTable(conn, "roster_football")) {
-    raw <- dbGetQuery(conn, "SELECT MAX(ScrapedAt) AS d FROM roster_football")$d
-  }
-  d <- tryCatch(as.Date(raw), error = function(e) NULL)
-  if (is.null(d) || length(d) == 0 || is.na(d)) NULL else d
-})
+## Dashboard status distinguishes the newest source capture from the nightly
+## pipeline ledger. Backfills can legitimately make the bundled rows newer
+## than refresh_log, so source capture is the truthful snapshot date.
+refresh_meta <- dashboard_refresh_meta(conn)
+last_refresh_date <- refresh_meta$capture_date
+if (is.null(last_refresh_date)) last_refresh_date <- refresh_meta$updated_date
 
 ## display form, e.g. 'Jul 10, 2026' (leading zero on the day stripped)
 last_refresh_label <- if (is.null(last_refresh_date)) NULL else
   sub(" 0", " ", format(last_refresh_date, "%b %d, %Y"), fixed = TRUE)
+
+## Namespace render caches to the bundled source snapshot. A refreshed database
+## can never reuse charts produced from an earlier set of rows.
+DATA_REVISION <- paste(
+  if (is.null(last_refresh_date)) "unknown" else format(last_refresh_date, "%Y%m%d"),
+  refresh_meta$sources$recruiting$football$rows,
+  refresh_meta$sources$recruiting$basketball$rows,
+  refresh_meta$sources$rosters$football$rows,
+  refresh_meta$sources$rosters$basketball$rows,
+  sep = "-"
+)
 
 ## attribution line appended to COPIED brief text only (never the on-screen
 ## brief) -- so a pasted talking-point list carries its provenance. Rides on
 ## each copy button as data-footer; the copy script tacks it on last.
 copy_footer <- if (is.null(last_refresh_label))
   "girthindex.desertdatalab.com" else
-  paste0("data updated ", last_refresh_label,
+  paste0("source data captured ", last_refresh_label,
          " - girthindex.desertdatalab.com")
 
 ## free what startup allocated -- the deployed worker has a hard 1GB ceiling
@@ -85,9 +86,8 @@ invisible(gc())
 
 SIZE_YEARS <- range(c(size_football$Year, size_basketball$Year))
 
-## the default window = the 4-class "roster window": those classes supply
-## ~92% of current Big 12 rosters in the portal era (the 5th year back adds
-## only ~4%), and the smaller default keeps first renders fast
+## Four recent classes describe the active roster pipeline while keeping first
+## renders fast and comparisons timely.
 DEFAULT_YEARS <- c(SIZE_YEARS[2] - 3, SIZE_YEARS[2])
 
 ## recruiting runs a year ahead of arrival: the class of year N signs in
@@ -101,9 +101,8 @@ war_room_class <- min(SIZE_YEARS[2], arriving_class)
 
 ## the DISPLAY universe: onboarded teams only. Every team picker (g_team /
 ## g_compare choices, the first-visit logo grid, the "who's your team" modal)
-## and the deep-link/stored-team validators draw from this, so a not-yet-
-## backfilled (onboarded = FALSE) program never appears. At Phase 1 only the 16
-## Big 12 are onboarded, so DISPLAY_CONFIG is the shipped 16 -> byte-identical.
+## and deep-link validator uses it. All 67 production rows are live; the gate
+## still prevents a partially backfilled program from appearing accidentally.
 DISPLAY_CONFIG <- TEAM_CONFIG[TEAM_CONFIG$onboarded %in% TRUE, , drop = FALSE]
 
 ## named choices for team pickers (slug values, pretty labels)
@@ -167,7 +166,7 @@ gi_picker_render <- I("{
 ## out of range, or malformed is dropped so the app silently falls back to
 ## its defaults. tabName values must stay in sync with the sidebarMenu below.
 VALID_TABS <- c("home", "sizelab", "beef", "conflab", "weightroom", "eras",
-                "brief", "results", "summary", "compare", "notes")
+                "brief", "results", "origins", "summary", "compare", "notes")
 
 parse_url_state <- function(query) {
   out <- list()
@@ -178,9 +177,8 @@ parse_url_state <- function(query) {
     if (is.null(v) || length(v) != 1 || is.na(v)) return(NULL)
     as.character(v)
   }
-  ## the team universe is the ONBOARDED set: a shared/forged link can only ever
-  ## resolve to a live team, never a hidden (not-yet-backfilled) one. At Phase 1
-  ## this is the 16 Big 12, identical to validating against the whole config.
+  ## Shared links resolve only to live programs; all 67 production programs are
+  ## onboarded while the gate still rejects any hidden partial-backfill row.
   slugs <- onboarded_slugs()
 
   team <- g("team")
@@ -218,8 +216,30 @@ parse_url_state <- function(query) {
     out$type <- typ
   }
 
+  ## Talent Origins keeps a small local story state. These values are strict
+  ## enums/codes so a copied link restores the exact chart without letting a
+  ## forged query create arbitrary inputs.
+  ov <- g("ov")
+  if (!is.null(ov) && ov %in% c("board", "positions", "trend"))
+    out$origin_view <- ov
+
+  om <- g("om")
+  if (!is.null(om) && om %in% unname(origin_metric_choices()))
+    out$origin_metric <- om
+
+  op <- g("op")
+  valid_origin_pos <- unique(c("All", origin_position_levels("football"),
+                               origin_position_levels("basketball")))
+  if (!is.null(op) && op %in% valid_origin_pos) out$origin_pos <- op
+
+  os <- toupper(g("os") %||% "")
+  if (nzchar(os) && os %in% ORIGIN_US_CODES) out$origin_state <- os
+
   tab <- g("tab")
-  if (!is.null(tab) && tab %in% VALID_TABS) out$tab <- tab
+  if (!is.null(tab) && tab %in% VALID_TABS) {
+    ## v8 Distance Lab links now land on the consolidated Program Reach page.
+    out$tab <- if (identical(tab, "compare")) "summary" else tab
+  }
 
   out
 }
@@ -242,7 +262,9 @@ metric_choices <- c("Average Weight" = "AvgWeight",
 
 ## small info-circle link for box titles -> opens a sources/methods modal
 info_btn <- function(id) {
+  label <- paste("About", gsub("_", " ", sub("^info_", "", id)), "methods")
   actionLink(id, label = NULL, icon = icon("circle-info"),
+             `aria-label` = label, title = label,
              style = "color:inherit; opacity:0.75; margin-left:8px;")
 }
 
@@ -445,12 +467,14 @@ conf_twin_html <- function(tbl, caption, caption_note = NULL) {
 ## (full errors still reach the server logs for debugging)
 options(shiny.sanitize.errors = TRUE)
 
-## render cache: flipping back to settings you've already viewed is instant.
+## Render cache: flipping back to settings you've already viewed is instant.
+## The data revision in the path prevents cross-snapshot chart reuse.
 ## disk (not memory) so it survives across sessions within a worker -- on
 ## hosted tiers the worker restarts after sleep, which wipes a memory cache
 ## before most visitors ever benefit from it
 shinyOptions(cache = cachem::cache_disk(
-  file.path(dirname(tempdir()), "girth-cache"), max_size = 120 * 1024^2))
+  file.path(dirname(tempdir()), paste0("girth-cache-", DATA_REVISION)),
+  max_size = 120 * 1024^2))
 
 ## the sources & methods copy behind each info button (kept out of the UI
 ## so the boxes stay clean -- the user opens these only when curious)
@@ -463,11 +487,12 @@ INFO_MODALS <- list(
     title = "Size Lab — sources & methods",
     body = function(conf_lab, conf_n) paste0("
       <p><strong>Source:</strong> 247Sports team commit pages, classes
-      2016–", SIZE_YEARS[2], ", all ", conf_n, " ", conf_lab, " programs (full scrape Jan 2026; the active
-      class kept current by the nightly refresh",
+      2016–", SIZE_YEARS[2], ", all ", conf_n, " ", conf_lab, " programs.
+      Historical classes were backfilled during conference onboarding; the
+      active class is kept current by the nightly refresh",
       if (!is.null(last_refresh_label))
-        paste0(" — data updated ", last_refresh_label),
-      ").</p>
+        paste0(" — source capture ", last_refresh_label),
+      ".</p>
       <p><strong>What counts:</strong> high-school commits by default; the
       'Players' control in the top bar can add portal transfers or isolate
       them (transfers exist for 2021 onward).</p>
@@ -587,8 +612,10 @@ INFO_MODALS <- list(
       Weight cutoffs are editable in <code>R/girth_plots.R</code>
       (<code>role_335</code>).</p>
       <p><strong>Roster construction / retention:</strong> current 247 roster
-      by class standing; home-state commits by ", conf_lab, " signing school
-      (out-of-conference destinations arrive with the Power-4 expansion).</p>
+      by class standing; in-state HS commits by listed school state and ",
+      conf_lab, " signing school (Power-4 destinations are included; moves
+      outside the tracked 67-program
+      universe remain outside this view).</p>
       <p><strong>The brief:</strong> auto-written, defense first — nothing is
       hand-curated.</p>")),
   info_results = list(
@@ -641,21 +668,43 @@ INFO_MODALS <- list(
       destiny -- the gap is coaching, development, health, scheme, and luck,
       bundled together. The season-by-season Scoreboard below shows the same
       story one year at a time.</p>")),
-  info_map = list(
-    title = "Recruiting Map — sources & methods",
+  info_origins = list(
+    title = "Talent Origins - sources & methods",
     body = "
-      <p><strong>Locations:</strong> each commit's high school, geocoded from
-      the 247Sports profile location. Shaded shapes = your team's state
-      footprint (smoothed convex hulls).</p>
-      <p><strong>Gaps:</strong> transfers from recent cycles (2023 on) gain
-      a map location as the nightly refresh captures hometowns from their
-      247Sports profiles; earlier transfer classes stay unmapped. New
-      commits reach the map after the nightly geocoding pass.</p>"),
+      <p><strong>What this measures:</strong> the last listed high-school or
+      prep-school location for unique athletes captured at the 67 Power-4
+      destinations. It is not birthplace, hometown, or a census of every
+      national prospect.</p>
+      <p><strong>HS/prep guardrail:</strong> portal transfers are excluded.
+      High-confidence junior-college text is excluded, and any new school
+      name containing <code>College</code> enters a review queue unless it is
+      on the reviewed HS/prep allowlist. International and non-state origins
+      remain in coverage counts but not the 50-state + DC board.</p>
+      <p><strong>Quality:</strong> the 247 team-page rating has near-complete
+      coverage; 90+ defines a blue chip. Legitimate historical source grades
+      through 110 are retained, while values outside the supported 0–110
+      range are withheld. Quality rankings use the rated sample and require a
+      visible minimum. Open-class contribution is stated on aggregate views
+      rather than treated as settled.</p>
+      <p><strong>Counting:</strong> a profile listed under two destinations
+      after a decommit counts once per class in this page. Program Reach keeps
+      the underlying commitment-level view. Conflicting decommit position
+      groups remain in state totals but are excluded from position views.</p>"),
+  info_map = list(
+    title = "Program Reach — sources & methods",
+    body = "
+      <p><strong>Locations:</strong> the mapped location listed on each
+      247Sports recruiting profile. For non-portal recruits this is usually
+      the last listed high school or prep program, not birthplace. Shaded
+      shapes are smoothed convex hulls of the selected program's footprint.</p>
+      <p><strong>Gaps:</strong> transfers join only when a listed origin is
+      present. Earlier transfer classes are often unmapped; new records reach
+      the map after the nightly geocoding pass.</p>"),
   info_distance = list(
-    title = "Distance Lab — sources & methods",
+    title = "Program Reach distance — sources & methods",
     body = "
       <p><strong>Distance:</strong> geodesic (great-circle) miles from the
-      recruit's high school to campus, from geocoded 247 locations.</p>
+      recruit's listed origin to campus, from geocoded 247 locations.</p>
       <p><strong>Outliers:</strong> the toggle hides points beyond 1.5×IQR
       from the middle 50% (standard boxplot rule) and recomputes the bands.</p>
       <p><strong>Verify anything:</strong> hover a dot for the recruit card;
@@ -667,7 +716,7 @@ era_metric_choices <- c("Average 247 Rating" = "AvgRating",
                         "Blue-Chip Share (% rated 90+)" = "BlueChips",
                         "Average Weight" = "AvgWeight",
                         "Average Height" = "AvgHeight",
-                        "Average Miles from Home" = "AvgMiles",
+                        "Average Miles from Listed Origin" = "AvgMiles",
                         "% In-State Commits" = "PctInState")
 
 ## UI ========================================================================
@@ -683,15 +732,19 @@ ui <- dashboardPage(
 
     sidebarMenu(id = "tabs",
                 menuItem("Home", tabName = "home", icon = icon("house")),
+                tags$li(class = "header", "EXPLORE"),
                 menuItem("Size Lab", tabName = "sizelab", icon = icon("ruler-combined")),
                 menuItem("Conference Beef", tabName = "beef", icon = icon("dumbbell")),
                 menuItem("Conference Lab", tabName = "conflab", icon = icon("layer-group")),
+                tags$li(class = "header", "PROGRAM"),
                 menuItem("Weight Room", tabName = "weightroom", icon = icon("weight-hanging")),
                 menuItem("Coach Eras", tabName = "eras", icon = icon("user-tie")),
                 menuItem("War Room (3-3-5)", tabName = "brief", icon = icon("shield-halved")),
                 menuItem("Talent vs Results", tabName = "results", icon = icon("trophy")),
-                menuItem("Recruiting Map", tabName = "summary", icon = icon("map")),
-                menuItem("Distance Lab", tabName = "compare", icon = icon("clock")),
+                tags$li(class = "header", "GEOGRAPHY"),
+                menuItem("Talent Origins", tabName = "origins", icon = icon("location-dot")),
+                menuItem("Program Reach", tabName = "summary", icon = icon("route")),
+                tags$li(class = "header", "REFERENCE"),
                 menuItem("Data & Notes", tabName = "notes", icon = icon("circle-info"))
     )
   ),
@@ -1074,7 +1127,8 @@ ui <- dashboardPage(
       }
 
       /* ---- table twins: the numbers view behind each board ---- */
-      .twin-toggle { display: inline-block; margin-left: 10px;
+      .twin-toggle { display: inline-flex; align-items: center; min-height: 28px;
+        margin-left: 10px;
         padding: 1px 9px; color: inherit; opacity: 0.85; font-size: 10.5px;
         font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
         vertical-align: middle; border: 1px solid rgba(255,255,255,0.45);
@@ -1082,6 +1136,10 @@ ui <- dashboardPage(
       .twin-toggle:hover, .twin-toggle:focus { background: #FFD200;
         border-color: #FFD200; color: #0C234B; opacity: 1;
         text-decoration: none; }
+      @media (max-width: 767px) {
+        .twin-toggle { min-height: 44px; padding: 8px 12px;
+          font-size: 11px; }
+      }
       .gi-tablewrap { display: none; }
       .box.gi-table-mode .gi-tablewrap { display: block; }
       /* the chart collapses but KEEPS its width -- display:none here would
@@ -1162,7 +1220,6 @@ ui <- dashboardPage(
         .hero p { font-size: 13px; }
         .hero .btn { margin-top: 8px; margin-right: 4px; padding: 4px 8px;
           font-size: 12px; }
-        #hero_team img { height: 40px !important; }
         .small-box h3 { font-size: 20px; }
         .small-box p { font-size: 12px; }
         .control-bar { padding: 0 10px; top: 50px; }
@@ -1450,7 +1507,8 @@ ui <- dashboardPage(
           function badgeCharts() {
             document.querySelectorAll('.girafe').forEach(function(g) {
               var box = g.closest('.box');
-              if (!box || box.querySelector('.tap-badge')) return;
+              if (!box || box.querySelector('.tap-badge') ||
+                  g.closest('.gi-no-pin')) return;
               var b = document.createElement('div');
               b.className = 'tap-badge';
               b.textContent = 'interactive \\u00b7 tap to pin';
@@ -1477,7 +1535,8 @@ ui <- dashboardPage(
           });
           document.addEventListener('click', function(e) {
             var el = e.target.closest('svg [data-id]');
-            if (!el || !el.closest('.girafe')) return;
+            if (!el || !el.closest('.girafe') ||
+                el.closest('.gi-no-pin')) return;
             var t = el.getAttribute('title');
             if (!t) return;
             var box = el.closest('.box') || document.body;
@@ -1707,7 +1766,7 @@ ui <- dashboardPage(
                 .done('Reload the page and try again');
               return;
             }
-            var pane = document.querySelector('.tab-pane.active') || document.body;
+            var pane = document.querySelector('.gi-page-stage') || document.body;
             downloadPng(pane, window.__snapName(), '#ecf0f5',
               '\\ud83d\\udcf8 Rendering the full page\\u2026 a few seconds');
           });
@@ -1748,20 +1807,34 @@ ui <- dashboardPage(
             }
           });
         })();
-      "))),
+      ")),
+      tags$link(rel = "stylesheet", href = "girth-v9.css"),
+      tags$script(src = "girth-v9.js")
+    ),
 
     ## ---- THE CONTROL BAR: global settings, visible on every tab ------------
     ## a slim summary strip is always shown; tapping it expands/collapses the
     ## full controls (collapsed by default on phones)
     div(class = "control-bar",
-        div(class = "cb-head",
-            uiOutput("cb_summary", inline = TRUE),
-            tags$button(id = "snap_view", class = "snap-btn", type = "button",
-                        title = paste("Save a PNG of this view —",
-                                      "pinned cards included"),
-                        icon("camera")),
-            tags$span(class = "cb-chevron", icon("chevron-up"))),
-        div(class = "cb-body",
+        div(class = "cb-head-row",
+            tags$button(type = "button", class = "cb-head",
+                        `aria-expanded` = "true",
+                        `aria-controls` = "global_controls",
+                        `aria-label` = "Show or hide global filters",
+                        `aria-describedby` = "cb_summary",
+                        uiOutput("cb_summary", inline = TRUE),
+                        tags$span(class = "cb-chevron", icon("chevron-up"))),
+            div(class = "cb-actions",
+                tags$button(id = "copy_view_link", class = "share-btn", type = "button",
+                            `aria-label` = "Copy a link to this view",
+                            title = "Copy a link with team, filters, and tab",
+                            icon("link")),
+                tags$button(id = "snap_view", class = "snap-btn", type = "button",
+                            `aria-label` = "Save this view as a PNG",
+                            title = paste("Save a PNG of this view —",
+                                          "pinned cards included"),
+                            icon("camera")))),
+        div(id = "global_controls", class = "cb-body",
             fluidRow(
               ## no inline logos here -- the summary strip carries them, and
               ## floating images broke the layout at mid widths
@@ -1770,25 +1843,40 @@ ui <- dashboardPage(
               ## FUTURE: a global "Conference" SCOPE selector could still slot in
               ## here to narrow g_team's list to one league while g_compare stays
               ## full-P4 (Arizona-vs-Georgia works) — see docs/p4-expansion-design.md.
-              column(width = 2,
-                     selectizeInput("g_team", "Your team",
-                                    choices = team_choices_grouped,
-                                    selected = "arizona", width = "100%",
-                                    ## maxOptions default (50) < 67 teams -> the
-                                    ## last ACC entries can vanish on scroll
-                                    options = list(render = gi_picker_render,
-                                                   maxOptions = 100))),
-              column(width = 2,
-                     selectizeInput("g_compare", "Compare to",
-                                    choices = c(list("— none —" = ""),
-                                                team_choices_grouped),
-                                    selected = "arizona-state", width = "100%",
-                                    ## selectize drops empty-value options by
-                                    ## default; the "— none —" clear needs this.
-                                    ## maxOptions 100 > 67 so no team truncates.
-                                    options = list(render = gi_picker_render,
-                                                   allowEmptyOption = TRUE,
-                                                   maxOptions = 100))),
+              tagAppendAttributes(
+                conditionalPanel(
+                  condition = "input.tabs !== 'origins'",
+                  selectizeInput("g_team", "Your team",
+                                 choices = team_choices_grouped,
+                                 selected = "arizona", width = "100%",
+                                 options = list(render = gi_picker_render,
+                                                maxOptions = 100))
+                ),
+                class = "col-sm-2"
+              ),
+              tagAppendAttributes(
+                conditionalPanel(
+                  condition = "input.tabs !== 'origins'",
+                  selectizeInput("g_compare", "Compare to",
+                                 choices = c(list("— none —" = ""),
+                                             team_choices_grouped),
+                                 selected = "", width = "100%",
+                                 options = list(render = gi_picker_render,
+                                                allowEmptyOption = TRUE,
+                                                maxOptions = 100))
+                ),
+                class = "col-sm-2"
+              ),
+              tagAppendAttributes(
+                conditionalPanel(
+                  condition = "input.tabs === 'origins'",
+                  div(class = "gi-fixed-control gi-origin-scope-control",
+                      span("Analysis scope"),
+                      strong("All 67 destinations"),
+                      small("Team and comparison do not filter this story"))
+                ),
+                class = "col-sm-4"
+              ),
               column(width = 2,
                      radioButtons("g_sport", "Sport",
                                   choices = c("Football" = "football",
@@ -1809,69 +1897,85 @@ ui <- dashboardPage(
                                       paste0("'", SIZE_YEARS[2] %% 100, " class"),
                                       class = "btn-xs"))),
               column(width = 3,
-                     radioButtons("g_type", "Players",
-                                  choices = c("HS commits" = "commit",
-                                              "Commits + transfers" = "both",
-                                              "Transfers only" = "transfer"),
-                                  selected = "both"),
+                     conditionalPanel(
+                       condition = "input.tabs !== 'origins'",
+                       radioButtons("g_type", "Players",
+                                    choices = c("HS commits" = "commit",
+                                                "Commits + transfers" = "both",
+                                                "Transfers only" = "transfer"),
+                                    selected = "both")
+                     ),
+                     conditionalPanel(
+                       condition = "input.tabs === 'origins'",
+                       div(class = "gi-fixed-control",
+                           span("Player pool"),
+                           strong("HS/prep only"),
+                           small("Portal, JUCO, and review queue excluded"))
+                     ),
                      checkboxInput("show_context", "Context notes",
                                    value = TRUE))
             ))),
+
+    div(class = "gi-page-stage",
+        uiOutput("page_intro"),
 
     tabItems(
 
       ## HOME ------------------------------------------------------------------
       tabItem(tabName = "home",
-              div(class = "hero",
-                  uiOutput("hero_team"),
-                  ## data-universe tagline: names the active team's conference,
-                  ## so it stays honest when a second conference lands (Phase 0
-                  ## renders "...in the Big 12..." unchanged)
+              tags$section(
+                class = "gi-cover",
+                div(
+                  class = "gi-cover__copy",
+                  div(class = "gi-eyebrow", "THE POWER-4 RECRUITING BODY LAB"),
+                  h1("See how a roster is built — before game day."),
                   uiOutput("hero_tagline"),
-                  actionButton("go_sizelab", tagList(icon("ruler-combined"), "Open the Size Lab"),
-                               class = "btn-warning"),
-                  actionButton("go_beef", tagList(icon("dumbbell"), "Conference Beef"),
-                               class = "btn-default"),
-                  actionButton("go_wr", tagList(icon("weight-hanging"), "Weight Room"),
-                               class = "btn-default"),
-                  actionButton("go_eras", tagList(icon("user-tie"), "Coach Eras"),
-                               class = "btn-default"),
-                  actionButton("go_warroom",
-                               tagList(icon("shield-halved"), "War Room (3-3-5)"),
-                               class = "btn-default")
+                  div(
+                    class = "gi-cover__actions",
+                    actionButton(
+                      "cover_sizelab",
+                      tagList(icon("ruler-combined"), "Explore the Size Lab"),
+                      class = "btn-warning"),
+                    actionButton(
+                      "cover_conflab",
+                      tagList(icon("layer-group"), "Compare all four conferences"),
+                      class = "btn-default")
+                  )
+                ),
+                div(class = "gi-cover__lens", uiOutput("hero_team"))
+              ),
+              uiOutput("home_data_pulse"),
+              div(
+                class = "gi-section-head",
+                div(
+                  h2("Current program pulse"),
+                  p("The selected program first; deeper analysis follows.")
+                )
               ),
               fluidRow(
-                ## each status number is a door into the tab behind it
-                column(width = 4, div(
-                  class = "vb-link", title = "Open Conference Beef",
-                  onclick = "document.querySelector('a[href=\"#shiny-tab-beef\"]').click()",
+                ## Each status number is a native keyboard-operable door into
+                ## the analysis behind it.
+                column(width = 4, tags$a(
+                  href = "#shiny-tab-beef", class = "vb-link",
+                  title = "Open Conference Beef",
+                  onclick = "document.querySelector('a[href=\"#shiny-tab-beef\"]').click(); return false;",
+                  span(class = "sr-only", "Open Conference Beef. "),
                   valueBoxOutput("vb_home_rank", width = NULL))),
-                column(width = 4, div(
-                  class = "vb-link", title = "Open Coach Eras",
-                  onclick = "document.querySelector('a[href=\"#shiny-tab-eras\"]').click()",
+                column(width = 4, tags$a(
+                  href = "#shiny-tab-sizelab", class = "vb-link",
+                  title = "Open the Size Lab",
+                  onclick = "document.querySelector('a[href=\"#shiny-tab-sizelab\"]').click(); return false;",
+                  span(class = "sr-only", "Open the Size Lab. "),
                   valueBoxOutput("vb_home_class", width = NULL))),
-                column(width = 4, div(
-                  class = "vb-link", title = "Open the Weight Room",
-                  onclick = "document.querySelector('a[href=\"#shiny-tab-weightroom\"]').click()",
+                column(width = 4, tags$a(
+                  href = "#shiny-tab-weightroom", class = "vb-link",
+                  title = "Open the Weight Room",
+                  onclick = "document.querySelector('a[href=\"#shiny-tab-weightroom\"]').click(); return false;",
+                  span(class = "sr-only", "Open the Weight Room. "),
                   valueBoxOutput("vb_home_dev", width = NULL)))
               ),
               fluidRow(
-                column(width = 12, div(class = "howto-strip",
-                  tags$span(class = "howto-title", "Build your own graphic:"),
-                  tags$span(class = "howto-step",
-                            HTML("<b>1</b> tap a chart point to pin its card")),
-                  tags$span(class = "howto-step",
-                            HTML("<b>2</b> drag to place &middot; corner grip to resize")),
-                  tags$span(class = "howto-step",
-                            HTML("<b>3</b> tap a highlighted name for the full player card")),
-                  tags$span(class = "howto-step",
-                            HTML("<b>4</b> download from the chart &mdash; pinned cards included"))
-                ))
-              ),
-              fluidRow(
-                ## 'since your last visit': renders ONLY when this device saw
-                ## the same team/sport/pool on an earlier date and the class
-                ## numbers moved -- otherwise nothing (no empty box)
+                ## Renders only when this device has a meaningful prior visit.
                 column(width = 12, uiOutput("last_visit_strip"))
               ),
               fluidRow(
@@ -1879,11 +1983,10 @@ ui <- dashboardPage(
                   title = textOutput("class_snap_title"),
                   status = "danger", solidHeader = TRUE, width = 5,
                   htmlOutput("class_snap"),
-                  ctx_note("The newest cycle stays open through signing day —
-                    counts and average ratings move as commits land and
-                    247 re-ranks."),
-                  footer = HTML("<em style='color:#888;'>The newest class in
-                    your selected window vs the three classes before it.</em>")
+                  uiOutput("class_snap_note"),
+                  footer = HTML("<em style='color:#888;'>Arriving classes lead
+                    the dashboard; the next cycle is tracked separately while
+                    it remains open.</em>")
                 ),
                 box(
                   title = textOutput("home_points_title"),
@@ -1895,36 +1998,59 @@ ui <- dashboardPage(
                 )
               ),
               fluidRow(
-                box(
-                  title = "Pick your team", status = "primary",
-                  solidHeader = TRUE, width = 12,
-                  ## grouped by conference (Big 12 first), matching the bar
-                  ## picker + first-visit modal — 67 logos in one flat row was a
-                  ## wall. Each league gets a header; the bar picker up top is
-                  ## the fast search-driven path, this is the browse-by-logo one.
-                  p(style = "text-align:center; color:#888; margin-bottom:4px;",
-                    "Click a logo — or search in the bar up top."),
-                  lapply(conf_order(), function(cf) {
-                    d <- DISPLAY_CONFIG[DISPLAY_CONFIG$conference == cf, ,
-                                        drop = FALSE]
-                    d <- d[order(d$team_name), , drop = FALSE]
-                    if (!nrow(d)) return(NULL)
-                    tagList(
-                      div(cf, class = "gi-pick-conf",
-                          `data-conf` = cf),
-                      div(style = "text-align:center; margin-bottom:6px;",
-                          lapply(seq_len(nrow(d)), function(i) {
-                            actionButton(
-                              inputId = paste0("select_",
-                                               gsub("-", "_", d$slug[i])),
-                              label = img(src = d$logo[i], height = "50px",
-                                          title = d$team_name[i], alt = d$team_name[i]),
-                              style = "background:transparent; border:none; padding:6px 12px;"
-                            )
-                          })))
-                  }),
-                  footer = HTML("<em style='color:#888;'>Clicking a logo sets
-                    your team everywhere and opens the Size Lab.</em>")
+                column(width = 12, uiOutput("home_fingerprint"))
+              ),
+              div(
+                class = "gi-section-head",
+                div(
+                  h2("Go deeper"),
+                  p("Choose a focused question when you are ready for more detail.")
+                )
+              ),
+              uiOutput("home_paths"),
+              fluidRow(
+                column(
+                  width = 12,
+                  div(
+                    class = "gi-team-browser",
+                    box(
+                      title = "Browse all 67 programs",
+                      status = "primary", solidHeader = TRUE, width = 12,
+                      collapsible = TRUE, collapsed = TRUE,
+                      tags$input(
+                        id = "home_team_search", type = "search",
+                        class = "gi-team-search",
+                        placeholder = "Search programs",
+                        `aria-label` = "Search all Power-4 programs",
+                        autocomplete = "off"),
+                      lapply(conf_order(), function(cf) {
+                        d <- DISPLAY_CONFIG[DISPLAY_CONFIG$conference == cf, ,
+                                            drop = FALSE]
+                        d <- d[order(d$team_name), , drop = FALSE]
+                        if (!nrow(d)) return(NULL)
+                        tagList(
+                          div(cf, class = "gi-pick-conf"),
+                          div(
+                            class = "gi-team-grid",
+                            lapply(seq_len(nrow(d)), function(i) {
+                              actionButton(
+                                inputId = paste0("select_",
+                                                 gsub("-", "_", d$slug[i])),
+                                label = tagList(
+                                  img(src = d$logo[i], alt = ""),
+                                  span(d$team_name[i])),
+                                class = "gi-home-team",
+                                title = paste("Select", d$team_name[i])
+                              )
+                            })
+                          )
+                        )
+                      }),
+                      footer = HTML("<em style='color:#888;'>Selecting a program
+                        updates the Home lens, fingerprint, and every global
+                        control without taking you away from this page.</em>")
+                    )
+                  )
                 )
               )
       ),
@@ -2285,7 +2411,7 @@ ui <- dashboardPage(
                        )),
                 column(width = 6,
                        box(
-                         title = "Home-State Talent: Keep the Fence Up",
+                         title = "In-State HS Talent: Keep the Fence Up",
                          status = "primary", solidHeader = TRUE,
                          width = NULL, collapsible = TRUE,
                          spin(girafeOutput("state_retention", height = "430px"),
@@ -2382,60 +2508,178 @@ ui <- dashboardPage(
               )
       ),
 
-      ## RECRUITING MAP (legacy) -----------------------------------------------------
+      ## TALENT ORIGINS -----------------------------------------------------------
+      tabItem(
+        tabName = "origins",
+        div(
+          class = "gi-origin-toolbar",
+          div(
+            class = "gi-origin-view-switch",
+            radioButtons(
+              "origin_view", "Story",
+              choices = c("State Board" = "board",
+                          "Position Hotbeds" = "positions",
+                          "Change Over Time" = "trend"),
+              selected = "board", inline = TRUE
+            )
+          ),
+          div(
+            class = "gi-origin-filter",
+            selectInput(
+              "origin_metric", "Measure",
+              choices = origin_metric_choices(),
+              selected = "blue_n", selectize = FALSE
+            )
+          ),
+          tagAppendAttributes(
+            conditionalPanel(
+              condition = "input.origin_view !== 'positions'",
+              selectInput(
+                "origin_pos", "Position group",
+                choices = origin_position_choices("football"),
+                selected = "All", selectize = FALSE
+              )
+            ),
+            class = "gi-origin-filter gi-origin-position"
+          ),
+          tagAppendAttributes(
+            conditionalPanel(
+              condition = "input.origin_view !== 'positions'",
+              selectInput(
+                "origin_state", "Focus state",
+                choices = setNames(ORIGIN_US_CODES,
+                                   origin_state_name(ORIGIN_US_CODES)),
+                selected = "AZ", selectize = FALSE
+              )
+            ),
+            class = "gi-origin-filter gi-origin-state"
+          )
+        ),
+        uiOutput("origin_story"),
+        conditionalPanel(
+          condition = "input.origin_view === 'board'",
+          fluidRow(
+            box(
+              title = tagList(
+                "State Talent Board",
+                info_btn("info_origins"),
+                twin_toggle("origin_board")
+              ),
+              status = "primary", solidHeader = TRUE, width = 12,
+              div(
+                class = "gi-chartwrap gi-no-pin",
+                spin(girafeOutput("origin_board", height = "650px"),
+                     color = "#0C234B")
+              ),
+              div(class = "gi-tablewrap", uiOutput("origin_board_twin"))
+            )
+          )
+        ),
+        conditionalPanel(
+          condition = "input.origin_view === 'positions'",
+          fluidRow(
+            box(
+              title = tagList(
+                "Position Hotbeds",
+                info_btn("info_origins"),
+                twin_toggle("origin_positions")
+              ),
+              status = "primary", solidHeader = TRUE, width = 12,
+              div(
+                class = "gi-chartwrap",
+                spin(girafeOutput("origin_positions", height = "680px"),
+                     color = "#0C234B")
+              ),
+              div(class = "gi-tablewrap", uiOutput("origin_positions_twin"))
+            )
+          )
+        ),
+        conditionalPanel(
+          condition = "input.origin_view === 'trend'",
+          fluidRow(
+            box(
+              title = tagList(
+                "How the pipeline is changing",
+                info_btn("info_origins"),
+                twin_toggle("origin_trend")
+              ),
+              status = "primary", solidHeader = TRUE, width = 12,
+              div(
+                class = "gi-chartwrap",
+                spin(girafeOutput("origin_trend", height = "470px"),
+                     color = "#0C234B")
+              ),
+              div(class = "gi-tablewrap", uiOutput("origin_trend_twin"))
+            )
+          )
+        ),
+        tags$details(
+          class = "gi-origin-deeper",
+          tags$summary(
+            tagList(icon("compass"), "Explore deeper signals")
+          ),
+          uiOutput("origin_deeper")
+        ),
+        ctx_note(
+          "State means the last listed HS/prep school location, not birthplace. ",
+          "Obvious JUCO and new unreviewed College sources are excluded; ",
+          "aggregate views state the open class's partial contribution, and ",
+          "the trend marks it directly."
+        )
+      ),
+
+
+      ## PROGRAM REACH ---------------------------------------------------------------
       tabItem(tabName = "summary",
               fluidRow(
                 box(
-                  title = tagList("Recruiting Pipelines: click any dot for the player card",
+                  title = tagList("Program Reach: mapped recruiting pipelines",
                                   info_btn("info_map")),
                   footer = HTML("<span style='color:#888;'>
-                    <em>Shaded shapes = your team's state footprint; the
-                    compare-to team's pipeline shows in its color.</em></span>"),
+                    <em>Dots show mapped listed origins. Shaded shapes trace
+                    your selected program; the comparison pipeline keeps its
+                    own team color.</em></span>"),
                   status = "primary",
                   solidHeader = TRUE, width = 12,
                   collapsible = TRUE, collapsed = FALSE,
                   spin(leafletOutput("gridPlot", height = "420px"),
                               color = "#0C234B")),
                 box(
-                  title = "Distance Traveled from High School to College (Farthest to Closest)",
+                  title = "Player-level reach: farthest listed origins first",
                   status = "primary",
                   solidHeader = TRUE, width = 12,
-                  collapsible = TRUE, collapsed = FALSE,
+                  collapsible = TRUE, collapsed = TRUE,
                   DTOutput("summary_stats", height = "230px")
                 )
-              )
-      ),
-
-      ## DISTANCE LAB (legacy) ---------------------------------------------------------
-      tabItem(tabName = "compare",
+              ),
               fluidRow(
                 box(
                   fluidRow(
                     column(width = 4,
-                           selectInput("show_outliers", label = NULL,
+                           selectInput("show_outliers", label = "Outliers",
                                        selectize = FALSE, multiple = FALSE,
                                        choices = c("Show Outliers" = "show",
                                                    "Hide Outliers" = "hide"),
                                        selected = "show", width = "100%"))
                   ),
-                  title = tagList("Distance Lab: how far does your class travel?",
+                  title = tagList("Travel by signing class",
                                   info_btn("info_distance")),
                   footer = HTML("<span style='color:#888;'>
                     Tap or hover any dot for the recruit card; pin it to open their
                     247Sports page.</span>"),
                   status = "primary",
                   solidHeader = TRUE, width = 12,
-                  collapsible = TRUE, collapsed = FALSE,
+                  collapsible = TRUE, collapsed = TRUE,
                   spin(
                     girafeOutput("distance_plot", height = "470px"),
                     color = "#0C234B")),
                 box(
-                  title = "Miles from Home by Position",
+                  title = "Miles from listed origin by position",
                   status = "primary",
                   solidHeader = TRUE, width = 12,
-                  collapsible = TRUE, collapsed = FALSE,
+                  collapsible = TRUE, collapsed = TRUE,
                   footer = HTML("<span style='color:#888;'>
-                    Distances need a mapped hometown. Transfers from recent
+                    Distances need a mapped listed origin. Transfers from recent
                     cycles (2023 on) join as the nightly refresh captures
                     theirs from their 247Sports profiles; earlier transfer
                     classes stay unmapped.</span>"),
@@ -2466,7 +2710,7 @@ ui <- dashboardPage(
                     have a feature idea, or want a tool like this built for
                     your program, conference, or business?</p>
                     <p style='font-size:15px;'>
-                    <a href='mailto:desertdatalabs@gmail.com?subject=Big%2012%20Girth%20Index'>
+                    <a href='mailto:desertdatalabs@gmail.com?subject=Power-4%20Girth%20Index'>
                     <strong>desertdatalabs@gmail.com</strong></a></p>
                     <p style='font-size:13px; color:#888;'>Custom dashboards,
                     scrapers, and analytics for sports and beyond.</p>")
@@ -2476,37 +2720,41 @@ ui <- dashboardPage(
                   solidHeader = TRUE, width = 6,
                   HTML("
                     <p style='font-size:14px; line-height:1.7;'>
-                    The team table (<code>R/team_config.R</code>) already
-                    carries a conference column, so expansion is mostly adding
-                    rows and re-running the scrapers:</p>
+                    The full Power-4 foundation is live. The next product layer
+                    moves from richer comparison to verified player outcomes:</p>
                     <ol style='font-size:14px; line-height:1.7;'>
-                      <li><strong>All Power conferences</strong> — add SEC, Big
-                        Ten, and ACC schools; every board, map, and lab picks
-                        them up. This also completes the home-state retention
-                        picture (right now a recruit who leaves for USC or
-                        Oregon is invisible).</li>
-                      <li><strong>Conference vs conference</strong> — the same
-                        size, development, and retention metrics aggregated at
-                        the conference level.</li>
-                      <li><strong>Player-level outcomes</strong> — team results
-                        are in (Talent vs Results tab). The next step is
-                        per-player: snap counts, all-conference honors, and
-                        draft picks joined to each signee, so classes can be
-                        graded on what players became rather than how they
-                        were rated at 18.</li>
-                    </ol>")
+                      <li><strong>Player outcomes</strong> — snap counts,
+                        all-conference honors, starts, and draft results joined
+                        back to each signee, with coverage shown before any
+                        development grade.</li>
+                      <li><strong>Portal lifecycle</strong> — arrivals,
+                        departures, returners, and retained production in one
+                        cohort view instead of treating portal share as a
+                        stand-alone score.</li>
+                      <li><strong>Conference eras</strong> — time-aware league
+                        distributions that distinguish historical membership
+                        from the current Power-4 map through realignment.</li>
+                      <li><strong>Brief builder</strong> — save a set of views,
+                        pinned players, and caveats into one shareable scouting
+                        report without losing the active filters.</li>
+                    </ol>
+                    <p style='font-size:13px; color:#667085;'>
+                    Have a better next question? Send it through the feedback
+                    link above — the best additions start with a real decision
+                    somebody is trying to make.</p>")
                 )
               )
       )
 
     ), ## end tabItems
+    ), ## end page stage
 
     ## site footer: who built this + how to reach us
     div(class = "ddl-footer",
         HTML(paste0(
           "Built by <strong>Desert Data Labs</strong> · feedback, bug reports, ",
           "or want something like this built for your program? ",
-          "<a href='mailto:desertdatalabs@gmail.com?subject=Big%2012%20Girth%20Index'>",
+          "<a href='mailto:desertdatalabs@gmail.com?subject=Power-4%20Girth%20Index'>",
           "desertdatalabs@gmail.com</a>")))
   ) ## end body
 ) ## end UI
@@ -2536,6 +2784,7 @@ server <- function(input, output, session) {
     objs <- lapply(files, function(f) {
       tryCatch({
         g <- readRDS(f)
+        if (identical(basename(f), "meta.rds")) return(g)
         g$dependencies <- htmlwidgets::getDependency("girafe", "ggiraph")
         g
       }, error = function(e) {
@@ -2576,6 +2825,8 @@ server <- function(input, output, session) {
         retry_ledger[[k]] <- n + 1L
         invalidateLater(4000, session)
       }
+  ## A metadata receipt must also match the bundled database revision; older
+  ## or unreceipted RDS files fall back to live rendering.
       girafe_build(
         ggplot2::ggplot() +
           ggplot2::annotate(
@@ -2592,15 +2843,22 @@ server <- function(input, output, session) {
   ## Reads the SAME debounced years value the renders and cache keys use --
   ## reading raw input$g_years here let a mid-drag flush disagree with the
   ## cache key. Charts that draw the compare team pass cmp_sensitive = TRUE:
-  ## the precomputed dna is Arizona-vs-ASU, and serving it for another
+  ## the precomputed dna has no comparison, and serving it for another
   ## compare pick would store the wrong chart under that bindCache key.
   at_defaults <- function(pos_input = NULL, cmp_sensitive = FALSE) {
-    identical(input$g_team, "arizona") &&
+    meta <- PRE[["meta"]]
+    meta_ok <- is.list(meta) &&
+      identical(meta$data_revision %||% "", DATA_REVISION) &&
+      identical(meta$team %||% "", "arizona") &&
+      identical(meta$sport %||% "", "football") &&
+      identical(as.integer(meta$years), as.integer(DEFAULT_YEARS))
+    compare_ok <- !cmp_sensitive ||
+      identical(meta$compare_slug %||% "", input$g_compare %||% "")
+    meta_ok && compare_ok &&
+      identical(input$g_team, "arizona") &&
       g_sport() == "football" &&
       identical(as.integer(g_years_d()), as.integer(DEFAULT_YEARS)) &&
       identical(input$g_type %||% "both", "both") &&
-      (!cmp_sensitive ||
-         identical(input$g_compare %||% "arizona-state", "arizona-state")) &&
       (is.null(pos_input) || pos_input == "All")
   }
 
@@ -2628,9 +2886,11 @@ server <- function(input, output, session) {
   ## leave it frozen forever (the client never echoes an unchanged value back
   ## to thaw it), blanking every downstream chart. So freeze+update fires
   ## only when the restored value actually differs from the default.
-  URL_DEFAULTS <- list(team = "arizona", compare = "arizona-state",
+  URL_DEFAULTS <- list(team = "arizona", compare = "",
                        sport = "football", years = as.integer(DEFAULT_YEARS),
-                       type = "both")
+                       type = "both", origin_view = "board",
+                       origin_metric = "blue_n", origin_pos = "All",
+                       origin_state = "AZ")
   url_init <- reactiveValues(done = FALSE, has_team = FALSE)
   observeEvent(session$clientData$url_search, once = TRUE, priority = 1000, {
     st <- parse_url_state(parseQueryString(session$clientData$url_search))
@@ -2658,6 +2918,25 @@ server <- function(input, output, session) {
       freezeReactiveValue(input, "g_type")
       updateRadioButtons(session, "g_type", selected = st$type)
     }
+    if (!is.null(st$origin_view) &&
+        !identical(st$origin_view, URL_DEFAULTS$origin_view)) {
+      updateRadioButtons(session, "origin_view", selected = st$origin_view)
+    }
+    if (!is.null(st$origin_metric) &&
+        !identical(st$origin_metric, URL_DEFAULTS$origin_metric)) {
+      updateSelectInput(session, "origin_metric", selected = st$origin_metric)
+    }
+    if (!is.null(st$origin_pos)) {
+      url_init$origin_pos <- st$origin_pos
+      link_sport <- st$sport %||% URL_DEFAULTS$sport
+      updateSelectInput(session, "origin_pos",
+                        choices = origin_position_choices(link_sport),
+                        selected = st$origin_pos)
+    }
+    if (!is.null(st$origin_state) &&
+        !identical(st$origin_state, URL_DEFAULTS$origin_state)) {
+      updateSelectInput(session, "origin_state", selected = st$origin_state)
+    }
     ## tab restore carries no freeze (no downstream reactive gate), so a
     ## no-op update to the already-active tab is harmless
     if (!is.null(st$tab) && !identical(st$tab, "home")) {
@@ -2673,22 +2952,31 @@ server <- function(input, output, session) {
   url_state_out <- debounce(reactive({
     req(url_init$done)
     yrs <- g_years_d()
-    req(input$g_team, input$g_sport, yrs, input$tabs)
+    req(input$g_team, input$g_sport, yrs, input$tabs,
+        input$origin_view, input$origin_metric, input$origin_pos,
+        input$origin_state)
     cmp_raw <- input$g_compare %||% ""
     list(team = input$g_team,
          cmp = if (nzchar(cmp_raw)) cmp_raw else "none",
          sport = g_sport(),
          years = paste0(yrs[1], "-", yrs[2]),
          type = input$g_type %||% "both",
-         tab = input$tabs)
+         tab = input$tabs,
+         ov = input$origin_view,
+         om = input$origin_metric,
+         op = input$origin_pos,
+         os = input$origin_state)
   }), 500)
   observe({
     s <- url_state_out()
-    ## values are all whitelisted slugs/enums/years -> URL-safe, no encoding
+    ## Every value is whitelisted; URL-encode because DL/Edge contains a slash.
     q <- c(team = s$team, cmp = s$cmp, sport = s$sport,
-           years = s$years, type = s$type, tab = s$tab)
+           years = s$years, type = s$type, tab = s$tab,
+           ov = s$ov, om = s$om, op = s$op, os = s$os)
+    encoded <- vapply(q, function(x) URLencode(as.character(x), reserved = TRUE),
+                      character(1))
     updateQueryString(
-      paste0("?", paste(names(q), q, sep = "=", collapse = "&")),
+      paste0("?", paste(names(encoded), encoded, sep = "=", collapse = "&")),
       mode = "replace")
   })
 
@@ -2778,44 +3066,55 @@ server <- function(input, output, session) {
         updateSelectInput(session, "g_team", selected = st)
       } else if (identical(st, "none")) {
         showModal(modalDialog(
-          title = NULL, easyClose = TRUE, footer = NULL, size = "l",
-          div(style = "text-align:center;",
-              h2("Who's your team?",
-                 style = "font-weight:800; color:#0C234B; margin-top:4px;"),
-              p("Saved on this device — change it any time in the bar up top.",
-                style = "color:#888;"),
-              ## grouped by conference (Big 12 first) + scrollable: 67 logos in
-              ## one flat wall is unscannable; sections make it quick to find.
-              div(style = "max-height:58vh; overflow-y:auto; padding:0 4px;",
-                  lapply(conf_order(), function(cf) {
-                    d <- DISPLAY_CONFIG[DISPLAY_CONFIG$conference == cf, ,
-                                        drop = FALSE]
-                    d <- d[order(d$team_name), , drop = FALSE]
-                    if (!nrow(d)) return(NULL)
-                    tagList(
-                      div(cf, style = "font-weight:700; color:#0C234B;
-                          text-transform:uppercase; font-size:12px;
-                          letter-spacing:.05em; margin:16px 0 8px;
-                          border-bottom:1px solid #e2e9f1; padding-bottom:4px;
-                          text-align:left;"),
-                      div(style = "display:flex; flex-wrap:wrap; gap:6px;
-                                   justify-content:center;",
-                          lapply(seq_len(nrow(d)), function(i) {
-                            actionButton(
-                              paste0("pick_", gsub("-", "_", d$slug[i])),
-                              label = tagList(
-                                img(src = d$logo[i], height = "34px"),
-                                div(d$team_name[i],
-                                    style = "font-size:11px; font-weight:600;")),
-                              class = "btn-default",
-                              style = "width:104px; padding:8px 2px;")
-                          })))
-                  })),
-              ## an explicit escape hatch: the bar picker up top searches, so
-              ## the modal doesn't have to be the path -- default stays Arizona
-              actionLink("skip_team_pick", "Skip — I'll pick from the bar up top",
-                         style = "display:inline-block; margin-top:14px;
-                                  color:#888; font-size:13px;"))
+          title = "Choose your program",
+          easyClose = TRUE, footer = NULL, size = "l",
+          div(
+            style = "text-align:center;",
+            p("This becomes your active lens and is saved on this device. You can change it any time.",
+              style = "color:#667085; margin-bottom:6px;"),
+            tags$input(
+              id = "team_modal_search", type = "search",
+              class = "gi-team-search",
+              placeholder = "Search all 67 programs",
+              `aria-label` = "Search all 67 Power-4 programs",
+              autocomplete = "off"),
+            div(
+              class = "gi-modal-scroll",
+              lapply(conf_order(), function(cf) {
+                d <- DISPLAY_CONFIG[DISPLAY_CONFIG$conference == cf, ,
+                                    drop = FALSE]
+                d <- d[order(d$team_name), , drop = FALSE]
+                if (!nrow(d)) return(NULL)
+                div(
+                  class = "gi-modal-section",
+                  div(
+                    cf, class = "gi-modal-conf",
+                    style = paste0("--conf-color:", conf_color(cf))),
+                  div(
+                    class = "gi-modal-grid",
+                    lapply(seq_len(nrow(d)), function(i) {
+                      actionButton(
+                        paste0("pick_", gsub("-", "_", d$slug[i])),
+                        label = tagList(
+                          img(src = d$logo[i], alt = ""),
+                          div(d$team_name[i],
+                              style = "font-size:11px; font-weight:650;")),
+                        class = "gi-modal-team",
+                        `data-team` = tolower(d$team_name[i]),
+                        title = paste("Choose", d$team_name[i]))
+                    })
+                  )
+                )
+              }),
+              div(
+                class = "gi-team-empty", role = "status",
+                `aria-live` = "polite")
+            ),
+            actionLink(
+              "skip_team_pick", "Skip — I'll choose from the global filters",
+              style = "display:inline-block; margin-top:14px;
+                       color:#667085; font-size:13px;")
+          )
         ))
       }
     })
@@ -2873,7 +3172,7 @@ server <- function(input, output, session) {
                       <li><strong>Current rosters</strong>: 247Sports team
                         roster pages, refreshed nightly",
                         if (!is.null(last_refresh_label))
-                          paste0(" (data updated ", last_refresh_label, ")"),
+                          paste0(" (latest source capture ", last_refresh_label, ")"),
                         ".</li>
                       <li><strong>Season records and SP+</strong>:
                         CollegeFootballData.com, seasons 2016–2025 (football).</li>
@@ -2882,12 +3181,13 @@ server <- function(input, output, session) {
                         quarter of ", active_conf_lab(), " signees are listed shorter on the
                         roster than they were as recruits (Weight Room →
                         Reality Check). Treat any listed height as ±1 inch.</li>
-                      <li><strong>Locations</strong>: high schools are geocoded,
-                        and each result is checked against its claimed state
-                        before it can appear on the map. Transfers from recent
-                        cycles (2023 on) join the distance-based views as the
-                        nightly refresh captures hometowns from their 247Sports
-                        profiles; earlier transfer classes stay unmapped.</li>
+                      <li><strong>Listed origins</strong>: the location attached
+                        to each recruiting record is geocoded and checked against
+                        its listed state before it appears on the map. It is a
+                        recruiting origin, not necessarily a birthplace or
+                        hometown. Recent transfers join distance views when a
+                        profile exposes a usable origin; otherwise they remain
+                        visibly unmapped.</li>
                       <li><strong>Blue chips (90+)</strong>: counted from the
                         rating on 247's team pages. 247's Composite runs about
                         a point lower for borderline players, so counts can
@@ -2906,26 +3206,51 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "about_data", suspendWhenHidden = FALSE)
 
-  ## the collapsed bar's one-line summary of every global setting
+  ## The collapsed bar's one-line summary of every global setting.
+  ## Logos are decorative because the adjacent text carries the team name.
   output$cb_summary <- renderUI({
     req(input$g_team, input$g_years)
-    logo <- function(slug) img(src = TEAM_CONFIG$logo[match(slug, TEAM_CONFIG$slug)])
+    if (identical(input$tabs, "origins")) {
+      open_scope <- if (input$g_years[2] > as.integer(format(Sys.Date(), "%Y")))
+        glue(" ({input$g_years[2]} open)") else ""
+      return(tags$span(
+        class = "cb-summary-text cb-summary-origin",
+        span(class = "cb-origin-mark", icon("location-dot")),
+        strong("Power-4 talent origins"),
+        tags$span(
+          class = "cb-dim",
+          glue("\u00b7 {str_to_title(g_sport())} \u00b7 ",
+               "{input$g_years[1]}-{input$g_years[2]}{open_scope} \u00b7 ",
+               "{nrow(DISPLAY_CONFIG)} destinations \u00b7 HS/prep only")
+        ),
+        if (!is.null(last_refresh_label))
+          tags$span(class = "cb-dim cb-updated",
+                    glue("\u00b7 source capture {last_refresh_label}"))
+      ))
+    }
+    logo <- function(slug) {
+      img(src = TEAM_CONFIG$logo[match(slug, TEAM_CONFIG$slug)], alt = "")
+    }
     type_word <- switch(input$g_type %||% "both",
                         commit = "HS commits",
                         transfer = "transfers only",
                         "commits + transfers")
-    tags$span(class = "cb-summary-text",
-         logo(input$g_team), team_label(input$g_team),
-         if (!is.null(g_cmp())) tags$span(class = "cb-dim", "vs"),
-         if (!is.null(g_cmp())) logo(g_cmp()),
-         tags$span(class = "cb-dim",
-              glue("· {str_to_title(g_sport())} · ",
-                   "{input$g_years[1]}–{input$g_years[2]} · {type_word}")),
-         ## freshness badge: a startup constant (see last_refresh_label at
-         ## the top of the file); absent entirely when no stamp exists
-         if (!is.null(last_refresh_label))
-           tags$span(class = "cb-dim cb-updated",
-                     glue("· data updated {last_refresh_label}")))
+    tags$span(
+      class = "cb-summary-text",
+      logo(input$g_team), team_label(input$g_team),
+      if (!is.null(g_cmp())) tags$span(class = "cb-dim", "vs"),
+      if (!is.null(g_cmp())) logo(g_cmp()),
+      if (!is.null(g_cmp())) team_label(g_cmp()),
+      tags$span(
+        class = "cb-dim",
+        glue("· {str_to_title(g_sport())} · ",
+             "{input$g_years[1]}–{input$g_years[2]} · {type_word} · ",
+             "{active_conf_lab()} scope ({active_conf_n()})")),
+      ## Freshness badge: a startup constant; absent when no stamp exists.
+      if (!is.null(last_refresh_label))
+        tags$span(class = "cb-dim cb-updated",
+                  glue("· source capture {last_refresh_label}"))
+    )
   })
 
   ## ---- global reactives ------------------------------------------------------
@@ -2937,24 +3262,95 @@ server <- function(input, output, session) {
         input$g_compare == input$g_team) NULL else input$g_compare
   })
 
-  ## ---- CONFERENCE SCOPE SEAM (Power-4 Phase 0) -----------------------------
-  ## Every board/rank/median pools ONLY the active team's conference members,
-  ## and every data-universe label reads its name + size from CONF_CONFIG via
-  ## conf_label()/conf_slugs() -- never a hardcoded "Big 12"/"16". At Phase 0
-  ## all 16 teams share one conference, so conf_pool_slugs() returns all 16,
-  ## active_conf_lab() is "Big 12" and active_conf_n() is 16 -> every board,
-  ## rank and caption is byte-identical to the pre-change app. The instant a
-  ## second conference's rows land, the same code scopes + relabels itself.
-  ## PHASE 2 wires a global Conference SCOPE selectInput in here (see the
-  ## control bar) so g_team can be scoped to a chosen league; do NOT add it now.
+  ## ---- CONFERENCE SCOPE ----------------------------------------------------
+  ## Program-specific boards, ranks, and medians use the active team's current
+  ## conference. Conference Lab owns the explicit cross-league comparison.
   active_conf     <- reactive(team_conference(input$g_team %||% "arizona"))
   active_conf_lab <- reactive(conf_label(active_conf()))
-  ## pool the active team's ONBOARDED conference members only -- a partially
-  ## backfilled league never renders a half-populated board. At Phase 1 the
-  ## active team is always Big 12 and all 16 are onboarded, so this is the
-  ## shipped 16 and active_conf_n() is 16 -> every board/caption byte-identical.
+  ## Pool live members only: complete conference fields today, safe partial
+  ## loads if the configuration grows again later.
   conf_pool_slugs <- reactive(onboarded_slugs(active_conf()))
   active_conf_n   <- reactive(length(conf_pool_slugs()))
+
+  ## A compact editorial orientation layer for every analytical destination.
+  ## Home owns the product H1, so it intentionally renders no duplicate intro.
+  output$page_intro <- renderUI({
+    tab <- input$tabs %||% "home"
+    if (identical(tab, "home")) return(NULL)
+    req(input$g_team, input$g_years, input$g_sport)
+
+    meta <- switch(
+      tab,
+      sizelab = list(
+        eyebrow = "BODY PROFILE", title = "Size Lab",
+        body = "Map every addition by height and weight, then compare the selected program with its conference peers."),
+      beef = list(
+        eyebrow = "CONFERENCE BOARD", title = "Conference Beef",
+        body = "Rank team body profiles by position, source, and an explicitly labeled recruiting window."),
+      conflab = list(
+        eyebrow = "POWER-4 DISTRIBUTIONS", title = "Conference Lab",
+        body = "Compare the four leagues on recruiting inputs only — distributions first, with geography and strategy caveats intact."),
+      weightroom = list(
+        eyebrow = "PLAYER DEVELOPMENT", title = "Weight Room",
+        body = "Trace listed recruit bodies to current rosters and separate real development signals from measurement noise."),
+      eras = list(
+        eyebrow = "STAFF IDENTITY", title = "Coach Eras",
+        body = "See how each staff changes rating, size, geography, and position strategy across signing cycles."),
+      brief = list(
+        eyebrow = "ROSTER CONSTRUCTION", title = "Defensive War Room",
+        body = "Audit 3-3-5 personnel fit, incoming bodies, retention, and in-state HS recruiting. Football only."),
+      results = list(
+        eyebrow = "OUTCOMES", title = "Talent vs Results",
+        body = "Compare accumulated recruiting talent with wins, SP+, and wins above the conference talent curve. Football only."),
+      origins = list(
+        eyebrow = "HIGH SCHOOL PIPELINES", title = "Talent Origins",
+        body = "See which last-listed HS/prep locations supply captured Power-4 signees, where position hotbeds form, and how those pipelines change."),
+      summary = list(
+        eyebrow = "PROGRAM GEOGRAPHY", title = "Program Reach",
+        body = "Follow a program's mapped recruiting footprint, travel distance, and position-by-position reach without mixing it into the national origin story."),
+      notes = list(
+        eyebrow = "TRANSPARENCY", title = "Data & Notes",
+        body = "Review sources, refresh timing, metric definitions, known limits, and the product roadmap."),
+      list(
+        eyebrow = "POWER-4 GIRTH INDEX", title = "Explore",
+        body = "Recruiting body profiles, development, geography, and results across the Power 4.")
+    )
+
+    scope <- if (identical(tab, "conflab")) {
+      glue("{nrow(DISPLAY_CONFIG)} programs · four conferences · ",
+           "{input$g_years[1]}–{input$g_years[2]} · {players_lab()}")
+    } else if (identical(tab, "origins")) {
+      open_scope <- if (input$g_years[2] > as.integer(format(Sys.Date(), "%Y")))
+        glue(" ({input$g_years[2]} open)") else ""
+      glue("{nrow(DISPLAY_CONFIG)} destinations \u00b7 {str_to_title(g_sport())} \u00b7 ",
+           "{input$g_years[1]}-{input$g_years[2]}{open_scope} \u00b7 HS/prep only")
+    } else if (identical(tab, "summary")) {
+      cmp_scope <- if (!is.null(g_cmp()))
+        glue(" vs {team_label(g_cmp())}") else ""
+      glue("{team_label(input$g_team)}{cmp_scope} · {str_to_title(g_sport())} · ",
+           "{input$g_years[1]}–{input$g_years[2]} · {players_lab()}")
+    } else if (identical(tab, "notes")) {
+      paste0("Power-4 coverage",
+             if (!is.null(last_refresh_label))
+               paste0(" · updated ", last_refresh_label) else "")
+    } else {
+      glue("{team_label(input$g_team)} · {active_conf_lab()} scope ",
+           "({active_conf_n()}) · {str_to_title(g_sport())} · ",
+           "{input$g_years[1]}–{input$g_years[2]}")
+    }
+
+    div(
+      class = "gi-page-intro",
+      div(
+        div(class = "gi-page-intro__eyebrow", meta$eyebrow),
+        h1(meta$title),
+        p(meta$body)
+      ),
+      div(class = "gi-page-intro__scope",
+          `aria-label` = paste("Current analysis scope:", scope), scope)
+    )
+  })
+  outputOptions(output, "page_intro", suspendWhenHidden = FALSE)
 
   ## full prepped table for the current sport, filtered by the player-type
   ## radio (portal transfers exist for refreshed years: 2021+ after back-fill)
@@ -2982,6 +3378,88 @@ server <- function(input, output, session) {
       filter(Year >= yrs[1], Year <= yrs[2])
   })
 
+  ## Raw-origin universe for geography. Talent Origins applies its own
+  ## high-confidence HS/prep classifier + athlete dedupe; Program Reach keeps
+  ## the selected commitment/transfer record pool.
+  origin_all <- reactive({
+    if (g_sport() == "football") origin_football else origin_basketball
+  })
+
+  origin_window <- reactive({
+    yrs <- g_years_d()
+    origin_all() %>% dplyr::filter(Year >= yrs[1], Year <= yrs[2])
+  })
+
+  origin_pool_r <- reactive({
+    origin_talent_pool(origin_all(), years = g_years_d(), us_only = TRUE)
+  })
+
+  reach_window <- reactive({
+    d <- origin_window()
+    switch(input$g_type %||% "both",
+           commit = dplyr::filter(d, Type == "Commit"),
+           transfer = dplyr::filter(d, Type == "Transfer"),
+           d)
+  })
+
+  ## Stable Home snapshot: lead with the class arriving this season. If the
+  ## selected window contains only a future cycle, preserve that selection but
+  ## label it as open. Talent/count fields come from raw recruiting records;
+  ## body fields retain the measurement-qualified Size Lab contract.
+  home_snapshot <- reactive({
+    req(input$g_team)
+    raw <- reach_window() %>%
+      dplyr::filter(School == input$g_team) %>%
+      dplyr::distinct(School, AthleteKey, Year, Type, .keep_all = TRUE)
+    years <- raw$Year[is.finite(raw$Year)]
+    if (!nrow(raw) || !length(years)) return(NULL)
+    eligible <- years[years <= arriving_class]
+    snap_year <- if (length(eligible)) max(eligible) else max(years)
+    cls <- raw %>% dplyr::filter(Year == snap_year)
+    prior <- raw %>% dplyr::filter(Year %in% (snap_year - 3L):(snap_year - 1L))
+    body <- class_snapshot(size_window(), input$g_team, snap_year)
+
+    rating <- cls$RatingClean[is.finite(cls$RatingClean)]
+    prior_rating <- prior$RatingClean[is.finite(prior$RatingClean)]
+    avg_rating <- if (length(rating)) round(mean(rating), 1) else NA_real_
+    d_rating <- if (length(rating) && length(prior_rating)) {
+      round(mean(rating) - mean(prior_rating), 1)
+    } else {
+      NA_real_
+    }
+    top <- if (length(rating)) {
+      cls[which.max(ifelse(is.finite(cls$RatingClean),
+                           cls$RatingClean, -Inf)), , drop = FALSE]
+    } else {
+      cls[0, , drop = FALSE]
+    }
+    state_ok <- !is.na(cls$StateClean) & nzchar(cls$StateClean)
+    pct_instate <- if (any(state_ok)) {
+      round(100 * mean(cls$StateClean[state_ok] == team_state(input$g_team)))
+    } else {
+      NA_real_
+    }
+
+    list(
+      year = as.integer(snap_year),
+      is_open = snap_year > arriving_class,
+      n = nrow(cls),
+      body_n = if (is.null(body)) 0L else body$n,
+      rated_n = length(rating),
+      origin_n = sum(state_ok),
+      avg_rating = avg_rating,
+      d_rating = d_rating,
+      blue = sum(rating >= BLUE_CHIP),
+      pct_instate = pct_instate,
+      avg_weight = if (is.null(body)) NA_real_ else body$avg_weight,
+      d_weight = if (is.null(body)) NA_real_ else body$d_weight,
+      avg_height = if (is.null(body)) NA_character_ else body$avg_height,
+      top_name = if (nrow(top)) as.character(top$Name[[1]]) else "—",
+      top_pos = if (nrow(top)) as.character(top$Position[[1]]) else "—",
+      top_rating = if (nrow(top)) top$RatingClean[[1]] else NA_real_
+    )
+  })
+
   ## current-roster view prepped to the same shape (Conference Beef source)
   roster_size <- reactive({
     req(!is.null(roster_now()))
@@ -2996,7 +3474,14 @@ server <- function(input, output, session) {
 
   ## roster + weight-room join for the current sport
   roster_now <- reactive({
-    if (g_sport() == "football") roster_football else roster_basketball
+    d <- if (g_sport() == "football") roster_football else roster_basketball
+    if (is.null(d) || !nrow(d) || !"RosterYear" %in% names(d)) return(d)
+    years <- suppressWarnings(as.integer(d$RosterYear))
+    active_year <- if (any(is.finite(years))) max(years, na.rm = TRUE) else NA_integer_
+    if (is.finite(active_year)) {
+      d <- d[is.finite(years) & years == active_year, , drop = FALSE]
+    }
+    d
   })
   ## Weight Room is defined as HS-signee development, so commits only
   wr_data_r <- reactive({
@@ -3029,26 +3514,47 @@ server <- function(input, output, session) {
     updateSelectInput(session, "size_pos",
                       choices = as.list(pos_choices(input$g_sport)),
                       selected = "All")
+    origin_choices <- origin_position_choices(input$g_sport)
+    origin_selected <- url_init$origin_pos %||% isolate(input$origin_pos) %||% "All"
+    if (!origin_selected %in% unname(origin_choices)) origin_selected <- "All"
+    updateSelectInput(session, "origin_pos", choices = origin_choices,
+                      selected = origin_selected)
+    url_init$origin_pos <- NULL
+  })
+
+  ## The same metric IDs persist in shared links, while the visible labels
+  ## state the actual board-vs-trend denominator.
+  observeEvent(input$origin_view, {
+    context <- if (identical(input$origin_view, "trend")) "trend" else "board"
+    choices <- origin_metric_choices(context)
+    selected <- isolate(input$origin_metric) %||% "blue_n"
+    if (!selected %in% unname(choices)) selected <- "blue_n"
+    updateSelectInput(session, "origin_metric", choices = choices,
+                      selected = selected)
   })
 
   ## ---- navigation -------------------------------------------------------------
-  ## logo quick-pick: set the global team + open Size Lab. Pairs 1:1 with the
-  ## first-visit logo grid (DISPLAY_CONFIG) -- onboarded teams only.
+  ## The persistent Home browser changes the active lens in place. This lets a
+  ## visitor compare several programs without being ejected into a chart tab.
   lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
     slug <- DISPLAY_CONFIG$slug[i]
     btn_id <- paste0("select_", gsub("-", "_", slug))
     observeEvent(input[[btn_id]], {
       updateSelectInput(session, "g_team", selected = slug)
-      updateTabItems(session, "tabs", "sizelab")
     })
   })
 
-  ## hero buttons
+  ## Cover and task-path buttons.
+  observeEvent(input$cover_sizelab, updateTabItems(session, "tabs", "sizelab"))
+  observeEvent(input$cover_conflab, updateTabItems(session, "tabs", "conflab"))
   observeEvent(input$go_sizelab, updateTabItems(session, "tabs", "sizelab"))
   observeEvent(input$go_beef, updateTabItems(session, "tabs", "beef"))
+  observeEvent(input$go_conflab, updateTabItems(session, "tabs", "conflab"))
   observeEvent(input$go_wr, updateTabItems(session, "tabs", "weightroom"))
   observeEvent(input$go_eras, updateTabItems(session, "tabs", "eras"))
   observeEvent(input$go_warroom, updateTabItems(session, "tabs", "brief"))
+  observeEvent(input$go_results, updateTabItems(session, "tabs", "results"))
+  observeEvent(input$go_origins, updateTabItems(session, "tabs", "origins"))
 
   ## year-window quick presets
   observeEvent(input$preset_all, {
@@ -3064,114 +3570,321 @@ server <- function(input, output, session) {
   })
 
   ## ---- HOME ----------------------------------------------------------------------
-  ## the hero carries the selected team's logo (the app is ABOUT your team)
+  ## The selected program is the active lens, not a second product title.
   output$hero_team <- renderUI({
-    req(input$g_team)
-    div(style = "display:flex; align-items:center; gap:16px;",
+    req(input$g_team, input$g_years)
+    div(
+      class = "gi-team-lens",
+      div(
+        class = "gi-team-lens__logo",
         img(src = TEAM_CONFIG$logo[match(input$g_team, TEAM_CONFIG$slug)],
-            height = "64px",
-            style = "background:white; border-radius:10px; padding:5px;"),
-        h1(glue("{team_label(input$g_team)} — Power-4 Girth Index")))
+            alt = "")
+      ),
+      div(
+        div(class = "gi-team-lens__conference", active_conf_lab()),
+        h2(team_label(input$g_team)),
+        p(glue("{str_to_title(g_sport())} · ",
+               "{input$g_years[1]}–{input$g_years[2]} · {players_lab()}"))
+      )
+    )
   })
-  ## the hero tagline names the DATA universe (the active conference), not the
-  ## product -- so it routes through conf_label while "Power-4 Girth Index" above
-  ## stays a fixed brand.
+
   output$hero_tagline <- renderUI({
-    p(glue("Who are the biggest boys in the {active_conf_lab()}, how does each ",
-           "class measure up, and how does every coach recruit..."))
+    p(
+      class = "gi-cover__lede",
+      glue("Recruiting size, talent, geography, development, and results for ",
+           "all {nrow(DISPLAY_CONFIG)} Power-4 programs — viewed through ",
+           "{team_label(input$g_team)} and benchmarked on an honest ",
+           "{active_conf_lab()} reference field.")
+    )
+  })
+
+  output$home_data_pulse <- renderUI({
+    fresh <- dashboard_freshness_info(refresh_meta)
+    pipeline <- dashboard_pipeline_info(refresh_meta)
+    sources <- refresh_meta$sources
+    sp <- g_sport()
+    recruit <- sources$recruiting[[sp]]
+    roster <- sources$rosters[[sp]]
+    total_programs <- nrow(DISPLAY_CONFIG)
+    open <- origin_all() %>%
+      dplyr::filter(Year == CYCLE_CAP, Type == "Commit") %>%
+      dplyr::distinct(School, AthleteKey, .keep_all = TRUE)
+    open_programs <- dplyr::n_distinct(open$School[!is.na(open$School)])
+    date_lab <- function(x) {
+      if (is.null(x) || !length(x) || is.na(x[[1]])) return("Unknown")
+      sub(" 0", " ", format(as.Date(x[[1]]), "%b %d"), fixed = TRUE)
+    }
+    pulse_item <- function(label, value, detail, meta, color, state = "") {
+      div(
+        class = paste("gi-coverage__item gi-pulse__item",
+                      if (nzchar(state)) paste0("gi-pulse__item--", state)),
+        role = "listitem", style = paste0("--conf-color:", color),
+        span(class = "gi-pulse__label", label),
+        strong(value),
+        span(class = "gi-pulse__detail", detail),
+        tags$small(class = "gi-pulse__meta", meta)
+      )
+    }
+    outcome_year <- sources$outcomes$year
+    outcome_meta <- if (is.finite(outcome_year)) {
+      paste("Results through", outcome_year)
+    } else {
+      "Results status unavailable"
+    }
+
+    tagList(
+      div(
+        class = "gi-coverage gi-data-pulse", role = "list",
+        "aria-label" = fresh$aria,
+        pulse_item("Dataset snapshot", fresh$value, fresh$detail,
+                   outcome_meta, fresh$color, fresh$state),
+        pulse_item("Power-4 coverage", total_programs,
+                   "programs across four conferences",
+                   paste(length(conf_order()), "conference lenses"),
+                   "#0C234B"),
+        pulse_item(
+          paste(str_to_title(sp), "sources"),
+          paste0(recruit$teams, "/", total_programs),
+          "recruiting programs captured",
+          paste0("Captured ", date_lab(recruit$date), " · rosters ",
+                 roster$teams, "/", total_programs, " (",
+                 ifelse(is.finite(roster$year), roster$year, "year n/a"),
+                 ", ", date_lab(roster$date), ")"),
+          "#0072B2"),
+        pulse_item(
+          paste("Class of", CYCLE_CAP),
+          paste0(open_programs, "/", total_programs),
+          "programs reporting · open cycle",
+          paste(format(nrow(open), big.mark = ","), "HS commitments captured"),
+          if (open_programs == total_programs) "#1F7A4D" else "#D97706",
+          if (open_programs == total_programs) "fresh" else "warning")
+      ),
+      div(
+        class = paste("gi-data-note",
+                      paste0("gi-data-note--", pipeline$state)),
+        role = "status", "aria-live" = "polite",
+        icon("circle-info"),
+        span(strong(pipeline$label), paste0(". ", pipeline$detail))
+      )
+    )
+  })
+
+  ## Sport-aware task cards keep football-only analysis out of the basketball
+  ## journey while preserving the same six-question information architecture.
+  output$home_paths <- renderUI({
+    path_button <- function(id, icon_name, title, detail) {
+      actionButton(
+        id,
+        label = tagList(
+          span(class = "gi-path__icon", icon(icon_name)),
+          span(
+            class = "gi-path__copy",
+            strong(title),
+            span(detail)
+          ),
+          span(class = "gi-path__arrow", icon("arrow-right"))
+        ),
+        class = "gi-path"
+      )
+    }
+
+    fifth <- if (identical(g_sport(), "football")) {
+      path_button(
+        "go_results", "trophy", "Test talent against results",
+        "Expected wins, actual wins, SP+, and wins above talent."
+      )
+    } else {
+      path_button(
+        "go_eras", "user-tie", "See the coach imprint",
+        "How each staff changes size, talent, and recruiting geography."
+      )
+    }
+
+    div(
+      class = "gi-paths",
+      path_button(
+        "go_sizelab", "ruler-combined", "Map every body",
+        "Height, weight, position DNA, and every recruit behind the averages."
+      ),
+      path_button(
+        "go_conflab", "layer-group", "Compare the Power 4",
+        "Distribution-first league comparisons with honest guardrails."
+      ),
+      path_button(
+        "go_beef", "dumbbell", "Rank program size",
+        "Conference boards by body metric, position group, and source."
+      ),
+      path_button(
+        "go_wr", "weight-hanging", "Measure development",
+        "From listed recruiting body to the current roster."
+      ),
+      fifth,
+      path_button(
+        "go_origins", "map-location-dot", "Find where talent starts",
+        "State hotbeds, position pipelines, and how sources change over time."
+      )
+    )
+  })
+
+  output$home_fingerprint <- renderUI({
+    req(input$g_team, input$g_years)
+    yrs <- g_years_d()
+    open_scope <- if (yrs[2] > arriving_class) {
+      paste0(" · ", yrs[2], " open")
+    } else {
+      ""
+    }
+    home_program_fingerprint(
+      size_data = size_window(),
+      team_slug = input$g_team,
+      compare_slug = g_cmp(),
+      conf_slugs = conf_pool_slugs(),
+      sport = g_sport(),
+      sport_label = str_to_title(g_sport()),
+      window_label = glue("{yrs[1]}–{yrs[2]}{open_scope} · {players_lab()}"),
+      conference_label = active_conf_lab(),
+      min_team_n = if (g_sport() == "football") 8L else 5L,
+      subgroup_min_n = if (g_sport() == "football") 5L else 3L
+    )
   })
 
   ## current-status boxes for the SELECTED team (season-proof: everything is
   ## derived from the window + max class year, never hardcoded)
   output$vb_home_rank <- renderValueBox({
-    ## rank within the active team's conference (Phase 0: all 16 -> unchanged)
-    board <- team_size_summary(size_window() %>%
-                                 filter(School %in% conf_pool_slugs())) %>%
+    board_all <- team_size_summary(size_window() %>%
+                                     filter(School %in% conf_pool_slugs()))
+    selected_n <- board_all$Players[match(input$g_team, board_all$School)]
+    selected_n <- if (length(selected_n)) selected_n[[1]] else 0L
+    board <- board_all %>%
+      filter(Players >= 8L, is.finite(AvgWeight)) %>%
       arrange(desc(AvgWeight))
     rk <- which(board$School == input$g_team)
     val <- if (length(rk) == 1) paste0("#", rk, " of ", nrow(board)) else "—"
     valueBox(val,
-             glue("{team_label(input$g_team)} beef rank, ",
-                  "{input$g_years[1]}–{input$g_years[2]} window"),
+             glue("{input$g_years[1]}–{input$g_years[2]} addition weight rank ",
+                  "· n={selected_n}{ifelse(selected_n < 8, ' · limited sample', '')}"),
              icon = icon("weight-hanging"), color = "navy")
   })
   output$vb_home_class <- renderValueBox({
-    snap <- class_snapshot(size_window(), input$g_team)
+    snap <- home_snapshot()
     if (is.null(snap)) {
       return(valueBox("—", "No players in this window",
                       icon = icon("star"), color = "light-blue"))
     }
-    ## rank the newest class among the active conference's newest classes
-    ## (Phase 0: all 16 members -> unchanged)
     yr <- snap$year
-    cls_rank <- size_window() %>%
+    cls_all <- reach_window() %>%
       filter(Year == yr, School %in% conf_pool_slugs()) %>%
+      distinct(School, AthleteKey, Year, Type, .keep_all = TRUE) %>%
       group_by(School) %>%
-      summarize(r = mean(Ranking, na.rm = TRUE), .groups = "drop") %>%
+      summarize(
+        rated_n = sum(is.finite(RatingClean)),
+        r = ifelse(rated_n > 0, mean(RatingClean, na.rm = TRUE), NA_real_),
+        .groups = "drop") %>%
+      filter(rated_n > 0, is.finite(r)) %>%
       arrange(desc(r))
-    rk <- which(cls_rank$School == input$g_team)
-    valueBox(glue("{snap$avg_rating}"),
-             glue("Class of {yr} avg rating — #{rk} of {nrow(cls_rank)} ",
-                  "in the {active_conf_lab()}, {snap$blue} blue-chip",
-                  "{ifelse(snap$blue == 1, '', 's')}"),
+    reporting <- nrow(cls_all)
+    selected_rated <- cls_all$rated_n[match(input$g_team, cls_all$School)]
+    selected_rated <- if (length(selected_rated)) selected_rated[[1]] else 0L
+    rank_ready <- !snap$is_open && selected_rated >= 3L &&
+      reporting >= ceiling(0.75 * active_conf_n())
+    rk <- if (rank_ready) which(cls_all$School == input$g_team) else integer(0)
+    rank_lab <- if (length(rk) == 1L) {
+      paste0(" · #", rk, " of ", reporting, " in ", active_conf_lab())
+    } else if (snap$is_open) {
+      paste0(" · provisional · ", reporting, "/", active_conf_n(), " reporting")
+    } else {
+      " · rank withheld (limited coverage)"
+    }
+    value <- if (is.finite(snap$avg_rating)) snap$avg_rating else "—"
+    valueBox(value,
+             glue("Class of {yr} {ifelse(snap$is_open, 'open', 'arriving')} ",
+                  "avg · rated n={snap$rated_n}{rank_lab}"),
              icon = icon("star"), color = "light-blue")
   })
   output$vb_home_dev <- renderValueBox({
     if (is.null(roster_now())) {
-      return(valueBox("—", "Weight room data not scraped yet",
+      return(valueBox("—", "Roster development unavailable for this selection",
                       icon = icon("dumbbell"), color = "orange"))
     }
-    ## development rank within the active conference (Phase 0: all 16 members)
-    gains <- wr_data_r() %>%
+    gains_all <- wr_data_r() %>%
       filter(School %in% conf_pool_slugs()) %>%
       group_by(School) %>%
-      summarize(g = mean(GainPerYr), .groups = "drop") %>%
+      summarize(g = mean(GainPerYr, na.rm = TRUE),
+                n = sum(is.finite(GainPerYr)), .groups = "drop")
+    selected_n <- gains_all$n[match(input$g_team, gains_all$School)]
+    selected_n <- if (length(selected_n)) selected_n[[1]] else 0L
+    gains <- gains_all %>%
+      filter(n >= 5L, is.finite(g)) %>%
       arrange(desc(g))
     rk <- which(gains$School == input$g_team)
     val <- if (length(rk) == 1) {
       glue("+{round(gains$g[rk], 1)} lbs/yr")
     } else "—"
     valueBox(val,
-             glue("{team_label(input$g_team)} weight room: gain per year ",
+             glue("Current-roster matched development · n={selected_n} ",
                   "{ifelse(length(rk) == 1, paste0('(#', rk, ' of ',
-                  nrow(gains), ')'), '')}"),
+                  nrow(gains), ')'), '· limited sample')}"),
              icon = icon("dumbbell"), color = "orange")
   })
 
-  ## class snapshot card (newest class in the window vs the 3 before it)
+  ## Arriving-class snapshot; open-cycle coverage lives in the status rail.
   output$class_snap_title <- renderText({
-    snap <- class_snapshot(size_window(), input$g_team)
+    snap <- home_snapshot()
     if (is.null(snap)) return("Class snapshot")
-    glue("{team_label(input$g_team)} Class of {snap$year} at a glance")
+    glue("{team_label(input$g_team)} Class of {snap$year} ",
+         "{ifelse(snap$is_open, 'open-cycle watch', 'arriving-class snapshot')}")
+  })
+  output$class_snap_note <- renderUI({
+    snap <- home_snapshot()
+    if (is.null(snap)) return(NULL)
+    if (snap$is_open) {
+      ctx_note("This cycle is still open. Counts and ratings remain provisional;
+                the dashboard withholds its conference rank.")
+    } else {
+      ctx_note(glue("This is the class arriving in {snap$year}. The Class of
+                    {CYCLE_CAP} reporting rate is tracked in the status rail."))
+    }
   })
   output$class_snap <- renderUI({
     req(input$g_team)
-    snap <- class_snapshot(size_window(), input$g_team)
+    snap <- home_snapshot()
     validate(need(!is.null(snap), "No commits in this window."))
     delta_html <- function(d, suffix = "") {
       if (is.na(d)) return("")
       cls <- if (d >= 0) "snap-delta-up" else "snap-delta-down"
       glue("<span class='{cls}'>{ifelse(d >= 0, '+', '')}{d}{suffix}</span>")
     }
+    top_name <- htmltools::htmlEscape(snap$top_name)
+    top_pos <- htmltools::htmlEscape(snap$top_pos)
+    avg_rating <- if (is.finite(snap$avg_rating)) snap$avg_rating else "—"
+    pct_instate <- if (is.finite(snap$pct_instate)) paste0(snap$pct_instate, "%") else "—"
+    avg_height <- if (length(snap$avg_height) && !is.na(snap$avg_height)) {
+      snap$avg_height
+    } else {
+      "—"
+    }
+    avg_weight <- if (is.finite(snap$avg_weight)) snap$avg_weight else "—"
+    top_rating <- if (is.finite(snap$top_rating)) snap$top_rating else "—"
     HTML(glue(
-      "<div class='row'>",
+      "<div class='row gi-snapshot-core'>",
       "<div class='col-xs-3 snap-stat'><div class='num'>{snap$n}</div>",
-      "<div class='lbl'>Players added</div></div>",
-      "<div class='col-xs-3 snap-stat'><div class='num'>{snap$avg_rating}</div>",
-      "<div class='lbl'>Avg rating {delta_html(snap$d_rating)}</div></div>",
+      "<div class='lbl'>Listed additions</div></div>",
+      "<div class='col-xs-3 snap-stat'><div class='num'>{avg_rating}</div>",
+      "<div class='lbl'>Avg rating · n={snap$rated_n} {delta_html(snap$d_rating)}</div></div>",
       "<div class='col-xs-3 snap-stat'><div class='num'>{snap$blue}</div>",
       "<div class='lbl'>Blue-chips (90+)</div></div>",
-      "<div class='col-xs-3 snap-stat'><div class='num'>{snap$pct_instate}%</div>",
-      "<div class='lbl'>In-state</div></div>",
+      "<div class='col-xs-3 snap-stat'><div class='num'>{pct_instate}</div>",
+      "<div class='lbl'>Listed-origin in-state · n={snap$origin_n}</div></div>",
       "</div>",
-      "<div class='row'>",
-      "<div class='col-xs-4 snap-stat'><div class='num'>{snap$avg_height}</div>",
-      "<div class='lbl'>Avg height</div></div>",
-      "<div class='col-xs-4 snap-stat'><div class='num'>{snap$avg_weight}</div>",
-      "<div class='lbl'>Avg lbs {delta_html(snap$d_weight)}</div></div>",
+      "<div class='row gi-snapshot-detail'>",
+      "<div class='col-xs-4 snap-stat'><div class='num'>{avg_height}</div>",
+      "<div class='lbl'>Body avg height · n={snap$body_n}</div></div>",
+      "<div class='col-xs-4 snap-stat'><div class='num'>{avg_weight}</div>",
+      "<div class='lbl'>Body avg lbs · n={snap$body_n} {delta_html(snap$d_weight)}</div></div>",
       "<div class='col-xs-4 snap-stat'><div class='num' style='font-size:16px; padding-top:8px;'>",
-      "{snap$top_name}</div>",
-      "<div class='lbl'>Headliner ({snap$top_pos}, {snap$top_rating})</div></div>",
+      "{top_name}</div>",
+      "<div class='lbl'>Headliner ({top_pos}, {top_rating})</div></div>",
       "</div>"))
   })
 
@@ -3232,7 +3945,7 @@ server <- function(input, output, session) {
   ## (the strip compares against the copy captured BEFORE these overwrites)
   observe({
     req(input$g_team)
-    snap <- tryCatch(class_snapshot(size_window(), input$g_team),
+    snap <- tryCatch(home_snapshot(),
                      error = function(e) NULL)
     if (is.null(snap) || !is.finite(snap$avg_rating)) return(invisible(NULL))
     session$sendCustomMessage("saveSnapshot", list(
@@ -3252,7 +3965,7 @@ server <- function(input, output, session) {
         !identical(p$sport, g_sport()) ||
         !identical(p$pool, input$g_type %||% "both")) return(NULL)
     if (!isTRUE(p$visited < Sys.Date())) return(NULL)
-    snap <- tryCatch(class_snapshot(size_window(), input$g_team),
+    snap <- tryCatch(home_snapshot(),
                      error = function(e) NULL)
     if (is.null(snap) ||
         !identical(as.integer(snap$year), p$year)) return(NULL)
@@ -3276,6 +3989,7 @@ server <- function(input, output, session) {
     if (length(parts) == 0) return(NULL)
     date_lab <- sub(" 0", " ", format(p$visited, "%b %d"), fixed = TRUE)
     div(class = "lastvisit-strip",
+        role = "status", "aria-live" = "polite",
         tags$span(class = "lv-lead",
                   glue("Since your last visit ({date_lab}):")),
         HTML(paste(parts, collapse = " &middot; ")),
@@ -4015,83 +4729,336 @@ server <- function(input, output, session) {
       name = glue("{input$g_team}-season-scoreboard")), "team scoreboard")
   })
 
-  ## ---- LEGACY: filtered data + map + distance plots ---------------------------------------
-  filtered_data <- reactive({
-    req(input$g_team, input$g_years)
-    ## inputs reach this SQL as strings -- accept only known values
-    ## (a forged websocket message must not become a query fragment)
-    validate(need(input$g_team %in% TEAM_CONFIG$slug, "Unknown team."))
-    sp <- g_sport()
-    validate(need(sp %in% c("football", "basketball"), "Unknown sport."))
-    db_table <- if (sp == "basketball") "recruit_class_basketball" else "recruit_class_football"
-
-    ## transfers carry no HS location, so they only matter here when included
-    ## (NULL-fallback matches the radio's startup default "both")
-    type_clause <- switch(input$g_type %||% "both",
-                          commit = " AND Type = 'Commit'",
-                          transfer = " AND Type = 'Transfer'",
-                          "")
-    geting_data <- paste0(
-      "Select * from ", db_table, " where sport = '", sp,
-      "' AND School = '", input$g_team, "'", type_clause,
-      " AND Year >= ", as.integer(input$g_years[1]),
-      " AND Year <= ", as.integer(input$g_years[2]),
-      " ORDER BY Ranking, NationalRank desc, StateRank desc, PositionRank desc, Name")
-
-    all_data <- safe_query(conn, geting_data)
-    validate(need(nrow(all_data) > 0, "No players in this window."))
-
-    all_data$lat <- as.numeric(all_data$lat)
-    all_data$long <- as.numeric(all_data$long)
-    all_data$college_lat <- as.numeric(all_data$college_lat)
-    all_data$college_long <- as.numeric(all_data$college_long)
-    all_data$Ranking <- as.numeric(all_data$Ranking)
-    all_data$NationalRank <- as.numeric(all_data$NationalRank)
-    all_data$PositionRank <- as.numeric(all_data$PositionRank)
-    all_data$StateRank <- as.numeric(all_data$StateRank)
-
-    ## miles from high school to campus
-    big12_data <- all_data %>%
-      mutate(disFromHS_m =
-               distGeo(p1 = cbind(long, lat),
-                       p2 = cbind(college_long, college_lat)))
-    meters_per_mile <- 1609.34
-    big12_data_wDis <- big12_data %>%
-      mutate(miles_away = round(disFromHS_m / meters_per_mile, 0))
-
-    ## fix top 150 national ranks
-    big12_data_wDis <- big12_data_wDis %>%
-      mutate(NationalRank = ifelse(NationalRank > 150, NA, NationalRank))
-
-    big12_data_wDis %>%
-      mutate(University = pretty_university(School))
+  ## ---- TALENT ORIGINS --------------------------------------------------------
+  ## One shared set of aggregate frames powers each chart and its semantic
+  ## table twin. Team/compare/type are intentionally absent from these pools:
+  ## this page is the 67-destination HS/prep origin universe.
+  origin_board_r <- reactive({
+    req(input$origin_metric, input$origin_pos, input$origin_state)
+    origin_state_board(
+      origin_pool_r(),
+      metric = input$origin_metric,
+      position = input$origin_pos,
+      top_n = 15,
+      selected_state = input$origin_state
+    )
   })
 
-  ## v3.5: pipeline map built from the prepped size data (main + compare
-  ## team footprints in team colors); scripts/map.R kept for reference
+  origin_positions_r <- reactive({
+    req(input$origin_metric)
+    origin_position_board(origin_pool_r(), metric = input$origin_metric,
+                          top_n = 3)
+  })
+
+  origin_trend_r <- reactive({
+    req(input$origin_state, input$origin_metric, input$origin_pos)
+    origin_year_board(
+      origin_pool_r(),
+      state = input$origin_state,
+      metric = input$origin_metric,
+      position = input$origin_pos
+    )
+  })
+
+  observeEvent(input$origin_state_click, {
+    state <- toupper(input$origin_state_click %||% "")
+    if (!state %in% ORIGIN_US_CODES) return(invisible(NULL))
+    updateSelectInput(session, "origin_state", selected = state)
+    updateRadioButtons(session, "origin_view", selected = "trend")
+  })
+
+  output$origin_board <- renderGirafe({
+    board <- origin_board_r()
+    validate(need(nrow(board) > 0,
+                  "No state meets this measure's sample rule in the selected window."))
+    girafe_try(
+      girafe_wrap(
+        plot_origin_state_board(board, g_sport(), input$origin_state),
+        w = 10.8, h = 7.8,
+        name = glue("power4-{g_sport()}-talent-origins-state-board")
+      ),
+      "talent origins state board"
+    )
+  }) %>% bindCache(g_sport(), g_years_d(), input$origin_metric,
+                   input$origin_pos, input$origin_state,
+                   (input$client_w %||% 1200) < 700)
+
+  output$origin_positions <- renderGirafe({
+    board <- origin_positions_r()
+    validate(need(nrow(board) > 0,
+                  "No position group meets this measure's sample rule."))
+    phone <- is_phone()
+    girafe_try(
+      girafe_wrap(
+        plot_origin_position_board(board, g_sport(), phone = phone),
+        w = 11, h = if (phone) 9.5 else 7.2,
+        name = glue("power4-{g_sport()}-talent-origins-position-hotbeds")
+      ),
+      "talent origins position hotbeds"
+    )
+  }) %>% bindCache(g_sport(), g_years_d(), input$origin_metric,
+                   (input$client_w %||% 1200) < 700)
+
+  output$origin_trend <- renderGirafe({
+    trend <- origin_trend_r()
+    validate(need(any(is.finite(trend$Value)),
+                  "This state does not meet the yearly sample rule in the selected window."))
+    girafe_try(
+      girafe_wrap(
+        plot_origin_trend(trend, input$origin_state, g_sport()),
+        w = 10.8, h = 5.3,
+        name = glue("power4-{g_sport()}-{tolower(input$origin_state)}-origin-trend")
+      ),
+      "talent origins trend"
+    )
+  }) %>% bindCache(g_sport(), g_years_d(), input$origin_metric,
+                   input$origin_pos, input$origin_state,
+                   (input$client_w %||% 1200) < 700)
+
+  output$origin_board_twin <- renderUI({
+    req(isTRUE(input$twin_origin_board))
+    board <- origin_board_r()
+    open_note <- attr(board, "open_note") %||% "No open class is included."
+    HTML(origin_state_table_html(
+      board,
+      glue("{str_to_title(g_sport())}, {g_years_d()[1]}-{g_years_d()[2]}; ",
+           "last listed HS/prep location. {open_note}")
+    ))
+  })
+  outputOptions(output, "origin_board_twin", suspendWhenHidden = FALSE)
+
+  output$origin_positions_twin <- renderUI({
+    req(isTRUE(input$twin_origin_positions))
+    board <- origin_positions_r()
+    open_note <- attr(board, "open_note") %||% "No open class is included."
+    HTML(origin_position_table_html(
+      board,
+      glue("{str_to_title(g_sport())}, {g_years_d()[1]}-{g_years_d()[2]}; ",
+           "top three qualifying states inside each position group. {open_note}")
+    ))
+  })
+  outputOptions(output, "origin_positions_twin", suspendWhenHidden = FALSE)
+
+  output$origin_trend_twin <- renderUI({
+    req(isTRUE(input$twin_origin_trend))
+    trend <- origin_trend_r()
+    HTML(origin_trend_table_html(
+      trend,
+      glue("{str_to_title(g_sport())}; last listed HS/prep location. ",
+           "Open future class is not treated as complete.")
+    ))
+  })
+  outputOptions(output, "origin_trend_twin", suspendWhenHidden = FALSE)
+
+  output$origin_story <- renderUI({
+    view <- input$origin_view %||% "board"
+    base <- origin_pool_r()
+    d <- if (identical(view, "positions")) base else
+      .origin_filter_position(base, input$origin_pos %||% "All")
+    validate(need(nrow(d) > 0, "No qualifying HS/prep origins in this window."))
+    open_text <- origin_open_cycle_note(d)
+    open_note <- if (nzchar(open_text)) paste0(" ", open_text) else ""
+
+    sentence <- if (identical(view, "positions")) {
+      board <- origin_positions_r()
+      leaders <- board %>%
+        dplyr::filter(Rank == 1) %>%
+        dplyr::count(StateName, sort = TRUE, name = "GroupsLed")
+      if (nrow(leaders)) {
+        glue("{leaders$StateName[1]} leads {leaders$GroupsLed[1]} of ",
+             "{length(unique(board$PosGroup))} position boards on ",
+             "{tolower(attr(board, 'metric_label'))}.{open_note}")
+      } else {
+        paste0("No position group clears the current sample rule.", open_note)
+      }
+    } else if (identical(view, "trend")) {
+      trend <- origin_trend_r()
+      complete <- trend %>%
+        dplyr::filter(!IsOpenCycle, is.finite(Value)) %>%
+        dplyr::arrange(Year)
+      if (nrow(complete) >= 2) {
+        first <- complete[1, ]
+        last <- complete[nrow(complete), ]
+        delta <- last$Value - first$Value
+        direction <- if (abs(delta) < 0.05) "held steady" else
+          if (delta > 0) "rose" else "fell"
+        glue("{unique(trend$StateName)} {tolower(attr(trend, 'metric_label'))} ",
+             "{direction} from {first$ValueLabel} in {first$Year} to ",
+             "{last$ValueLabel} in {last$Year}.{open_note}")
+      } else {
+        glue("{unique(trend$StateName)} has {nrow(complete)} complete class",
+             "{ifelse(nrow(complete) == 1, '', 'es')} clearing the sample rule ",
+             "in this window.{open_note}")
+      }
+    } else {
+      board <- origin_board_r() %>% dplyr::arrange(FieldRank)
+      metric <- input$origin_metric %||% "blue_n"
+      if (!nrow(board)) {
+        paste0("No state clears the sample rule for this measure.", open_note)
+      } else {
+        leader <- board[1, ]
+        lead_text <- switch(
+          metric,
+          commit_n = glue("{leader$StateName} leads with ",
+                          "{format(leader$N, big.mark = ',')} captured signees ",
+                          "({sprintf('%.1f%%', 100 * leader$N / nrow(d))} of this view)."),
+          blue_n = {
+            pool_blue <- sum(d$IsBlueChip, na.rm = TRUE)
+            glue("{leader$StateName} leads with ",
+                 "{format(leader$BlueN, big.mark = ',')} blue-chip signees",
+                 "{ifelse(pool_blue > 0, paste0(' (', sprintf('%.1f%%', 100 * leader$BlueN / pool_blue), ' of this view)'), '')}.")
+          },
+          blue_share = glue("{leader$StateName} leads qualifying states at ",
+                            "{leader$ValueLabel} blue chips (rated n=",
+                            "{leader$RatedN} of {leader$N})."),
+          median_rating = glue("{leader$StateName} leads qualifying states with ",
+                               "a {leader$ValueLabel} median rating (rated n=",
+                               "{leader$RatedN} of {leader$N})."),
+          glue("{leader$StateName} leads this measure at {leader$ValueLabel}.")
+        )
+        focus_state <- input$origin_state %||% "AZ"
+        focus_note <- ""
+        if (!focus_state %in% board$StateClean) {
+          focus <- .origin_state_summary(d) %>%
+            dplyr::filter(StateClean == focus_state)
+          info <- origin_metric_info(metric, "board")
+          focus_note <- if (nrow(focus) && isTRUE(info$quality)) {
+            glue(" Focus state {origin_state_name(focus_state)} is withheld for ",
+                 "this quality measure (rated n={focus$RatedN}; minimum ",
+                 "{attr(board, 'min_n')}).")
+          } else {
+            glue(" Focus state {origin_state_name(focus_state)} has no captured ",
+                 "signees in this view.")
+          }
+        }
+        paste0(lead_text, focus_note, open_note)
+      }
+    }
+
+    div(
+      class = "gi-origin-insight",
+      role = "status", `aria-live` = "polite", `aria-atomic` = "true",
+      icon("lightbulb"),
+      p(strong("What stands out: "), sentence)
+    )
+  })
+
+  output$origin_deeper <- renderUI({
+    d <- origin_pool_r()
+    validate(need(nrow(d) > 0, "No deeper signals in this window."))
+    concentration <- origin_concentration(d)
+    factories <- origin_factory_board(d, top_n = 3)
+    state <- input$origin_state %||% "AZ"
+    signature <- origin_position_signature(d, state)
+    state_total <- sum(signature$StateN, na.rm = TRUE)
+    signature <- signature %>%
+      dplyr::filter(StateN >= ifelse(g_sport() == "football", 5, 3))
+
+    all_adds <- origin_window() %>%
+      dplyr::filter(Type %in% c("Commit", "Transfer"),
+                    Year <= as.integer(format(Sys.Date(), "%Y"))) %>%
+      dplyr::group_by(Year) %>%
+      dplyr::summarize(
+        Additions = dplyr::n(),
+        NonPortalShare = 100 * sum(Type == "Commit") / Additions,
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(Year)
+
+    factory_text <- if (nrow(factories)) {
+      glue("{factories$FactoryLabel[1]} is the leading listed talent factory ",
+           "in this window ({format(factories$N[1], big.mark = ',')} unique signees).")
+    } else "No listed school clears the factory view in this window."
+
+    signature_text <- if (state_total > 0 && nrow(signature)) {
+      top <- signature[1, ]
+      glue("{origin_state_name(state)} leans most toward {top$PosGroup}: ",
+           "{sprintf('%.1f%%', top$StateShare)} of its pool versus ",
+           "{sprintf('%.1f%%', top$PoolShare)} across core Power-4 position groups.")
+    } else {
+      glue("{origin_state_name(state)} has too little position volume for a stable signature.")
+    }
+
+    acquisition_text <- if (nrow(all_adds) >= 2) {
+      first <- all_adds[1, ]
+      last <- all_adds[nrow(all_adds), ]
+      glue("Non-portal commitment/transfer records moved from ",
+           "{sprintf('%.1f%%', first$NonPortalShare)} of tracked additions in ",
+           "{first$Year} to {sprintf('%.1f%%', last$NonPortalShare)} in ",
+           "{last$Year}; this is roster-acquisition mix, not a causal claim.")
+    } else if (nrow(all_adds) == 1) {
+      glue("Non-portal records are {sprintf('%.1f%%', all_adds$NonPortalShare[1])} ",
+           "of tracked additions in {all_adds$Year[1]}.")
+    } else "No complete class is available for acquisition-mix context."
+
+    source_rows <- origin_window() %>% dplyr::filter(Type == "Commit")
+    kind_n <- table(factor(source_rows$OriginKind,
+                           levels = c("hs_prep", "juco", "needs_review",
+                                      "outside_us")))
+    coverage_text <- glue(
+      "{format(kind_n[['hs_prep']], big.mark = ',')} HS/prep records; ",
+      "{format(kind_n[['juco']], big.mark = ',')} high-confidence JUCO and ",
+      "{format(kind_n[['needs_review']], big.mark = ',')} College-name review ",
+      "records excluded; {format(kind_n[['outside_us']], big.mark = ',')} ",
+      "outside 50 states + DC."
+    )
+
+    tagList(
+      tags$ul(
+        class = "gi-origin-signal-list",
+        tags$li(strong("Concentration. "),
+                glue("The top four state/prep locations supply ",
+                     "{sprintf('%.1f%%', concentration$top4_share)} of this pool ",
+                     "({sprintf('%.1f', concentration$effective_states)} effective states).")),
+        tags$li(strong("Talent factory. "), factory_text),
+        if (!identical(input$origin_view, "positions"))
+          tags$li(strong("Position signature. "), signature_text),
+        tags$li(strong("Acquisition shift. "), acquisition_text)
+      ),
+      p(class = "gi-origin-coverage", strong("Coverage: "), coverage_text)
+    )
+  })
+  ## ---- Program Reach: selected-window table + map + distance plots ---------
+  filtered_data <- reactive({
+    req(input$g_team, input$g_years)
+    validate(need(input$g_team %in% TEAM_CONFIG$slug, "Unknown team."))
+    d <- reach_window() %>% filter(School == input$g_team)
+    validate(need(nrow(d) > 0, "No players in this window."))
+    d %>% mutate(
+      Ranking = suppressWarnings(as.numeric(Ranking)),
+      NationalRank = suppressWarnings(as.numeric(NationalRank)),
+      NationalRank = ifelse(NationalRank > 150, NA, NationalRank),
+      University = TeamName)
+  })
+
+  ## Pipeline map built from the raw-origin frame (main + compare footprints
+  ## in team colors); unlike body charts, geography does not require size data.
   output$gridPlot <- renderLeaflet({
     req(input$g_team, input$g_years)
-    team_w <- size_window() %>% filter(School == input$g_team)
+    team_w <- reach_window() %>% filter(School == input$g_team)
     validate(need(nrow(team_w) > 0, "No recruits in this window."))
+    mapped <- is.finite(suppressWarnings(as.numeric(team_w$lat))) &
+      is.finite(suppressWarnings(as.numeric(team_w$long)))
+    validate(need(sum(mapped) > 0,
+                  "No recruits with mapped listed origins in this window."))
     ## say on the map itself how many window players CAN'T be mapped yet
-    ## (transfers appear once the nightly profile backfill captures a
-    ## hometown; a few HS commits lack geocodes)
-    n_unmapped <- sum(is.na(suppressWarnings(as.numeric(team_w$lat))) |
-                        is.na(suppressWarnings(as.numeric(team_w$long))))
-    build_pipeline_map(size_window(), input$g_team, g_sport(),
+    ## (transfers appear once the nightly profile backfill captures a listed
+    ## origin; a few non-portal recruits still lack geocodes)
+    n_unmapped <- sum(!mapped)
+    build_pipeline_map(reach_window(), input$g_team, g_sport(),
                        compare_slug = g_cmp(), n_unmapped = n_unmapped)
   })
 
   ## v4.4: themed interactive rebuild (the sourced scripts/box_plot.R is
   ## retired); transfers appear once the nightly profile backfill captures a
-  ## hometown -- until then there is no origin to measure from
+  ## listed origin -- until then there is no distance to measure
   output$box_plot <- renderGirafe({
     req(input$g_team, input$g_years)
-    d <- size_window() %>%
+    d <- reach_window() %>%
       filter(School == input$g_team, !is.na(miles_away))
     validate(need(nrow(d) > 0,
-                  "No recruits with mapped high schools in this window."))
-    girafe_try(girafe_wrap(plot_distance_box(size_window(), input$g_team, g_sport()),
+                  "No recruits with mapped listed origins in this window."))
+    girafe_try(girafe_wrap(plot_distance_box(reach_window(), input$g_team, g_sport()),
                 w = 10.5, h = 4.2, name = png_name("distance-box")), "distance box")
   })
 
@@ -4099,10 +5066,10 @@ server <- function(input, output, session) {
   ## profile); the sourced scripts/plot.R version is retired
   output$distance_plot <- renderGirafe({
     req(input$g_team, input$g_years, input$show_outliers)
-    d <- size_window() %>%
+    d <- reach_window() %>%
       filter(School == input$g_team, !is.na(miles_away))
-    validate(need(nrow(d) > 0, "No recruits with mapped high schools in this window."))
-    girafe_try(girafe_wrap(plot_distance_lab(size_window(), input$g_team, g_sport(),
+    validate(need(nrow(d) > 0, "No recruits with mapped listed origins in this window."))
+    girafe_try(girafe_wrap(plot_distance_lab(reach_window(), input$g_team, g_sport(),
                                   show_outliers = input$show_outliers),
                 name = png_name("distance-lab")), "distance lab")
   })
@@ -4114,15 +5081,15 @@ server <- function(input, output, session) {
         "No recruits found for the selected filters. Please adjust your selections."))
     }
     d <- filtered_data() %>%
-      select(Name, miles_away, Location, University, School_City, Ranking,
+      select(Name, miles_away, Location, University, Ranking,
              NationalRank, Position, Height, Weight, Year) %>%
       arrange(desc(miles_away))
 
     datatable(
       as.data.frame(d),
-      colnames = c("Recruit", "Distance Traveled (miles)", "From", "To", "City",
-                   "247Sports Ranking", "National Ranking", "Position",
-                   "Height", "Weight", "Year"),
+      colnames = c("Recruit", "Distance from Listed Origin (miles)",
+                   "Listed Origin", "Destination Program", "247Sports Rating",
+                   "National Ranking", "Position", "Height", "Weight", "Year"),
       options = list(pageLength = 10, lengthChange = FALSE),
       rownames = FALSE)
   })

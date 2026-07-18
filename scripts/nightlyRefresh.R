@@ -870,13 +870,13 @@ tryCatch({
   ## verify whichever publish channel actually ran: the push feeds Connect
   ## Cloud, the deploy feeds shinyapps -- one failing must not skip the other.
   ## shinyapps serves the app HTML directly, so we demand the freshness badge
-  ## ("data updated <today>") in the body -- a 200 from the OLD bundle is a
+  ## ("source capture <today>") in the body -- a 200 from the OLD bundle is a
   ## false pass. The marker format MUST match app.R's last_refresh_label
   ## (format "%b %d, %Y" with the day's leading zero stripped). Connect
   ## Cloud's share URL serves an iframe wrapper (the app HTML is not in the
   ## GET body), so it gets a plain 200 check with a longer budget to ride out
   ## the post-push rebuild.
-  marker <- paste0("data updated ",
+  marker <- paste0("source capture ",
                    sub(" 0", " ", format(published_date, "%b %d, %Y"),
                        fixed = TRUE))
   urls <- c(if (identical(stages$deploy, "ok")) c(shinyapps = find_shinyapps_url()),

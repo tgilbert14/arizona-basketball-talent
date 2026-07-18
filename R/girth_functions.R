@@ -82,16 +82,21 @@ is_trench <- function(pos_group) {
 
 ## pretty school names, centralizing the logic that lived inside app.R
 pretty_university <- function(school_slug) {
+  school_slug <- as.character(school_slug)
   u_of <- c("arizona", "utah", "kansas", "houston",
             "colorado", "cincinnati", "central-florida")
-  out <- ifelse(
+  fallback <- ifelse(
     nchar(school_slug) == 3,
     toupper(school_slug),
     ifelse(school_slug %in% u_of,
            paste0("University of ", str_to_title(school_slug)),
            paste0(str_to_title(school_slug), " University"))
   )
-  str_replace_all(out, "-", " ")
+  fallback <- str_replace_all(fallback, "-", " ")
+  idx <- match(school_slug, TEAM_CONFIG$slug)
+  known <- !is.na(idx)
+  fallback[known] <- TEAM_CONFIG$team_name[idx[known]]
+  fallback
 }
 
 ## ---------------------------------------------------------------------------

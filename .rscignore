@@ -14,3 +14,5 @@ rsconnect
 README.md
 LICENSE
 *.Rproj
+*.orig
+*.rej

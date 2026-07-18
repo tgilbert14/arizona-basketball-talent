@@ -15,7 +15,6 @@ library(readr)
 library(DBI)
 library(RSQLite)
 library(leaflet)
-library(here)
 ## sf + smoothr are NOT loaded eagerly: only the Recruiting Map's state
 ## hulls use them (namespaced in build_pipeline_map), and keeping them off
 ## the startup path saves ~100MB on the deployed 1GB worker
@@ -25,6 +24,11 @@ library(ggrepel)
 library(ggtext)
 library(ggiraph)
 library(glue)
+
+## Shiny exports this helper in current releases; keep a tiny fallback for
+## older local runtimes and scripts that source the project helpers directly.
+if (!exists("%||%", mode = "function"))
+  `%||%` <- function(x, y) if (is.null(x)) y else x
 library(tidyr)
 #library(plotly)
 

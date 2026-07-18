@@ -143,36 +143,65 @@ diff_sport <- function(cur, base) {
   adds <- anti_join(c2, b2, by = ".k")
   gone <- anti_join(b2, c2, by = ".k")
 
-  ## coverage honesty: a class YEAR that exists in the current db but not in
-  ## the baseline is a COVERAGE change (we started tracking a new cycle),
-  ## not recruiting activity -- e.g. seeding the 2027 class added 271 rows
-  ## in one day. Reporting those as "additions" reads like a wild recruiting
-  ## week on the public brief. Pull them out of the additions list and
-  ## report them as one "now tracking" line instead; headline counts
-  ## exclude them.
-  new_years <- setdiff(unique(c2$Year), unique(b2$Year))
-  coverage <- NULL
-  if (length(new_years) > 0 && nrow(adds) > 0) {
-    cov_rows <- adds$Year %in% new_years
-    if (any(cov_rows)) {
-      coverage <- adds[cov_rows, , drop = FALSE]
-      adds <- adds[!cov_rows, , drop = FALSE]
-    }
+  ## Coverage honesty applies to BOTH dimensions that can expand between
+  ## snapshots: a newly tracked class year and a newly onboarded program.
+  ## Every row for a school absent from the baseline is backfill, not weekly
+  ## recruiting activity. Exclude the union before any headline, blue-chip,
+  ## rename, or mover calculation.
+  current_schools <- unique(c2$School[!is.na(c2$School) & nzchar(c2$School)])
+  baseline_schools <- unique(b2$School[!is.na(b2$School) & nzchar(b2$School)])
+  new_schools <- setdiff(current_schools, baseline_schools)
+  old_schools <- setdiff(baseline_schools, current_schools)
+  stable_schools <- intersect(current_schools, baseline_schools)
+  current_years <- unique(
+    c2$Year[c2$School %in% stable_schools & !is.na(c2$Year)])
+  baseline_years <- unique(
+    b2$Year[b2$School %in% stable_schools & !is.na(b2$Year)])
+  new_years <- setdiff(current_years, baseline_years)
+
+  ## Deep-history changes are dataset maintenance, not current recruiting.
+  ## The live window includes this calendar year, the immediately prior class,
+  ## and the next cycle so late portal/listing updates remain eligible.
+  activity_floor <- as.integer(format(Sys.Date(), "%Y")) - 1L
+  activity_ceiling <- as.integer(format(Sys.Date(), "%Y")) + 1L
+
+  coverage_school <- adds[adds$School %in% new_schools, , drop = FALSE]
+  if (nrow(adds) > 0) {
+    adds <- adds[!(adds$School %in% new_schools), , drop = FALSE]
+  }
+  coverage_year <- adds[adds$Year %in% new_years, , drop = FALSE]
+  if (nrow(adds) > 0) {
+    adds <- adds[!(adds$Year %in% new_years), , drop = FALSE]
+  }
+  coverage_history <- adds[
+    !is.na(adds$Year) &
+      (adds$Year < activity_floor | adds$Year > activity_ceiling), ,
+    drop = FALSE]
+  if (nrow(adds) > 0) {
+    adds <- adds[is.na(adds$Year) |
+                   (adds$Year >= activity_floor & adds$Year <= activity_ceiling), ,
+                 drop = FALSE]
   }
 
-  ## the mirror case: a class YEAR in the baseline but gone from the current
-  ## db is a coverage CONTRACTION (a cycle retired from tracking -- e.g. the
-  ## July 2026 cleanup that removed beyond-ceiling 2028 rows), not decommit
-  ## activity. Reporting those under "no longer listed" would read as false
-  ## decommits, so pull them out and disclose them in one line instead.
-  old_years <- setdiff(unique(b2$Year), unique(c2$Year))
-  contraction <- NULL
-  if (length(old_years) > 0 && nrow(gone) > 0) {
-    con_rows <- gone$Year %in% old_years
-    if (any(con_rows)) {
-      contraction <- gone[con_rows, , drop = FALSE]
-      gone <- gone[!con_rows, , drop = FALSE]
-    }
+  ## Mirror the same rule for a retired class year or a program removed from
+  ## the tracked universe. Those rows are coverage contraction, not decommits.
+  old_years <- setdiff(baseline_years, current_years)
+  contraction_school <- gone[gone$School %in% old_schools, , drop = FALSE]
+  if (nrow(gone) > 0) {
+    gone <- gone[!(gone$School %in% old_schools), , drop = FALSE]
+  }
+  contraction_year <- gone[gone$Year %in% old_years, , drop = FALSE]
+  if (nrow(gone) > 0) {
+    gone <- gone[!(gone$Year %in% old_years), , drop = FALSE]
+  }
+  contraction_history <- gone[
+    !is.na(gone$Year) &
+      (gone$Year < activity_floor | gone$Year > activity_ceiling), ,
+    drop = FALSE]
+  if (nrow(gone) > 0) {
+    gone <- gone[is.na(gone$Year) |
+                   (gone$Year >= activity_floor & gone$Year <= activity_ceiling), ,
+                 drop = FALSE]
   }
 
   ## name-drift collapse: 247 relabeling a player ("Kevin Moorer" ->
@@ -220,26 +249,41 @@ diff_sport <- function(cur, base) {
   ## the movers table keys on the newest tracked cycle; never let a stray
   ## beyond-ceiling row (calendar+2) move the goalposts
   yr <- min(yr, as.integer(format(Sys.Date(), "%Y")) + 1L)
-  mov <- full_join(
-    cur %>% filter(Year == yr, Type == "Commit") %>%
-      group_by(School) %>%
-      summarize(n_now = n(), avg_now = mean(Ranking, na.rm = TRUE),
-                .groups = "drop"),
-    base %>% filter(Year == yr, Type == "Commit") %>%
-      group_by(School) %>%
-      summarize(n_then = n(), avg_then = mean(Ranking, na.rm = TRUE),
-                .groups = "drop"),
-    by = "School") %>%
-    mutate(n_now = ifelse(is.na(n_now), 0L, n_now),
-           n_then = ifelse(is.na(n_then), 0L, n_then),
-           d_n = n_now - n_then,
-           d_avg = round(avg_now - avg_then, 1)) %>%
-    filter(n_now >= 3, d_n != 0 | (!is.na(d_avg) & d_avg != 0)) %>%
-    arrange(desc(abs(d_n)), School)
+  movement_available <- yr %in% current_years && yr %in% baseline_years
+  mov <- if (movement_available) {
+    full_join(
+      cur %>% filter(School %in% stable_schools,
+                     Year == yr, Type == "Commit") %>%
+        group_by(School) %>%
+        summarize(n_now = n(), avg_now = mean(Ranking, na.rm = TRUE),
+                  .groups = "drop"),
+      base %>% filter(School %in% stable_schools,
+                      Year == yr, Type == "Commit") %>%
+        group_by(School) %>%
+        summarize(n_then = n(), avg_then = mean(Ranking, na.rm = TRUE),
+                  .groups = "drop"),
+      by = "School") %>%
+      mutate(n_now = ifelse(is.na(n_now), 0L, n_now),
+             n_then = ifelse(is.na(n_then), 0L, n_then),
+             d_n = n_now - n_then,
+             d_avg = round(avg_now - avg_then, 1)) %>%
+      filter(n_now >= 3, d_n != 0 | (!is.na(d_avg) & d_avg != 0)) %>%
+      arrange(desc(abs(d_n)), School)
+  } else {
+    data.frame()
+  }
 
   blue <- adds %>% filter(!is.na(Ranking), Ranking >= 90)
   list(adds = adds, gone = gone, renamed = renamed, mov = mov, blue = blue,
-       yr = yr, coverage = coverage, contraction = contraction)
+       yr = yr, movement_available = movement_available,
+       coverage_year = coverage_year, coverage_school = coverage_school,
+       coverage_history = coverage_history,
+       contraction_year = contraction_year,
+       contraction_school = contraction_school,
+       contraction_history = contraction_history,
+       activity_floor = activity_floor, activity_ceiling = activity_ceiling,
+       new_schools = new_schools,
+       old_schools = old_schools)
 }
 
 ## ---------------------------------------------------------------------------
@@ -278,28 +322,76 @@ sport_html <- function(sport_name, cur, base, base_label) {
   d <- diff_sport(cur, base)
   h <- c(paste0("<h2>", sport_name, "</h2>"))
 
-  ## coverage change first, disclosed as coverage -- never as activity
-  if (!is.null(d$coverage) && nrow(d$coverage) > 0) {
-    cov_yrs <- sort(unique(d$coverage$Year))
+  ## Coverage changes appear before activity and never enter its counts.
+  if (nrow(d$coverage_year) > 0) {
+    cov_yrs <- sort(unique(d$coverage_year$Year))
     h <- c(h, paste0(
-      "<p class='coverage'>Now tracking the ",
-      paste(cov_yrs, collapse = " and "), " class",
-      if (length(cov_yrs) > 1) "es" else "", ": ",
-      nrow(d$coverage), " players entered the database as a coverage ",
-      "expansion, not as this week's recruiting activity, and are ",
-      "excluded from the counts below.</p>"))
+      "<p class='coverage'><strong>Coverage expanded:</strong> now tracking ",
+      "the ", paste(cov_yrs, collapse = " and "), " class",
+      if (length(cov_yrs) > 1) "es" else "", ". ",
+      nrow(d$coverage_year), " player rows entered with the new cycle and ",
+      "are excluded from this week's recruiting activity.</p>"))
+  }
+  if (nrow(d$coverage_school) > 0) {
+    cov_schools <- sort(unique(d$coverage_school$School))
+    h <- c(h, paste0(
+      "<p class='coverage'><strong>Program coverage expanded:</strong> ",
+      length(cov_schools), " newly tracked program",
+      if (length(cov_schools) == 1) "" else "s", " added ",
+      nrow(d$coverage_school), " backfilled player rows. Those rows are ",
+      "excluded from every activity, blue-chip, and class-movement count ",
+      "below.</p>"))
+  }
+  if (nrow(d$coverage_history) > 0) {
+    hist_yrs <- sort(unique(d$coverage_history$Year))
+    hist_span <- if (length(hist_yrs) == 1) hist_yrs else
+      paste0(min(hist_yrs), "&ndash;", max(hist_yrs))
+    hist_schools <- unique(d$coverage_history$School)
+    h <- c(h, paste0(
+      "<p class='coverage'><strong>Historical coverage repaired:</strong> ",
+      nrow(d$coverage_history), " row",
+      if (nrow(d$coverage_history) == 1) "" else "s", " across ",
+      length(hist_schools), " established program",
+      if (length(hist_schools) == 1) "" else "s", " in class",
+      if (length(hist_yrs) == 1) " " else "es ", hist_span,
+      " were backfilled. This brief's live activity window is ",
+      d$activity_floor, "&ndash;", d$activity_ceiling,
+      "; those rows are ",
+      "excluded from every recruiting-activity total and list.</p>"))
   }
 
-  ## coverage contraction, same honesty rule in the other direction
-  if (!is.null(d$contraction) && nrow(d$contraction) > 0) {
-    con_yrs <- sort(unique(d$contraction$Year))
+  ## Coverage contraction follows the same honesty rule in reverse.
+  if (nrow(d$contraction_year) > 0) {
+    con_yrs <- sort(unique(d$contraction_year$Year))
     h <- c(h, paste0(
-      "<p class='coverage'>No longer tracking the ",
-      paste(con_yrs, collapse = " and "), " class",
-      if (length(con_yrs) > 1) "es" else "", ": ",
-      nrow(d$contraction), " players left the database as a coverage ",
-      "change, not as decommits, and are excluded from the counts ",
-      "below.</p>"))
+      "<p class='coverage'><strong>Coverage changed:</strong> no longer ",
+      "tracking the ", paste(con_yrs, collapse = " and "), " class",
+      if (length(con_yrs) > 1) "es" else "", ". ",
+      nrow(d$contraction_year), " rows are excluded from removals.</p>"))
+  }
+  if (nrow(d$contraction_school) > 0) {
+    con_schools <- sort(unique(d$contraction_school$School))
+    h <- c(h, paste0(
+      "<p class='coverage'><strong>Program coverage contracted:</strong> ",
+      length(con_schools), " program",
+      if (length(con_schools) == 1) "" else "s", " left the tracked ",
+      "universe. Their ", nrow(d$contraction_school), " rows are excluded ",
+      "from removals and movement.</p>"))
+  }
+  if (nrow(d$contraction_history) > 0) {
+    hist_yrs <- sort(unique(d$contraction_history$Year))
+    hist_span <- if (length(hist_yrs) == 1) hist_yrs else
+      paste0(min(hist_yrs), "&ndash;", max(hist_yrs))
+    hist_schools <- unique(d$contraction_history$School)
+    h <- c(h, paste0(
+      "<p class='coverage'><strong>Historical coverage adjusted:</strong> ",
+      nrow(d$contraction_history), " row",
+      if (nrow(d$contraction_history) == 1) "" else "s", " across ",
+      length(hist_schools), " established program",
+      if (length(hist_schools) == 1) "" else "s", " in class",
+      if (length(hist_yrs) == 1) " " else "es ", hist_span,
+      " left the source during data maintenance. They are excluded from ",
+      "removal and movement totals.</p>"))
   }
 
   ## additions, grouped per team, commits and transfers labeled separately
@@ -364,7 +456,12 @@ sport_html <- function(sport_name, cur, base, base_label) {
   ## per-team movement, newest cycle only, n >= 3 and nonzero delta
   h <- c(h, paste0("<h3>Class of ", d$yr, " movement (n=", nrow(d$mov),
                    " teams)</h3>"))
-  if (nrow(d$mov) == 0) {
+  if (!isTRUE(d$movement_available)) {
+    h <- c(h, paste0(
+      "<p class='coverage'>The baseline does not include the class of ",
+      d$yr, " for the stable program set, so class movement is withheld ",
+      "until comparable snapshots exist.</p>"))
+  } else if (nrow(d$mov) == 0) {
     h <- c(h, paste0("<p class='empty'>No class-size or average-rating ",
                      "movement among teams with at least 3 HS commits.</p>"))
   } else {
@@ -416,8 +513,14 @@ sports <- list(
                     base = read_tbl(baseline$path, "recruit_class_basketball"))
 )
 
-## headline counts for the header strip (and for the run log)
+## Headline counts use activity-only rows. Coverage changes are logged
+## separately so a pipeline run makes every exclusion auditable.
 tot_adds <- 0L; tot_gone <- 0L
+tot_cov_rows <- 0L; cov_schools <- character(0)
+tot_con_rows <- 0L; con_schools <- character(0)
+tot_hist_add_rows <- 0L; hist_add_schools <- character(0)
+tot_hist_gone_rows <- 0L; hist_gone_schools <- character(0)
+activity_windows <- character(0)
 for (nm in names(sports)) {
   s <- sports[[nm]]
   if (is.null(s$cur) || is.null(s$base) ||
@@ -425,9 +528,41 @@ for (nm in names(sports)) {
   dd <- diff_sport(s$cur, s$base)
   tot_adds <- tot_adds + nrow(dd$adds)
   tot_gone <- tot_gone + nrow(dd$gone)
+  tot_cov_rows <- tot_cov_rows + nrow(dd$coverage_school)
+  cov_schools <- union(cov_schools, dd$new_schools)
+  tot_con_rows <- tot_con_rows + nrow(dd$contraction_school)
+  con_schools <- union(con_schools, dd$old_schools)
+  tot_hist_add_rows <- tot_hist_add_rows + nrow(dd$coverage_history)
+  hist_add_schools <- union(hist_add_schools,
+                            dd$coverage_history$School)
+  tot_hist_gone_rows <- tot_hist_gone_rows + nrow(dd$contraction_history)
+  hist_gone_schools <- union(hist_gone_schools,
+                             dd$contraction_history$School)
+  activity_windows <- union(activity_windows,
+                            paste0(dd$activity_floor, "-", dd$activity_ceiling))
 }
 cat("Headline:", tot_adds, "additions,", tot_gone, "removals", window_label,
     "\n")
+if (tot_cov_rows > 0) {
+  cat("Coverage expansion excluded:", tot_cov_rows, "historical rows across",
+      length(cov_schools), "new programs.\n")
+}
+if (tot_con_rows > 0) {
+  cat("Coverage contraction excluded:", tot_con_rows, "historical rows across",
+      length(con_schools), "retired programs.\n")
+}
+if (tot_hist_add_rows > 0) {
+  cat("Historical coverage repair excluded:", tot_hist_add_rows,
+      "rows across", length(hist_add_schools),
+      paste0("established programs (classes outside ",
+             paste(sort(unique(activity_windows)), collapse = "/"), ").\n"))
+}
+if (tot_hist_gone_rows > 0) {
+  cat("Historical coverage adjustment excluded:", tot_hist_gone_rows,
+      "rows across", length(hist_gone_schools),
+      paste0("established programs (classes outside ",
+             paste(sort(unique(activity_windows)), collapse = "/"), ").\n"))
+}
 
 body <- vapply(names(sports), function(nm) {
   sport_html(nm, sports[[nm]]$cur, sports[[nm]]$base, window_label)
@@ -439,9 +574,9 @@ page <- c(
 "<head>",
 "  <meta charset=\"utf-8\">",
 "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
-"  <title>This week in the Big 12 &mdash; Girth Index brief</title>",
-paste0("  <meta name=\"description\" content=\"What changed in the Big 12 ",
-       "recruiting data ", esc(window_label), ": new commits, portal ",
+"  <title>This week across the Power 4 &mdash; Girth Index brief</title>",
+paste0("  <meta name=\"description\" content=\"What changed across all 67 ",
+       "Power-4 programs ", esc(window_label), ": new commits, portal ",
        "additions, and class movement, auto-written from the nightly ",
        "refresh.\">"),
 "  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">",
@@ -473,6 +608,8 @@ paste0("  <link href=\"https://fonts.googleapis.com/css2?family=Rubik:wght@",
 "    li { font-size: 14px; margin-bottom: 6px; color: #37475a; }",
 "    p.note { font-size: 13px; color: var(--muted); margin: 4px 0 8px 0; }",
 "    p.empty { font-size: 13.5px; color: var(--muted); margin: 4px 0; }",
+"    p.coverage { margin: 10px 0; padding: 10px 12px; border-left: 4px solid",
+"      var(--gold); background: #fff8d9; color: #37475a; font-size: 13px; }",
 "    table { border-collapse: collapse; margin: 8px 0; width: 100%;",
 "      background: white; border-radius: 10px; overflow: hidden;",
 "      box-shadow: 0 3px 12px rgba(12,35,75,0.07); font-size: 14px; }",
@@ -487,7 +624,7 @@ paste0("  <link href=\"https://fonts.googleapis.com/css2?family=Rubik:wght@",
 "</head>",
 "<body>",
 "  <div class=\"hero\">",
-"    <h1>This week in the <span>Big 12</span></h1>",
+"    <h1>This week across the <span>Power 4</span></h1>",
 paste0("    <p class=\"win\">", tot_adds, " addition",
        ifelse(tot_adds == 1, "", "s"), " and ", tot_gone, " removal",
        ifelse(tot_gone == 1, "", "s"), " across football and basketball, ",
@@ -505,7 +642,8 @@ body,
 "  <footer>",
 paste0("    Regenerated nightly by the data pipeline &mdash; sources: ",
        "<a href=\"https://247sports.com/\">247Sports</a> team pages. ",
-       "Not affiliated with the Big 12 Conference."),
+       "Independent project; not affiliated with the SEC, Big Ten, ACC, ",
+       "Big 12, or their member schools."),
 "  </footer>",
 "</body>",
 "</html>")

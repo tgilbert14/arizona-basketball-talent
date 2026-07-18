@@ -1,5 +1,5 @@
 ## ---------------------------------------------------------------------------
-## deployApp.R -- headless shinyapps.io deploy for the Big 12 Talent Lab
+## deployApp.R -- headless shinyapps.io deploy for the Power-4 Girth Index
 ##
 ##   Rscript scripts/deployApp.R              # bundle, deploy, health-check
 ##   Rscript scripts/deployApp.R --dry-run    # print the plan, touch nothing
@@ -7,8 +7,9 @@
 ## Bundles ONLY what app.R needs at runtime (verified against app.R):
 ##   app.R                 the app itself (Shiny auto-sources R/)
 ##   R/                    plot builders, coach eras, team config, helpers
-##   www/                  16 team logos + html-to-image.min.js
+##   www/                  67 team logos + runtime CSS/JS/assets
 ##   data/recruiting.db    SQLite content tables (read-only at runtime)
+##   data/team_config.csv  67-program Power-4 metadata + campus coordinates
 ##   precomputed/          default-view girafe renders (readRDS at startup)
 ## docs/, scripts/, insights/, backups/, logs/ are never read by app.R.
 ## .rscignore at the repo root is the belt-and-braces guard for any manual
@@ -20,7 +21,12 @@
 args <- tolower(commandArgs(trailingOnly = TRUE))
 dry_run <- any(args %in% c("--dry-run", "dry-run"))
 
-root <- here::here()
+## Resolve from this script rather than requiring the optional `here` package;
+## this keeps the documented dry-run usable in a clean deployment shell.
+file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+script_path <- if (length(file_arg)) sub("^--file=", "", file_arg[1]) else
+  file.path("scripts", "deployApp.R")
+root <- normalizePath(file.path(dirname(script_path), ".."), mustWork = TRUE)
 setwd(root)
 
 APP_ID   <- 16698009
@@ -29,7 +35,8 @@ ACCOUNT  <- "t-lama"
 SERVER   <- "shinyapps.io"
 APP_URL  <- sprintf("https://%s.shinyapps.io/%s/", ACCOUNT, APP_NAME)
 
-APP_FILES <- c("app.R", "R", "www", "data/recruiting.db", "precomputed")
+APP_FILES <- c("app.R", "R", "www", "data/recruiting.db",
+               "data/team_config.csv", "precomputed")
 
 ## -- sanity: every bundled path must exist --------------------------------
 missing <- APP_FILES[!file.exists(APP_FILES)]
@@ -57,10 +64,11 @@ if (length(rds) == 0) {
 
 ## -- expand the bundle for display + size ----------------------------------
 expand_bundle <- function(paths) {
-  unlist(lapply(paths, function(p) {
+  files <- unlist(lapply(paths, function(p) {
     if (dir.exists(p)) list.files(p, recursive = TRUE, full.names = TRUE)
     else p
   }), use.names = FALSE)
+  files[!grepl("\\.(orig|rej)$", files, ignore.case = TRUE)]
 }
 bundle <- expand_bundle(APP_FILES)
 bundle_mb <- round(sum(file.size(bundle)) / 1024^2, 1)

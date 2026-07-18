@@ -1409,13 +1409,13 @@ plot_distance_lab <- function(size_data, team_slug, sport,
       position = position_jitter(width = 0.13, height = 0, seed = 7)) +
     scale_x_continuous(breaks = seq(min(d$Year), max(d$Year), 1)) +
     labs(
-      title = glue("{t_lab} {str_to_title(sport)}: Miles from Home by Class ({yr_rng})"),
+      title = glue("{t_lab} {str_to_title(sport)}: Miles from Listed Origin by Class ({yr_rng})"),
       subtitle = glue(
-        "Each dot = one player's distance from hometown to campus. ",
+        "Each dot = distance from the player's listed origin to campus. ",
         "Yellow band = 25th–75th percentile, orange = class average",
         "{ifelse(removed_n > 0, glue('. {removed_n} outliers hidden (1.5×IQR)'), '')}."),
       x = "Class Year", y = "Miles from Home",
-      caption = "Tap or hover any dot for the recruit card; click to open their 247 page. Portal transfers appear once a hometown is known for them."
+      caption = "Tap or hover any dot for the recruit card; click to open their 247 page. Portal transfers appear once a listed origin is known."
     ) +
     theme_girth()
 }
@@ -1464,15 +1464,15 @@ plot_distance_box <- function(size_data, team_slug, sport) {
       position = position_jitter(width = 0, height = 0.16, seed = 7)) +
     coord_cartesian(xlim = c(0, x_cap)) +
     labs(
-      title = wrap_title(glue("{t_lab}: Miles from Home by Position Group"), 52),
+      title = wrap_title(glue("{t_lab}: Miles from Listed Origin by Position Group"), 52),
       subtitle = wrap_title(glue(
         "Open circles = {his_rng} classes; filled {t_lab}-colored dots = the ",
         "{yr_max} class. Boxes = the full window's spread.",
         "{ifelse(hidden_n > 0, glue(' {hidden_n} players beyond ',
         '{x_cap} mi not shown.'), '')}"), 84),
-      x = "Miles from Home", y = NULL,
+      x = "Miles from listed origin", y = NULL,
       caption = paste("Tap or hover any dot for the recruit card. Distances need a",
-                      "hometown, so portal transfers appear only once one is known.")
+                      "listed origin, so transfers appear only once one is known.")
     ) +
     theme_girth()
 }
@@ -1550,13 +1550,20 @@ build_pipeline_map <- function(size_data, team_slug, sport,
       mutate(lat = ifelse(n() > 1, jitter(lat, amount = 0.012), lat),
              long = ifelse(n() > 1, jitter(long, amount = 0.012), long)) %>%
       ungroup() %>%
-      mutate(URL = p247_url(Name, Year, sport, Type, .purl),
+      mutate(body_line = dplyr::case_when(
+               !is.na(HeightLabel) & is.finite(Weight) ~
+                 paste0(HeightLabel, " • ", Weight, " lbs"),
+               !is.na(HeightLabel) ~ HeightLabel,
+               is.finite(Weight) ~ paste0(Weight, " lbs"),
+               TRUE ~ "Body measurements not listed"
+             ),
+             URL = p247_url(Name, Year, sport, Type, .purl),
              ## pc_link works in leaflet popups too -- the app's .pc-open
              ## listener is document-level, so map names open player cards
              popup = paste0(
                "<strong>", pc_link(Name, School), "</strong> (", Position,
                ", ", Year, ")<br/>",
-               HeightLabel, " • ", Weight, " lbs • 247 Rating: ",
+               body_line, " • 247 Rating: ",
                ifelse(is.na(Ranking), "unrated", round(Ranking, 0)),
                "<br/>From: ", loc_dash(Location), "<br/>",
                miles_away, " miles from campus<br/>",
@@ -1573,16 +1580,17 @@ build_pipeline_map <- function(size_data, team_slug, sport,
 
   ## smoothed state hulls for the MAIN team's footprint (sf/smoothr load
   ## lazily here -- see R/functions.R)
-  hull <- tryCatch({
-    main %>%
+  hull_input <- main %>% filter(!is.na(StateClean), nzchar(StateClean))
+  hull <- if (nrow(hull_input)) tryCatch({
+    hull_input %>%
       sf::st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
-      group_by(State) %>%
+      group_by(StateClean) %>%
       summarise(geometry = sf::st_combine(geometry)) %>%
       sf::st_buffer(dist = 50000) %>%
       sf::st_convex_hull() %>%
       smoothr::smooth(method = "chaikin")
-  }, error = function(e) NULL)
-  if (!is.null(hull)) {
+  }, error = function(e) NULL) else NULL
+  if (!is.null(hull) && nrow(hull) > 0) {
     map <- map %>%
       addPolygons(data = hull, weight = 1.5, color = c_main, opacity = 0.6,
                   fillColor = c_main, fillOpacity = 0.08)
@@ -1626,18 +1634,18 @@ build_pipeline_map <- function(size_data, team_slug, sport,
   map %>%
     addLegend(position = "topright", colors = legend_colors,
               labels = legend_labels, opacity = 0.9,
-              title = "Hometowns") %>%
+              title = "Listed origins") %>%
     addControl(html = tags$div(
       style = "background: rgba(255,255,255,.85); padding: 3px 8px;
                border-radius: 4px; font-size: 11px; max-width: 290px;",
       tags$small(
         "Data: ", tags$a(href = "https://247sports.com",
                          "247Sports", target = "_blank"),
-        " — players with mapped hometowns; transfers appear once a hometown
+        " — players with mapped listed origins; transfers appear once an origin
          is known.",
         if (n_unmapped > 0) {
           tags$b(glue(" {n_unmapped} player{ifelse(n_unmapped == 1, '', 's')}
-                       in this window can't be mapped yet (no hometown on
+                       in this window can't be mapped yet (no listed origin on
                        file, which covers most portal transfers, or awaiting
                        geocoding)."))
         })),

@@ -9,7 +9,7 @@
 ##   (b) roster_*        : per-RosterYear totals within +/-20% of baseline
 ##       for years present in BOTH dbs, counted among BASELINE schools only
 ##       (new schools/years are onboarding growth and pass), and at least
-##       12 distinct schools in the newest live year
+##       75% of onboarded schools in the newest live year
 ##   (c) team_seasons_football : row count >= baseline count
 ##   (d) plausibility    : among non-NA values, Weight within 130-420
 ##       (football) / 130-320 (basketball) and Ranking within 55-110;
@@ -68,6 +68,16 @@ n_rows <- function(db, tbl) {
 has_col <- function(db, tbl, col) {
   col %in% q(db, paste0("PRAGMA table_info(", tbl, ")"))$name
 }
+
+## Scale roster coverage with the shipped program universe. This is 51 of 67
+## today and automatically moves if onboarding changes again.
+onboarded_n <- tryCatch({
+  cfg <- utils::read.csv(file.path("data", "team_config.csv"),
+                         stringsAsFactors = FALSE)
+  sum(toupper(as.character(cfg$onboarded)) == "TRUE", na.rm = TRUE)
+}, error = function(e) 16L)
+if (!is.finite(onboarded_n) || onboarded_n < 1L) onboarded_n <- 16L
+ROSTER_TEAM_FLOOR <- as.integer(ceiling(0.75 * onboarded_n))
 
 fails <- 0L
 check <- function(label, ok, detail = "") {
@@ -208,11 +218,10 @@ for (tbl in c("roster_football", "roster_basketball")) {
         " GROUP BY RosterYear"))
       as.integer(scy$n[match(yr_new, scy$RosterYear)])
     }
-    ## PHASE 1: the literal 12 is 75% of the shipped 16. When teams onboard,
-    ## scale this floor to the onboarded/active count (e.g. ceiling(0.75 * n))
-    ## rather than the constant. Left as-is here -- no behavior change at 16.
-    check(sprintf("%s: >= 12 distinct schools in newest live RosterYear %s (%d)",
-                  tbl, yr_new, sc), sc >= 12)
+    check(sprintf(
+      "%s: >= %d of %d onboarded schools in newest live RosterYear %s (%d)",
+      tbl, ROSTER_TEAM_FLOOR, onboarded_n, yr_new, sc),
+      sc >= ROSTER_TEAM_FLOOR)
   } else {
     ## no RosterYear in one of the dbs -- fall back to the whole-table gate
     b_n <- n_rows(base_db, tbl)
@@ -223,8 +232,9 @@ for (tbl in c("roster_football", "roster_basketball")) {
           if (b_n == 0) "baseline empty -- comparison skipped" else "")
     sc <- as.integer(q(live_db, paste0(
       "SELECT COUNT(DISTINCT School) AS n FROM ", tbl))$n)
-    check(sprintf("%s: >= 12 distinct schools present (%d)", tbl, sc),
-          sc >= 12)
+    check(sprintf("%s: >= %d of %d onboarded schools present (%d)",
+                  tbl, ROSTER_TEAM_FLOOR, onboarded_n, sc),
+          sc >= ROSTER_TEAM_FLOOR)
   }
 }
 

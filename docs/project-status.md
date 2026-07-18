@@ -1,12 +1,12 @@
-# Project status — Big 12 Talent Lab (Girth Index)
+# Project status — Power-4 Girth Index
 
 > The single file the agent suite's cold-boot protocol reads before flagging or building.
 > Owned by `triage`; reconciled on every `/questboard` sweep. Keep it honest — a stale
 > status file makes cold-booted agents re-flag shipped or parked work.
 
-**Current:** v7.0 (2026-07-02) — deployed to shinyapps.io (`Big-12-Talent-Pathways`, account `t-lama`)
-and Posit Connect Cloud (git-backed). Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet,
-large inline vanilla-JS layer, SQLite `data/recruiting.db`.
+**Current:** v9.0 release candidate (2026-07-18) — all 67 Power-4 programs, football and
+basketball, in final local QA; deployment is pending. Production remains git-backed on Posit
+Connect Cloud. Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet + SQLite.
 
 ## ✅ POWER-4 EXPANSION COMPLETE (2026-07-18) — all 67 teams live
 
