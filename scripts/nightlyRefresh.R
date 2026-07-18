@@ -27,6 +27,10 @@
 ##                  scrapeRosters.R (both sports), fetchOutcomes.R (CFBD)
 ##   S3 enrich      backfillProfiles.R (hometowns from 247 profiles, cap 40)
 ##                  then geocodeMissing.R (both non-fatal)
+##   S3.5 qc        qcSweep.R -- geo/dupe/completeness flags into the
+##                  qc_flags ledger + placeholder-zero auto-fix; new
+##                  high-severity flags surface as a manifest note
+##                  (non-fatal; accepted flags never re-raise)
 ##   S4 validate    auditRefreshHoles.R + validateRefresh.R vs the snapshot;
 ##                  either failing restores the snapshot and aborts
 ##   S5 ledger      content hash again -> changed?; write refresh_log row
@@ -567,6 +571,27 @@ tryCatch({
       notes <- c(notes, paste0("geocodeMissing.R exited ", r$status,
                                " (non-fatal; new players stay off the map)"))
     }
+  }
+
+  ## -------------------------------------------------------------------------
+  ## S3.5 qc sweep -- mark (and safely fix) possible data errors every run.
+  ## qcSweep.R re-checks geo sanity (wrong-state pins, centroid collapse),
+  ## dupes, thin classes, and placeholder zeros (which it NULLs itself), and
+  ## records suspects in the qc_flags ledger: an ACCEPTED flag (a verified
+  ## legit outlier, e.g. an international recruit pinned abroad) never
+  ## re-raises. Exit 2 = NEW high-severity flags -> surfaced as a manifest
+  ## note; never blocks the night (the S4 gates own go/no-go).
+  ## -------------------------------------------------------------------------
+  r_qc <- run_child("qc sweep", "qcSweep.R")
+  stages$qc <- if (r_qc$ok) "ok" else if (r_qc$status == 2) "flags" else "warn"
+  if (identical(r_qc$status, 2L) || identical(r_qc$status, 2)) {
+    notes <- c(notes, paste0(
+      "qcSweep found NEW high-severity data flags -- review with: ",
+      "SELECT * FROM qc_flags WHERE status='open' ORDER BY first_seen DESC; ",
+      "mark verified-legit rows status='accepted', fix real errors"))
+  } else if (!r_qc$ok) {
+    notes <- c(notes, paste0("qcSweep.R exited ", r_qc$status,
+                             " (non-fatal; sweep retries next run)"))
   }
 
   ## -------------------------------------------------------------------------

@@ -22,14 +22,47 @@ WHERE-filter on app.R startup loads (defense in depth), weeklyBrief coverage-CON
 Connect Cloud (slider max 2027, window 2024–2027); shinyapps picks it up on the next nightly deploy
 (or run `Rscript scripts/deployApp.R` by hand). The 2028 class re-enters naturally in Jan 2027.
 
-## >>> IN FLIGHT 2026-07-16: Power-4 Phase 1 — SEC backfill running (detached PID 20392) <<<
+## DONE 2026-07-17: SEC ONBOARDED (16/16) + the QC sweep & ledger
 
-`scripts/backfillConference.R "SEC"` launched 06:45 as a detached background job — console log at
-`logs/backfill_sec_console.log`, checkpoint `logs/backfill_sec.json`, holds `logs/refresh.lock`
-(nightly stands down). Pre-run verify done: slug map = all 67 slugs HTTP 200 / zero needs-review;
-config smoke = 67 rows, 16 onboarded, 16 SEC targets; orchestrator read end-to-end (validates vs
-snapshot, flips onboarded LAST, 20-row floor). On success it commits locally (no push — the nightly
-ships it). Then: Big Ten → ACC, same procedure.
+**SEC is live in the config** (commit `4fef15c` + follow-ups): all 16 teams cleared the 20-row floor,
+validate passed, picker shows 32, Alabama smoke = SEC-pooled boards, zero errors. Two bugs fixed en
+route: (a) `backfillConference.R` run_child now shQuotes args — the repo path's space split the
+baseline arg and failed the validate stage at the last gate; (b) `validateRefresh.R` roster
+per-RosterYear gate now compares BASELINE SCHOOLS only (rosters are current-season, so conference
+onboarding doubles the same year's totals — 1729→3487 was legit growth, not corruption).
+
+**QC sweep ran (user-directed) — `scripts/qcSweep.R` + the `qc_flags` ledger, now wired into the
+nightly as S3.5** (mark + safe-fix every auto-update; `accepted` flags never re-raise; new
+high-severity flags exit 2 → manifest note). Findings triaged, 201 flags → 0 open high:
+- REAL fixes: 2 Cincinnati players' State TX→OH (247 team-page bug, profiles verified "Dayton, OH");
+  Dillon Sykes (utah 2027) wrong CA pin → NULLed (nightly re-geocodes state-pinned); Jeremiah
+  Davenport (cincinnati bb 2019) pin was in SINGAPORE → NULLed; **arizona 2018 football class was a
+  2-row hole → re-scraped to 20 commits + geocoded**; 10 placeholder Weight-0/Height-0-0 → NULL
+  (auto-fix now permanent in the sweep).
+- ACCEPTED (verified legit, ledger remembers): 54 internationals correctly pinned abroad (ProKick
+  punters, German/Nordic linemen, Pago Pago, NBA Academy Mexico); colorado 2024's 9-commit class
+  (Prime's portal year). 53 SEC 2019-20 grad transfers verified REAL (Cade Mays, Brenton Cox) —
+  TYPE-ERA cutoff moved to <2019, app's transfers ctx_note reworded.
+- Rule refinements: GEO-COLLAPSE counts distinct CITIES (city-granularity pins are by design);
+  GEO-BOUNDS international-aware + AS/PR/GU/VI territory bboxes; new STATE-CONFLICT rule catches
+  the team-page wrong-state pattern even when the pin agrees with the wrong side.
+
+**NEXT: Big Ten backfill (same procedure), then ACC, then Phase 2 Conference Lab.**
+
+## QUEUED (user-directed 2026-07-16): post-backfill QC sweep + nightly QC ledger
+
+After each conference lands: **(a) one-time QC sweep** — geo-outlier triage that separates "far but
+real" (a Florida/Hawaii recruit at Arizona is legit recruiting) from "wrong" (geocoded pin's state ≠
+hometown text's state, out-of-US-bounds pins, many rows collapsing to one coordinate = Nominatim
+state-centroid failure, 0-mile distance on an out-of-state hometown), with flagged cases verified
+against their 247 ProfileUrl; plus completeness (per-school-per-year commit floors ~15-30 fb),
+duplicates, NA rates, height/weight range sanity, transfers-2021+-only, conference-label consistency,
+and distribution sanity (SEC blue-chip rates should look SEC-like). **(b) productize into the
+nightly** — a `qc_flags` ledger table (rule, row key, severity, details, first_seen, status) + a QC
+stage after geocode: `accepted` flags (verified-legit outliers) never re-flag; safe wrongness
+auto-fixes (state-pinned re-geocode; still wrong → NULL coords = honestly unmapped); new
+high-severity flags surface in the run manifest notes + the gh-issue alert path. Owner: caravan/maze
+pattern; the point is mark-or-fix on every auto-update, with memory, no alarm fatigue.
 
 ## Power-4 expansion plan (paused 2026-07-12, resumed 2026-07-16)
 

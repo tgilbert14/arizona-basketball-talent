@@ -3894,10 +3894,10 @@
   },
   "files": {
     "app.R": {
-      "checksum": "8f0bcecb48cb550275bd10902503dac6"
+      "checksum": "04d114f2159de00264de1ae35f268fef"
     },
     "data/recruiting.db": {
-      "checksum": "3b7468ca79aa248bf15dd8e6190fcf7b"
+      "checksum": "95fa087acc7a5187387c261d75ed794c"
     },
     "precomputed/beef_board_desktop.rds": {
       "checksum": "0b86061ba5e28e73090bca835b81cf88"
@@ -3918,10 +3918,10 @@
       "checksum": "4ad27be22168f7fcd68ceb794288bc89"
     },
     "precomputed/era_timeline_desktop.rds": {
-      "checksum": "ad425212d7f2ffdc2978dc4e64331b8d"
+      "checksum": "558f7b45a2d9ba4d717beacd5d1d061e"
     },
     "precomputed/era_timeline_phone.rds": {
-      "checksum": "299ceb36759841e655e397ce872f5068"
+      "checksum": "440c6acd97e538f97f189f033a230d29"
     },
     "R/coach_eras.R": {
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"

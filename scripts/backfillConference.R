@@ -163,7 +163,11 @@ run_child <- function(label, script, args = character(0)) {
   touch_lock()
   cat("\n---- ", label, " ----\n", sep = "")
   t0 <- Sys.time()
-  st <- system2(rscript, c(file.path("scripts", script), args))
+  ## shQuote every arg: absolute paths under "VGS - R" carry a space, and
+  ## system2 concatenates unquoted args -- the validate stage's baseline
+  ## path split into three args and failed the whole 2026-07-16 SEC run
+  ## at the last gate. Quoting is a no-op for slug CSVs and flags.
+  st <- system2(rscript, c(shQuote(file.path("scripts", script)), shQuote(args)))
   mins <- round(as.numeric(Sys.time() - t0, units = "mins"), 1)
   cat("[", label, "] ", if (st == 0) "ok" else paste0("EXIT ", st),
       " (", mins, " min)\n", sep = "")

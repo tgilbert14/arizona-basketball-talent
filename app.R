@@ -1846,8 +1846,10 @@ ui <- dashboardPage(
                          spin(girafeOutput("size_trend", height = "300px"),
                                      color = "#0C234B"),
                          ctx_note("Portal transfers exist in the data from 2021",
-                                  " on — with 'Commits + transfers' selected,",
-                                  " earlier years show HS classes only.")
+                                  " on (a handful of earlier grad transfers",
+                                  " appear for some programs) — with 'Commits",
+                                  " + transfers' selected, earlier years are",
+                                  " mostly HS classes.")
                        ),
                        box(
                          title = "Head to Head: Position-Group Weigh-In",

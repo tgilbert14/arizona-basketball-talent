@@ -7,8 +7,9 @@
 ##       (School, Year) group that had rows in the baseline lost more
 ##       than 40% of them
 ##   (b) roster_*        : per-RosterYear totals within +/-20% of baseline
-##       for years present in BOTH dbs (years new in live are growth and
-##       pass), and at least 12 distinct schools in the newest live year
+##       for years present in BOTH dbs, counted among BASELINE schools only
+##       (new schools/years are onboarding growth and pass), and at least
+##       12 distinct schools in the newest live year
 ##   (c) team_seasons_football : row count >= baseline count
 ##   (d) plausibility    : among non-NA values, Weight within 130-420
 ##       (football) / 130-320 (basketball) and Ranking within 55-110;
@@ -153,12 +154,33 @@ for (tbl in c("roster_football", "roster_basketball")) {
     ly <- q(live_db, paste0(
       "SELECT RosterYear, COUNT(*) AS n_live FROM ", tbl,
       " GROUP BY RosterYear"))
-    shared <- merge(by, ly, by = "RosterYear")
-    ## POWER-4 NOTE: onboarding a new school or a whole new conference is
-    ## GROWTH, not shrinkage -- it raises per-RosterYear totals, never lowers
-    ## them. This +/-20% band compares only RosterYears present in BOTH dbs, so
-    ## rows added by an expansion land in `new_years` below (allowed as growth)
-    ## rather than tripping this gate. No behavior change at the shipped 16.
+    ## POWER-4 NOTE: onboarding a conference adds rows to the SAME RosterYear
+    ## (rosters are current-season only), so an all-schools total comparison
+    ## falsely trips on legitimate expansion (SEC 2026: 1729 -> 3487). Scope
+    ## the +/-20% band to schools PRESENT IN THE BASELINE: that still catches
+    ## what the gate exists for -- a broken scrape wiping or duplicating the
+    ## rows we already had -- while brand-new schools count as growth and are
+    ## covered by the distinct-school floor below. No behavior change when the
+    ## school set is unchanged (the nightly).
+    base_schools <- q(base_db, paste0(
+      "SELECT DISTINCT School FROM ", tbl))$School
+    ly_shared <- if (length(base_schools) > 0) {
+      in_list <- paste(sprintf("'%s'", gsub("'", "''", base_schools)),
+                       collapse = ",")
+      q(live_db, paste0(
+        "SELECT RosterYear, COUNT(*) AS n_live FROM ", tbl,
+        " WHERE School IN (", in_list, ") GROUP BY RosterYear"))
+    } else ly
+    shared <- merge(by, ly_shared, by = "RosterYear")
+    new_schools <- setdiff(
+      q(live_db, paste0("SELECT DISTINCT School FROM ", tbl))$School,
+      base_schools)
+    if (length(new_schools) > 0) {
+      cat(sprintf(
+        "[INFO] %s: %d school(s) new in live allowed as growth: %s\n",
+        tbl, length(new_schools),
+        paste(head(sort(new_schools), 20), collapse = ", ")))
+    }
     if (nrow(shared) > 0) {
       bad <- shared[shared$n_live < 0.8 * shared$n_base |
                     shared$n_live > 1.2 * shared$n_base, , drop = FALSE]
@@ -167,7 +189,7 @@ for (tbl in c("roster_football", "roster_basketball")) {
                       bad$n_live), collapse = "; ")
       } else ""
       check(sprintf(
-        "%s: per-RosterYear totals within +/-20%% (%d shared year(s))",
+        "%s: per-RosterYear totals within +/-20%% among baseline schools (%d shared year(s))",
         tbl, nrow(shared)), nrow(bad) == 0, detail)
     } else {
       check(sprintf("%s: per-RosterYear totals within +/-20%%", tbl), TRUE,
