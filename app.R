@@ -109,6 +109,49 @@ DISPLAY_CONFIG <- TEAM_CONFIG[TEAM_CONFIG$onboarded %in% TRUE, , drop = FALSE]
 ## named choices for team pickers (slug values, pretty labels)
 team_choices <- setNames(DISPLAY_CONFIG$slug, DISPLAY_CONFIG$team_name)
 
+## GROUPED team choices (selectize optgroups): a flat list of 67 teams is a
+## wall to scan, so the picker groups by conference -- Big 12 first (the default
+## team's league), then SEC / Big Ten / ACC -- alphabetized within each. Paired
+## with per-option logos + selectize's type-to-search, picking a team is fast.
+conf_grouped_choices <- function() {
+  out <- list()
+  for (cf in conf_order()) {
+    d <- DISPLAY_CONFIG[DISPLAY_CONFIG$conference == cf, , drop = FALSE]
+    if (!nrow(d)) next
+    d <- d[order(d$team_name), , drop = FALSE]
+    out[[cf]] <- setNames(d$slug, d$team_name)
+  }
+  out
+}
+team_choices_grouped <- conf_grouped_choices()
+
+## slug -> logo URL map for the selectize render (JS looks logos up by option
+## value). Logos live in www/ and serve from the app root, so the bare filename
+## is a valid <img src>.
+gi_logo_map_js <- paste0(
+  "window.GI_LOGOS = ",
+  jsonlite::toJSON(setNames(as.list(DISPLAY_CONFIG$logo), DISPLAY_CONFIG$slug),
+                  auto_unbox = TRUE), ";")
+
+## shared selectize render for both team pickers: a small logo + the team name,
+## in BOTH the dropdown option and the selected item. Missing logo (or the
+## compare "none" option) degrades to text only.
+gi_picker_render <- I("{
+  option: function(item, escape) {
+    var lg = (window.GI_LOGOS || {})[item.value];
+    var img = lg ? '<img class=\"gi-opt-logo\" src=\"' + lg + '\" alt=\"\"/>'
+                 : '<span class=\"gi-opt-logo gi-opt-blank\"></span>';
+    return '<div class=\"gi-opt\">' + img + '<span>' + escape(item.label) +
+           '</span></div>';
+  },
+  item: function(item, escape) {
+    var lg = (window.GI_LOGOS || {})[item.value];
+    var img = lg ? '<img class=\"gi-opt-logo\" src=\"' + lg + '\" alt=\"\"/>' : '';
+    return '<div class=\"gi-item\">' + img + '<span>' + escape(item.label) +
+           '</span></div>';
+  }
+}")
+
 ## ---- URL DEEP LINKS: the query-string <-> global-state contract ----------
 ## Every global control (+ the active tab) serializes to the query string so
 ## a view is a shareable link; on load the link rehydrates the app. The
@@ -657,10 +700,31 @@ ui <- dashboardPage(
       tags$link(rel = "preconnect", href = "https://cdn.jsdelivr.net"),
       tags$link(rel = "stylesheet",
                 href = "https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&display=swap"),
+      ## slug -> logo map for the selectize team-picker render (logos in the
+      ## dropdown + on the selected item)
+      tags$script(HTML(gi_logo_map_js)),
       tags$style(HTML("
       body, .content-wrapper { font-family: 'Rubik', 'Helvetica Neue', sans-serif; }
       .main-header .logo { font-family: 'Rubik', sans-serif; font-weight: 800;
         letter-spacing: 0.5px; }
+      /* ---- team picker: logos + conference optgroups (67-team scan aid) ---- */
+      .gi-opt, .gi-item { display: flex; align-items: center; gap: 8px;
+        line-height: 1.2; }
+      .gi-opt-logo { width: 20px; height: 20px; object-fit: contain;
+        background: #fff; border-radius: 3px; flex: 0 0 auto;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.06); }
+      .gi-opt-blank { box-shadow: none; background: transparent; }
+      /* conference section headers in the dropdown */
+      .selectize-dropdown .optgroup-header {
+        font-weight: 700; color: #0C234B; font-size: 10.5px;
+        text-transform: uppercase; letter-spacing: 0.05em;
+        background: #eef2f8; padding: 5px 8px; position: sticky; top: 0; }
+      .selectize-dropdown .optgroup:not(:first-child) .optgroup-header {
+        border-top: 1px solid #dbe3ee; }
+      .selectize-dropdown .option { padding: 5px 8px; }
+      .selectize-dropdown .option.active { background: #e8eef7; }
+      /* keep the selected item's logo from inflating the control height */
+      .selectize-input .gi-item .gi-opt-logo { width: 18px; height: 18px; }
 
       /* boxes: rounded, soft shadow, sporty headers */
       .box { border-radius: 10px; box-shadow: 0 2px 8px rgba(12,35,75,0.08);
@@ -1678,14 +1742,19 @@ ui <- dashboardPage(
               ## full-P4 (Arizona-vs-Georgia works). Do NOT add it at Phase 0 --
               ## the pickers stay the 16 Big 12 teams. team_choices feeds both.
               column(width = 2,
-                     selectInput("g_team", "Your team",
-                                 choices = team_choices,
-                                 selected = "arizona", width = "100%")),
+                     selectizeInput("g_team", "Your team",
+                                    choices = team_choices_grouped,
+                                    selected = "arizona", width = "100%",
+                                    options = list(render = gi_picker_render))),
               column(width = 2,
-                     selectInput("g_compare", "Compare to",
-                                 choices = c("— none —" = "", team_choices),
-                                 selected = "arizona-state",
-                                 width = "100%")),
+                     selectizeInput("g_compare", "Compare to",
+                                    choices = c(list("— none —" = ""),
+                                                team_choices_grouped),
+                                    selected = "arizona-state", width = "100%",
+                                    ## selectize drops empty-value options by
+                                    ## default; the "— none —" clear needs this
+                                    options = list(render = gi_picker_render,
+                                                   allowEmptyOption = TRUE))),
               column(width = 2,
                      radioButtons("g_sport", "Sport",
                                   choices = c("Football" = "football",
@@ -2662,17 +2731,32 @@ server <- function(input, output, session) {
                  style = "font-weight:800; color:#0C234B; margin-top:4px;"),
               p("Saved on this device — change it any time in the bar up top.",
                 style = "color:#888;"),
-              div(style = "display:flex; flex-wrap:wrap; gap:6px;
-                           justify-content:center;",
-                  lapply(seq_len(nrow(DISPLAY_CONFIG)), function(i) {
-                    actionButton(
-                      paste0("pick_", gsub("-", "_", DISPLAY_CONFIG$slug[i])),
-                      label = tagList(
-                        img(src = DISPLAY_CONFIG$logo[i], height = "34px"),
-                        div(DISPLAY_CONFIG$team_name[i],
-                            style = "font-size:11px; font-weight:600;")),
-                      class = "btn-default",
-                      style = "width:108px; padding:8px 2px;")
+              ## grouped by conference (Big 12 first) + scrollable: 67 logos in
+              ## one flat wall is unscannable; sections make it quick to find.
+              div(style = "max-height:58vh; overflow-y:auto; padding:0 4px;",
+                  lapply(conf_order(), function(cf) {
+                    d <- DISPLAY_CONFIG[DISPLAY_CONFIG$conference == cf, ,
+                                        drop = FALSE]
+                    d <- d[order(d$team_name), , drop = FALSE]
+                    if (!nrow(d)) return(NULL)
+                    tagList(
+                      div(cf, style = "font-weight:700; color:#0C234B;
+                          text-transform:uppercase; font-size:12px;
+                          letter-spacing:.05em; margin:16px 0 8px;
+                          border-bottom:1px solid #e2e9f1; padding-bottom:4px;
+                          text-align:left;"),
+                      div(style = "display:flex; flex-wrap:wrap; gap:6px;
+                                   justify-content:center;",
+                          lapply(seq_len(nrow(d)), function(i) {
+                            actionButton(
+                              paste0("pick_", gsub("-", "_", d$slug[i])),
+                              label = tagList(
+                                img(src = d$logo[i], height = "34px"),
+                                div(d$team_name[i],
+                                    style = "font-size:11px; font-weight:600;")),
+                              class = "btn-default",
+                              style = "width:104px; padding:8px 2px;")
+                          })))
                   })))
         ))
       }
