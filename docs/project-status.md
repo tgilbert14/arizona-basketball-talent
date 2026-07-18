@@ -32,11 +32,25 @@ space split the validate baseline); `validateRefresh.R` roster gate scoped to ba
 (conference onboarding doubles a current-season RosterYear = legit growth); `qcSweep.R` refreshes
 severity on re-observed flags (tukey's exam find).
 
-**⚑ ONE OPEN ITEM FOR THE USER — branding (not blocking, app fully functional):** the title "Big 12
-Girth Index" + the landing page's "all 16 programs"/"Big 12" copy are now misnomers for a 67-team
-Power-4 app. A rebrand (title + `docs/index.html` copy + og card) is a Phase-2 identity call left to
-the user. **Phase 2 proper = the Conference Lab tab** (`plot_conf_talent_spread`, the CONF_COMPARE_POLICY
-GREEN/YELLOW/RED tier registry, realignment backcast) per `docs/p4-expansion-design.md`.
+**REBRAND DONE (commit `9d694dd`):** "Big 12 Girth Index" → **"Power-4 Girth Index"** (app header +
+Home hero + PNG export name; landing title/og/hero/brief → "all 67 SEC, Big Ten, ACC & Big 12
+programs"; disclaimer generalized; og card regenerated). Conference-aware DATA labels (via
+`conf_label`) untouched — a team's boards still name its own conference. Verified live.
+
+**PHASE 2 CONFERENCE LAB DONE (commit `e3b8916`, verified live locally):** new "Conference Lab" tab
+comparing all four leagues distribution-first. `CONF_CONFIG` → 4 rows (Okabe-Ito); `CONF_COMPARE_POLICY`
+metric-tier registry (GREEN rating/blue-chip/weight/lbs-in rank head-to-head · YELLOW in-state/transfer
+carry a "geography/strategy, not talent" caveat · RED win%/SP+/WAT never in the selector — unbuildable);
+`conf_spread_data()` (~67 team-aggregate dots, 1GB-safe, realignment-honest — a team counts only years
+it was in its current league, wide windows disclose dropped backcast rows); `plot_conf_talent_spread()`
+(spread per league: dots + IQR box + median crossbar + mean diamond+n + top/bottom named); table twin +
+info modal. Verified: SEC 88.9 > B1G 87.8 > ACC 87.1 > B12 86.6 avg rating; blue-chip SEC 37 > B1G 24 >
+ACC 15 > B12 10; YELLOW caveat fires; RED absent; no regressions.
+
+**Remaining Phase 2 polish (nice-to-have, not blocking):** the global Conference SCOPE selector for the
+OTHER tabs' team pickers (the Lab itself is self-contained); `plot_conf_era_timeline` (4 median lines);
+`group='conference'` modes on Position DNA + faceted Body Map. Phase 3 = perf/scale hardening (roster
+stage rotated by conference; per-conference aggregate rds).
 
 ## Shipped 2026-07-16 AM: the cycle-cap fix (2028 preview-year leak) — commit a4455a5
 
