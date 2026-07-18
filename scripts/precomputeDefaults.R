@@ -13,11 +13,23 @@
 
 source(here::here("R", "coach_eras.R"))
 source(here::here("R", "functions.R"))
+source(here::here("R", "dashboard_status.R"))
 source(here::here("R", "team_config.R"))
 source(here::here("R", "girth_functions.R"))
 source(here::here("R", "girth_plots.R"))
 
 conn <- dbConnect(RSQLite::SQLite(), here::here("data", "recruiting.db"))
+refresh_meta <- dashboard_refresh_meta(conn)
+capture_date <- refresh_meta$capture_date
+if (is.null(capture_date)) capture_date <- refresh_meta$updated_date
+DATA_REVISION <- paste(
+  if (is.null(capture_date)) "unknown" else format(capture_date, "%Y%m%d"),
+  refresh_meta$sources$recruiting$football$rows,
+  refresh_meta$sources$recruiting$basketball$rows,
+  refresh_meta$sources$rosters$football$rows,
+  refresh_meta$sources$rosters$basketball$rows,
+  sep = "-"
+)
 fb <- safe_query(conn, "SELECT * FROM recruit_class_football") %>%
   prep_size_data("football")
 dbDisconnect(conn)
@@ -51,7 +63,7 @@ out(girafe_build(body_p, h = 7, phone = TRUE,
     "body_map_phone.rds")
 
 dna_p <- plot_position_dna(w, TEAM, "football",
-                           compare_slug = "arizona-state",
+                           compare_slug = NULL,
                            players_note = note)
 out(girafe_build(dna_p, w = 9.5, h = 6,
                  name = glue("{png_base}-position-dna-{yrs_tag}")),
@@ -61,10 +73,10 @@ out(girafe_build(dna_p, w = 9.5, h = 6, phone = TRUE,
     "dna_phone.rds")
 
 ## beef board -- default Conference Beef view (AvgWeight, all positions,
-## commit classes, vs ASU). The app serves this only when size_metric/pos/
+## commit classes, no comparison). The app serves this only when size_metric/pos/
 ## source sit at their startup defaults.
 beef_p <- plot_beef_board(w, TEAM, "football", metric = "AvgWeight",
-                          pos_filter = "All", compare_slug = "arizona-state",
+                          pos_filter = "All", compare_slug = NULL,
                           source_label = NULL, players_note = note)
 out(girafe_build(beef_p, w = 8, h = 9,
                  name = glue("{png_base}-beef-board-commits-{yrs_tag}")),
@@ -84,5 +96,20 @@ out(girafe_build(era_p, h = 6,
 out(girafe_build(era_p, h = 6, phone = TRUE,
                  name = glue("{png_base}-coach-eras-AvgRating")),
     "era_timeline_phone.rds")
+
+## Write the receipt LAST. A failed render can leave old RDS files behind, but
+## without a matching receipt the app rejects them and renders live.
+saveRDS(
+  list(
+    data_revision = DATA_REVISION,
+    compare_slug = "",
+    team = TEAM,
+    sport = "football",
+    years = as.integer(DEFAULT_YEARS),
+    generated_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  ),
+  here::here("precomputed", "meta.rds")
+)
+cat("  wrote meta.rds (revision", DATA_REVISION, ")\n")
 
 cat("Done. Commit precomputed/ and redeploy.\n")

@@ -12,10 +12,10 @@
 ## rsconnect appFiles, not the manifest).
 ##
 ## WHAT IT TOUCHES: only the `files` section -- it enumerates the true runtime
-## set (app.R, R/, www/, data/recruiting.db, precomputed/), computes MD5 for
-## each (base tools::md5sum, the same digest rsconnect writes), ADDS any file
-## missing from the manifest (e.g. precomputed renders added after the manifest
-## was last written), DROPS entries whose file no longer exists, and refreshes
+## set (app.R, R/, www/, data/recruiting.db, data/team_config.csv,
+## precomputed/), computes MD5 for each (base tools::md5sum, the same digest
+## rsconnect writes), ADDS any file missing from the manifest (e.g. renders
+## added after it was last written), DROPS entries whose file no longer exists, and refreshes
 ## every checksum. The packages / version / locale / platform / metadata /
 ## users sections are preserved EXACTLY -- packages change only when a human
 ## edits code + regenerates the full manifest with rsconnect::writeManifest(),
@@ -30,6 +30,9 @@
 
 suppressMessages({library(jsonlite); library(tools)})
 
+if (!exists("%||%", mode = "function"))
+  `%||%` <- function(x, y) if (is.null(x)) y else x
+
 args     <- commandArgs(trailingOnly = TRUE)
 check_only <- "--check" %in% args
 manifest_path <- "manifest.json"
@@ -39,9 +42,10 @@ if (!file.exists(manifest_path)) {
 }
 
 ## The runtime file set == what the app actually needs at serve time.
-## Mirror deployApp.R's APP_FILES: app.R + the R/, www/, precomputed/ dirs +
-## the db. A directory contributes every file under it (recursively).
-runtime_roots <- c("app.R", "R", "www", "data/recruiting.db", "precomputed")
+## Mirror deployApp.R's APP_FILES: app.R + R/, www/, precomputed/, the db, and
+## the external 67-team configuration. A directory contributes every file.
+runtime_roots <- c("app.R", "R", "www", "data/recruiting.db",
+                   "data/team_config.csv", "precomputed")
 
 expand_files <- function(roots) {
   out <- character(0)
@@ -57,7 +61,9 @@ expand_files <- function(roots) {
     }
   }
   ## normalize to forward-slash repo-relative paths (manifest convention)
-  gsub("\\\\", "/", out)
+  out <- gsub("\\\\", "/", out)
+  ## Never publish local patch/reject backups that happen to sit under R/.
+  out[!grepl("\\.(orig|rej)$", out, ignore.case = TRUE)]
 }
 
 files <- expand_files(runtime_roots)
@@ -114,9 +120,15 @@ if (!identical(pkgs_before, pkgs_after)) {
 }
 
 ## Write with rsconnect-compatible formatting: 2-space indent, unboxed scalars,
-## explicit nulls (metadata$primary_rmd etc.), no trailing newline surprises.
+## explicit nulls (metadata$primary_rmd etc.), and UTF-8 bytes regardless of
+## the host's Windows locale.
 json <- toJSON(m, auto_unbox = TRUE, pretty = 2, null = "null", na = "null")
-writeLines(json, manifest_path)
+json <- enc2utf8(as.character(json))
+json <- sub("[[:space:]]+$", "", json)
+manifest_con <- file(manifest_path, open = "wb")
+writeBin(charToRaw(json), manifest_con)
+writeBin(as.raw(0x0A), manifest_con)
+close(manifest_con)
 
 cat("manifest.json rewritten:", length(added), "added,",
     length(dropped), "dropped,", length(changed), "checksums updated;",

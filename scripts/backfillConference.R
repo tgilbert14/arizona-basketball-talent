@@ -285,8 +285,8 @@ if (st_val != 0) {
 mark_stage("validate", "ok")
 
 ## ---------------------------------------------------------------------------
-## S7 refresh the shipped bundle (default renders + manifest checksums) so the
-## committed db/config ship coherently. Best-effort -- absence is not fatal.
+## S7 refresh the shipped bundle. Precompute is a release gate; a database/RDS
+## mismatch must never be onboarded.
 ## ---------------------------------------------------------------------------
 if (!stage_done("precompute") &&
     file.exists(file.path(repo_root, "scripts", "precomputeDefaults.R"))) {
@@ -299,6 +299,9 @@ if (!stage_done("manifest") &&
   mark_stage("manifest", if (st == 0) "ok" else paste0("exit", st))
 }
 
+if (!stage_done("precompute")) {
+  finish(1, "precomputeDefaults failed or is unavailable -- NOT onboarding.")
+}
 ## ---------------------------------------------------------------------------
 ## S8 ONBOARD -- flip to onboarded=TRUE, but ONLY teams that actually landed
 ## data, then commit LOCALLY. A landing-page-valid slug can still scrape thin (a
@@ -343,6 +346,42 @@ cfg_now$onboarded[cfg_now$slug %in% ready] <- TRUE
 write.csv(cfg_now, cfg_path, row.names = FALSE)
 cat("\nFlipped onboarded=TRUE for", length(ready), "of", length(targets),
     conf, "team(s).\n")
+
+## Every database mutator writes the same operational receipt. This keeps the
+## dashboard's pipeline date and compact manifest aligned with source captures.
+backfill_finished <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+backfill_run_id <- paste0("backfill_", conf_slug, "_",
+                          format(Sys.time(), "%Y%m%d_%H%M%S"))
+counts_now <- table_counts(db_path)
+status_now <- if (length(not_ready)) "degraded" else "ok"
+tables_json <- as.character(jsonlite::toJSON(
+  as.list(counts_now), auto_unbox = TRUE))
+note_now <- paste0("Validated conference backfill: ", conf, "; onboarded ",
+                   length(ready), " of ", length(targets), " targets.")
+write_refresh_log(db_path, backfill_run_id, ck$started_at, backfill_finished,
+                  status_now, tables_json, note_now)
+compact <- list(
+  run_id = backfill_run_id,
+  started_at = ck$started_at,
+  finished_at = backfill_finished,
+  status = status_now,
+  changed = TRUE,
+  row_counts = as.list(counts_now),
+  failed_schools = I(as.character(not_ready)),
+  stages = c(ck$stages, list(onboard = status_now))
+)
+write_manifest(file.path(repo_root, "data", "refresh-manifest.json"), compact)
+
+## The config flip + operational receipt changed runtime inputs after the first
+## checksum pass. Rebuild the deploy manifest now and fail closed on mismatch.
+if (!file.exists(file.path(repo_root, "scripts", "updateManifest.R"))) {
+  finish(1, "updateManifest.R unavailable after onboarding; commit withheld.")
+}
+st <- run_child("final manifest receipt", "updateManifest.R")
+if (st != 0) {
+  finish(1, "Final manifest receipt failed; commit withheld.")
+}
+mark_stage("manifest_final", "ok")
 
 git_run <- function(...) suppressWarnings(system2("git", c(...)))
 add_paths <- c("data/team_config.csv", "data/recruiting.db", "precomputed",

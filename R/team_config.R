@@ -51,27 +51,21 @@ TEAM_CONFIG <- data.frame(
   conf_since = c(2024, 2024, 2012, 2023, 2023, 2023, 2024, 2023, 2012, 2012,
                  2012, 2012, 2012, 2012, 2024, 2012),
   ## onboarded: the team is live in the app (data backfilled, visible in every
-  ## picker/board). The shipped 16 are all TRUE. When data/team_config.csv lands
-  ## (Phase 1) it carries the ~51 other P4 programs as onboarded = FALSE until a
-  ## per-conference backfill flips them. Present on the inline fallback too so
-  ## onboarded_slugs() works identically on BOTH load paths.
+  ## picker/board). The inline 16-program fallback is all TRUE; the production
+  ## CSV carries the complete 67-program universe and uses the same visibility
+  ## gate, so onboarded_slugs() works identically on both load paths.
   onboarded = TRUE,
   stringsAsFactors = FALSE
 )
 
 ## ---------------------------------------------------------------------------
-## Power-4 source of truth (Phase 1): if data/team_config.csv exists it BECOMES
-## TEAM_CONFIG (68 rows -- the 16 Big 12 preserved exactly, plus the ~51 other
-## P4 programs carried as onboarded = FALSE until their data is backfilled).
-## When the CSV is absent -- back-compat, and the state during the Phase 1 build
-## itself, before buildTeamConfig.R emits it -- the inline 16-row frame above
-## stands as the fallback. Either way TEAM_CONFIG carries a logical `onboarded`
-## column, and at Phase 1 exactly the 16 Big 12 are TRUE, so the DISPLAY
-## universe (onboarded_slugs) is byte-identical to the shipped 16-team app.
+## data/team_config.csv is the 67-program Power-4 source of truth. The inline
+## 16-row Big 12 frame above is a defensive fallback only. Either load path
+## carries the logical `onboarded` visibility gate; all 67 production rows are
+## currently live.
 ## ---------------------------------------------------------------------------
 local({
-  csv <- tryCatch(here::here("data", "team_config.csv"),
-                  error = function(e) file.path("data", "team_config.csv"))
+  csv <- file.path("data", "team_config.csv")
   if (!file.exists(csv)) return(invisible(NULL))
   tc <- utils::read.csv(csv, stringsAsFactors = FALSE)
   req_cols <- c("slug", "team_name", "logo", "primary", "secondary",
@@ -223,8 +217,8 @@ team_conference <- function(slug) {
 ## (NA or unknown conf -> character(0)). This is the conference primitive used
 ## by the per-conference BACKFILL (scrapers' --conference flag) so it can reach
 ## a league's teams BEFORE they are flipped onboarded. For the app's display /
-## pooling universe use onboarded_slugs() instead -- at Phase 1 (only Big 12
-## onboarded) the two return the same 16 slugs for "Big 12".
+## pooling universe use onboarded_slugs() instead. They currently agree in
+## production because all 67 configured programs are live.
 conf_slugs <- function(conf) {
   TEAM_CONFIG$slug[TEAM_CONFIG$conference %in% conf]
 }
@@ -236,8 +230,8 @@ conf_slugs <- function(conf) {
 ## filtered to a conference (or set of conferences); pass team_conference(team)
 ## to pool only the active team's onboarded conference members (so a half-
 ## onboarded league never renders partial). Preserves TEAM_CONFIG order; NA in
-## `onboarded` counts as FALSE (fail hidden, never accidentally visible). At
-## Phase 1 exactly the 16 Big 12 are TRUE -> onboarded_slugs() is the shipped 16.
+## `onboarded` counts as FALSE (fail hidden, never accidentally visible). All
+## 67 production programs are currently TRUE; the guard remains for safe loads.
 onboarded_slugs <- function(conf = NULL) {
   keep <- TEAM_CONFIG$onboarded %in% TRUE
   if (!is.null(conf)) keep <- keep & TEAM_CONFIG$conference %in% conf

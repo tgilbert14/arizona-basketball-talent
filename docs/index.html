@@ -3,17 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Power-4 Girth Index — recruiting size analytics by Desert Data Labs</title>
-  <meta name="description" content="Every Power-4 recruit's height, weight, and rating across all 67 SEC, Big Ten, ACC & Big 12 programs, 2016–2026 — interactive body maps, beef boards, coach-era breakdowns, a 3-3-5 war room, and talent-vs-results analytics. Free.">
+  <meta name="theme-color" content="#071729">
 
-  <!-- social share cards -->
+  <title>Power-4 Girth Index | Recruiting Size Intelligence</title>
+  <meta name="description" content="Recruiting size intelligence for all 67 Power-4 programs. Explore football and basketball roster construction across the SEC, Big Ten, ACC and Big 12 from 2016 through the current 2027 cycle.">
+
   <meta property="og:type" content="website">
   <meta property="og:title" content="Power-4 Girth Index">
-  <meta property="og:description" content="Who has the biggest bodies in the Power 4? Interactive recruiting size analytics across all 67 SEC, Big Ten, ACC & Big 12 programs: body maps, beef boards, coach eras, the 3-3-5 war room, and talent vs results. 2016–2026, football + basketball.">
+  <meta property="og:description" content="How 67 Power-4 programs build football and basketball rosters, measured in inches, pounds and recruiting talent. 2016-current, refreshed nightly.">
   <meta property="og:url" content="https://girthindex.desertdatalab.com/">
-  <meta property="og:image" content="https://girthindex.desertdatalab.com/og-card.png">
+  <meta property="og:image" content="https://girthindex.desertdatalab.com/assets/og.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="https://girthindex.desertdatalab.com/og-card.png">
+  <meta name="twitter:title" content="Power-4 Girth Index">
+  <meta name="twitter:description" content="Recruiting size intelligence across 67 programs, four conferences and two sports.">
+  <meta name="twitter:image" content="https://girthindex.desertdatalab.com/assets/og.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,193 +25,1132 @@
 
   <style>
     :root {
-      --navy: #0C234B; --navy2: #16386e; --cardinal: #AB0520;
-      --gold: #FFD200; --ink: #1c2733; --muted: #6b7a89;
+      --night: #071729;
+      --night-soft: #0d2440;
+      --ink: #132238;
+      --ink-soft: #526071;
+      --paper: #f4f1e9;
+      --white: #ffffff;
+      --line: rgba(19, 34, 56, 0.14);
+      --line-dark: rgba(255, 255, 255, 0.15);
+      --cardinal: #c51c35;
+      --copper: #e58a54;
+      --sand: #f0d6a5;
+      --acid: #d8ef6b;
+      --shadow: 0 28px 70px rgba(7, 23, 41, 0.16);
+      --radius: 1.5rem;
+      --shell: 1180px;
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Rubik', 'Helvetica Neue', sans-serif; color: var(--ink);
-      background: #f4f7fb; line-height: 1.55; }
 
-    .hero { background:
-        radial-gradient(110% 90% at 85% 0%, rgba(255,210,0,0.12), transparent 55%),
-        linear-gradient(155deg, var(--navy) 0%, var(--navy2) 60%, #1d4587 100%);
-      color: white; padding: 64px 20px 56px 20px; text-align: center; }
-    .hero h1 { font-size: clamp(30px, 6vw, 52px); font-weight: 800;
-      letter-spacing: -0.5px; }
-    .hero h1 span { color: var(--gold); }
-    .hero p.tag { max-width: 640px; margin: 14px auto 0 auto;
-      font-size: clamp(15px, 2.4vw, 18px); opacity: 0.92; }
-    .launch { display: inline-block; margin-top: 28px; background: var(--gold);
-      color: var(--navy); font-weight: 800; font-size: 18px;
-      padding: 14px 38px; border-radius: 10px; text-decoration: none;
-      box-shadow: 0 10px 30px rgba(255,210,0,0.35);
-      transition: transform 0.15s ease, box-shadow 0.15s ease; }
-    .launch:hover { transform: translateY(-2px);
-      box-shadow: 0 14px 36px rgba(255,210,0,0.45); }
-    .hero .sub { margin-top: 12px; font-size: 12.5px; opacity: 0.65; }
+    *, *::before, *::after { box-sizing: border-box; }
 
-    .shot { max-width: 980px; margin: -34px auto 0 auto; padding: 0 16px; }
-    .shot img { width: 100%; border-radius: 14px;
-      box-shadow: 0 24px 60px rgba(12,35,75,0.28); border: 1px solid #dfe7f0; }
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 6rem;
+    }
 
-    section { max-width: 980px; margin: 0 auto; padding: 52px 20px; }
-    h2 { font-size: clamp(22px, 4vw, 30px); font-weight: 800; color: var(--navy);
-      text-align: center; margin-bottom: 8px; }
-    .lede { text-align: center; color: var(--muted); max-width: 620px;
-      margin: 0 auto 34px auto; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Rubik", "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 16px; }
-    .card { background: white; border-radius: 14px; padding: 22px;
-      box-shadow: 0 3px 14px rgba(12,35,75,0.07); border-top: 3px solid var(--cardinal);
-      transition: transform 0.18s ease, box-shadow 0.18s ease; }
-    .card:hover { transform: translateY(-4px);
-      box-shadow: 0 12px 26px rgba(12,35,75,0.13); }
-    .card .emoji { font-size: 26px; }
-    .card h3 { color: var(--navy); font-size: 17px; margin: 8px 0 6px 0; }
-    .card p { font-size: 14px; color: #4d5d6d; }
+    ::selection { color: var(--night); background: var(--acid); }
+    img { display: block; max-width: 100%; }
+    a { color: inherit; }
 
-    .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-      gap: 18px; align-items: center; }
-    .two img { width: 100%; border-radius: 12px; border: 1px solid #e2e9f1;
-      box-shadow: 0 6px 20px rgba(12,35,75,0.10); }
+    a:focus-visible, button:focus-visible {
+      outline: 3px solid var(--acid);
+      outline-offset: 4px;
+    }
 
-    .sources { background: white; border-radius: 14px; padding: 24px 26px;
-      font-size: 13.5px; color: #4d5d6d; border-left: 4px solid var(--gold); }
-    .sources strong { color: var(--navy); }
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: .75rem;
+      left: .75rem;
+      padding: .75rem 1rem;
+      color: var(--night);
+      background: var(--acid);
+      border-radius: .5rem;
+      font-weight: 800;
+      transform: translateY(-160%);
+      transition: transform 160ms ease;
+    }
 
-    .cta { background: linear-gradient(155deg, var(--navy), var(--navy2));
-      border-radius: 16px; color: white; text-align: center; padding: 40px 24px; }
-    .cta h2 { color: white; }
-    .cta p { opacity: 0.9; max-width: 560px; margin: 8px auto 20px auto; }
-    .cta a.mail { display: inline-block; background: white; color: var(--navy);
-      font-weight: 800; padding: 12px 28px; border-radius: 10px;
-      text-decoration: none; }
-    .cta a.mail:hover { background: var(--gold); }
+    .skip-link:focus { transform: translateY(0); }
 
-    footer { text-align: center; color: var(--muted); font-size: 12.5px;
-      padding: 26px 16px 38px 16px; }
-    footer a { color: var(--cardinal); font-weight: 600; text-decoration: none; }
+    .shell {
+      width: min(calc(100% - 2.5rem), var(--shell));
+      margin-inline: auto;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      margin: 0 0 1.25rem;
+      color: var(--cardinal);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .18em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      width: 2.1rem;
+      height: 2px;
+      background: currentColor;
+      content: "";
+    }
+
+    .eyebrow--light { color: var(--acid); }
+
+    .section-heading {
+      max-width: 800px;
+      margin: 0;
+      font-size: clamp(2.25rem, 5vw, 4.75rem);
+      font-weight: 800;
+      letter-spacing: -.055em;
+      line-height: .98;
+    }
+
+    .section-intro {
+      max-width: 640px;
+      margin: 1.5rem 0 0;
+      color: var(--ink-soft);
+      font-size: clamp(1rem, 1.6vw, 1.16rem);
+    }
+
+    .site-header {
+      position: absolute;
+      z-index: 20;
+      inset: 0 0 auto;
+      color: var(--white);
+      border-bottom: 1px solid var(--line-dark);
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 5.25rem;
+      gap: 1.5rem;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: .8rem;
+      min-width: max-content;
+      color: var(--white);
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 2.65rem;
+      height: 2.65rem;
+      place-items: center;
+      color: var(--night);
+      background: var(--acid);
+      border-radius: 50%;
+      font-size: .7rem;
+      font-weight: 800;
+      letter-spacing: -.04em;
+    }
+
+    .brand-copy {
+      display: grid;
+      font-size: .8rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      line-height: 1.15;
+      text-transform: uppercase;
+    }
+
+    .brand-copy span:last-child {
+      color: rgba(255,255,255,.57);
+      font-size: .63rem;
+      letter-spacing: .17em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: clamp(1rem, 2.5vw, 2rem);
+      margin-left: auto;
+    }
+
+    .nav-links a {
+      color: rgba(255,255,255,.73);
+      font-size: .77rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-decoration: none;
+      transition: color 160ms ease;
+    }
+
+    .nav-links a:hover { color: var(--white); }
+
+    .nav-launch {
+      display: inline-flex;
+      min-height: 2.75rem;
+      align-items: center;
+      justify-content: center;
+      padding: .7rem 1.05rem;
+      color: var(--night);
+      background: var(--white);
+      border: 1px solid var(--white);
+      border-radius: 999px;
+      font-size: .75rem;
+      font-weight: 800;
+      line-height: 1;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    .nav-launch:hover {
+      color: var(--white);
+      background: transparent;
+      transform: translateY(-2px);
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 10.75rem 0 14rem;
+      color: var(--white);
+      background:
+        radial-gradient(circle at 86% 24%, rgba(216,239,107,.13), transparent 27rem),
+        radial-gradient(circle at 7% 88%, rgba(197,28,53,.23), transparent 31rem),
+        var(--night);
+    }
+
+    .hero::before {
+      position: absolute;
+      inset: 0;
+      opacity: .32;
+      background-image:
+        linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px);
+      background-size: 4.75rem 4.75rem;
+      mask-image: linear-gradient(to bottom, black, transparent 86%);
+      content: "";
+      pointer-events: none;
+    }
+
+    .hero::after {
+      position: absolute;
+      top: 9rem;
+      right: -12rem;
+      width: 40rem;
+      height: 40rem;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 50%;
+      box-shadow: 0 0 0 6rem rgba(255,255,255,.018), 0 0 0 12rem rgba(255,255,255,.012);
+      content: "";
+      pointer-events: none;
+    }
+
+    .hero-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(260px, .68fr);
+      align-items: end;
+      gap: clamp(3rem, 8vw, 8rem);
+    }
+
+    .hero .eyebrow { color: var(--acid); }
+
+    .hero h1 {
+      max-width: 850px;
+      margin: 0;
+      font-size: clamp(4rem, 9.2vw, 8.75rem);
+      font-weight: 800;
+      letter-spacing: -.075em;
+      line-height: .83;
+      text-wrap: balance;
+    }
+
+    .hero h1 em {
+      display: block;
+      color: transparent;
+      -webkit-text-stroke: 1.5px rgba(255,255,255,.73);
+      font-style: normal;
+    }
+
+    .hero-copy {
+      max-width: 720px;
+      margin: 2.25rem 0 0;
+      color: rgba(255,255,255,.73);
+      font-size: clamp(1.06rem, 1.65vw, 1.28rem);
+    }
+
+    .hero-copy strong { color: var(--white); font-weight: 600; }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .85rem;
+      margin-top: 2.35rem;
+    }
+
+    .button {
+      display: inline-flex;
+      min-height: 3.55rem;
+      align-items: center;
+      justify-content: center;
+      gap: .8rem;
+      padding: .95rem 1.5rem;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      font-size: .86rem;
+      font-weight: 800;
+      letter-spacing: .01em;
+      line-height: 1;
+      text-decoration: none;
+      transition: color 180ms ease, background 180ms ease, border-color 180ms ease, transform 180ms ease;
+    }
+
+    .button::after { font-size: 1rem; content: "\2197"; }
+    .button:hover { transform: translateY(-3px); }
+
+    .button--primary {
+      color: var(--night);
+      background: var(--acid);
+      border-color: var(--acid);
+    }
+
+    .button--primary:hover { background: #e5f58d; border-color: #e5f58d; }
+
+    .button--ghost {
+      color: var(--white);
+      background: transparent;
+      border-color: rgba(255,255,255,.3);
+    }
+
+    .button--ghost::after { content: "\2193"; }
+    .button--ghost:hover { border-color: var(--white); }
+
+    .hero-note {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .55rem 1.4rem;
+      margin-top: 1.25rem;
+      color: rgba(255,255,255,.53);
+      font-size: .72rem;
+    }
+
+    .hero-note span {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    .hero-note span::before {
+      width: .35rem;
+      height: .35rem;
+      background: var(--acid);
+      border-radius: 50%;
+      content: "";
+    }
+
+    .edition-card {
+      position: relative;
+      padding: 1.75rem;
+      background: rgba(255,255,255,.065);
+      border: 1px solid var(--line-dark);
+      border-radius: var(--radius);
+      backdrop-filter: blur(8px);
+    }
+
+    .edition-card::before {
+      position: absolute;
+      top: 1.15rem;
+      right: 1.15rem;
+      width: .55rem;
+      height: .55rem;
+      background: var(--acid);
+      border-radius: 50%;
+      box-shadow: 0 0 0 .4rem rgba(216,239,107,.1);
+      content: "";
+    }
+
+    .edition-label {
+      margin: 0;
+      color: rgba(255,255,255,.54);
+      font-size: .66rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .edition-cycle {
+      margin: 1.65rem 0 0;
+      font-size: clamp(3.8rem, 7vw, 6.8rem);
+      font-weight: 800;
+      letter-spacing: -.08em;
+      line-height: .85;
+    }
+
+    .edition-cycle span {
+      display: block;
+      margin: .85rem 0 0 .2rem;
+      color: var(--copper);
+      font-size: .7rem;
+      letter-spacing: .15em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    .conference-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .7rem 1rem;
+      margin: 1.8rem 0 0;
+      padding: 1.35rem 0 0;
+      border-top: 1px solid var(--line-dark);
+      color: rgba(255,255,255,.74);
+      font-size: .72rem;
+      font-weight: 600;
+    }
+
+    .product-frame-wrap {
+      position: relative;
+      z-index: 3;
+      margin-top: -10rem;
+    }
+
+    .product-frame {
+      overflow: hidden;
+      padding: .55rem;
+      background: #dfe3e4;
+      border: 1px solid rgba(7,23,41,.18);
+      border-radius: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+
+    .frame-bar {
+      display: flex;
+      min-height: 2.85rem;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0 .85rem;
+      color: #42505d;
+      font-size: .66rem;
+      font-weight: 600;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .frame-dots { display: flex; gap: .35rem; }
+
+    .frame-dots i {
+      width: .48rem;
+      height: .48rem;
+      background: #9ea7ad;
+      border-radius: 50%;
+    }
+
+    .frame-dots i:first-child { background: var(--cardinal); }
+
+    .product-frame img {
+      width: 100%;
+      height: auto;
+      background: var(--white);
+      border-radius: .8rem;
+    }
+
+    .proof { padding: 2.1rem 0 7.5rem; }
+
+    .proof-list {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin: 0;
+      padding: 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .proof-item {
+      padding: 1.75rem 1.5rem;
+      border-right: 1px solid var(--line);
+    }
+
+    .proof-item:first-child { padding-left: 0; }
+    .proof-item:last-child { border-right: 0; }
+
+    .proof-item dt {
+      margin-top: .35rem;
+      color: var(--ink-soft);
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .proof-item dd {
+      margin: 0;
+      color: var(--ink);
+      font-size: clamp(2rem, 4.5vw, 3.75rem);
+      font-weight: 800;
+      letter-spacing: -.06em;
+      line-height: 1;
+    }
+
+    .views { padding: 1rem 0 8rem; }
+
+    .views-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(260px, .58fr);
+      align-items: end;
+      gap: 3rem;
+    }
+
+    .views-header .section-intro { margin: 0; }
+
+    .view-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      margin-top: 4.5rem;
+      overflow: hidden;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .view-card {
+      position: relative;
+      min-height: 18rem;
+      padding: 1.55rem;
+      background: var(--paper);
+      transition: color 220ms ease, background 220ms ease;
+    }
+
+    .view-card:hover { color: var(--white); background: var(--night-soft); }
+
+    .view-number {
+      color: var(--cardinal);
+      font-size: .65rem;
+      font-weight: 800;
+      letter-spacing: .12em;
+    }
+
+    .view-card:hover .view-number { color: var(--acid); }
+
+    .view-card h3 {
+      margin: 4.25rem 0 .75rem;
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: -.025em;
+      line-height: 1.1;
+    }
+
+    .view-card p {
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: .82rem;
+      line-height: 1.55;
+      transition: color 220ms ease;
+    }
+
+    .view-card:hover p { color: rgba(255,255,255,.67); }
+
+    .view-tag {
+      position: absolute;
+      right: 1.5rem;
+      bottom: 1.5rem;
+      color: var(--ink-soft);
+      font-size: .58rem;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .view-card:hover .view-tag { color: var(--copper); }
+
+    .tour {
+      overflow: hidden;
+      color: var(--white);
+      background: var(--night);
+    }
+
+    .tour-intro { padding: 8rem 0 5rem; }
+    .tour-intro .section-intro { color: rgba(255,255,255,.59); }
+
+    .tour-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.32fr) minmax(280px, .68fr);
+      align-items: center;
+      gap: clamp(2.5rem, 7vw, 7rem);
+      padding: 4.5rem 0;
+      border-top: 1px solid var(--line-dark);
+    }
+
+    .tour-row--reverse { grid-template-columns: minmax(280px, .68fr) minmax(0, 1.32fr); }
+    .tour-row--reverse .tour-media { grid-column: 2; grid-row: 1; }
+    .tour-row--reverse .tour-copy { grid-column: 1; grid-row: 1; }
+    .tour-media { position: relative; }
+
+    .tour-media::before {
+      position: absolute;
+      z-index: 0;
+      inset: 12% -2rem -2rem 18%;
+      background: var(--cardinal);
+      border-radius: 1.25rem;
+      content: "";
+    }
+
+    .tour-row--reverse .tour-media::before {
+      inset: -2rem 18% 12% -2rem;
+      background: var(--copper);
+    }
+
+    .tour-media img {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      border: 1px solid rgba(255,255,255,.23);
+      border-radius: 1rem;
+      box-shadow: 0 2rem 5rem rgba(0,0,0,.28);
+    }
+
+    .tour-kicker {
+      display: block;
+      margin-bottom: 1.2rem;
+      color: var(--acid);
+      font-size: .65rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .tour-copy h3 {
+      max-width: 420px;
+      margin: 0;
+      font-size: clamp(2rem, 4.2vw, 4.25rem);
+      font-weight: 800;
+      letter-spacing: -.055em;
+      line-height: .98;
+    }
+
+    .tour-copy p {
+      max-width: 420px;
+      margin: 1.4rem 0 0;
+      color: rgba(255,255,255,.63);
+      font-size: .92rem;
+    }
+
+    .tour-copy ul {
+      display: grid;
+      gap: .65rem;
+      margin: 1.6rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tour-copy li {
+      display: flex;
+      align-items: center;
+      gap: .7rem;
+      color: rgba(255,255,255,.83);
+      font-size: .78rem;
+      font-weight: 600;
+    }
+
+    .tour-copy li::before {
+      width: .4rem;
+      height: .4rem;
+      flex: 0 0 auto;
+      background: var(--copper);
+      border-radius: 50%;
+      content: "";
+    }
+
+    .methods { padding: 8rem 0; background: var(--white); }
+
+    .methods-heading {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, .56fr);
+      align-items: end;
+      gap: 3rem;
+    }
+
+    .methods-heading .section-intro { margin: 0; }
+
+    .method-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+      margin-top: 4.5rem;
+    }
+
+    .method-card { padding-top: 1.5rem; border-top: 3px solid var(--ink); }
+    .method-card:nth-child(2) { border-color: var(--cardinal); }
+    .method-card:nth-child(3) { border-color: var(--copper); }
+    .method-card:nth-child(4) { border-color: #7f9c22; }
+
+    .method-card span {
+      display: block;
+      margin-bottom: 3rem;
+      color: var(--ink-soft);
+      font-size: .64rem;
+      font-weight: 800;
+      letter-spacing: .14em;
+    }
+
+    .method-card h3 { margin: 0 0 .65rem; font-size: 1rem; }
+    .method-card p { margin: 0; color: var(--ink-soft); font-size: .8rem; }
+
+    .source-note {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 1.25rem;
+      margin-top: 4rem;
+      padding: 1.3rem 1.4rem;
+      background: var(--paper);
+      border-radius: .85rem;
+    }
+
+    .source-note strong {
+      color: var(--cardinal);
+      font-size: .68rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .source-note p { margin: 0; color: var(--ink-soft); font-size: .78rem; }
+
+    .text-link {
+      color: var(--ink);
+      font-size: .75rem;
+      font-weight: 800;
+      text-underline-offset: .25rem;
+    }
+
+    .text-link:hover { color: var(--cardinal); }
+    .brief { padding: 2rem 0 0; background: var(--white); }
+
+    .brief-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, .34fr);
+      align-items: end;
+      gap: 3rem;
+      overflow: hidden;
+      padding: clamp(2.5rem, 6vw, 5.25rem);
+      color: var(--white);
+      background: var(--cardinal);
+      border-radius: var(--radius);
+    }
+
+    .brief-card::after {
+      position: absolute;
+      right: -7rem;
+      bottom: -12rem;
+      width: 31rem;
+      height: 31rem;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 50%;
+      box-shadow: 0 0 0 4rem rgba(255,255,255,.04), 0 0 0 8rem rgba(255,255,255,.025);
+      content: "";
+    }
+
+    .brief-card > * { position: relative; z-index: 1; }
+
+    .brief-kicker {
+      margin: 0 0 1.2rem;
+      color: var(--sand);
+      font-size: .66rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .brief-card h2 {
+      max-width: 760px;
+      margin: 0;
+      font-size: clamp(2.6rem, 6vw, 5.75rem);
+      font-weight: 800;
+      letter-spacing: -.065em;
+      line-height: .92;
+    }
+
+    .brief-card p {
+      max-width: 650px;
+      margin: 1.45rem 0 0;
+      color: rgba(255,255,255,.75);
+      font-size: .9rem;
+    }
+
+    .brief-card .button {
+      justify-self: end;
+      color: var(--night);
+      background: var(--white);
+    }
+
+    .brief-card .button:hover { background: var(--acid); }
+    .studio { padding: 8rem 0; background: var(--white); }
+
+    .studio-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, .7fr);
+      gap: clamp(3rem, 8vw, 8rem);
+      align-items: start;
+    }
+
+    .studio h2 {
+      max-width: 760px;
+      margin: 0;
+      font-size: clamp(2.7rem, 6.5vw, 6.4rem);
+      font-weight: 800;
+      letter-spacing: -.07em;
+      line-height: .9;
+    }
+
+    .studio-copy { padding-top: .65rem; }
+    .studio-copy p { margin: 0; color: var(--ink-soft); font-size: .95rem; }
+
+    .studio-services {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin: 1.5rem 0 2rem;
+    }
+
+    .studio-services span {
+      padding: .45rem .7rem;
+      color: var(--ink);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: .63rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .studio .button { color: var(--white); background: var(--night); }
+    .studio .button:hover { background: var(--cardinal); }
+    .site-footer { color: rgba(255,255,255,.64); background: var(--night); }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 2rem;
+      min-height: 7.5rem;
+      font-size: .7rem;
+    }
+
+    .footer-grid p { max-width: 700px; margin: 0; }
+    .footer-links { display: flex; gap: 1.25rem; }
+
+    .footer-links a {
+      color: var(--white);
+      font-weight: 600;
+      text-underline-offset: .25rem;
+    }
+
+    .footer-links a:hover { color: var(--acid); }
+
+    @media (max-width: 980px) {
+      .hero { padding-bottom: 12rem; }
+      .hero-grid, .views-header, .methods-heading, .studio-grid { grid-template-columns: 1fr; }
+      .hero-grid { align-items: start; gap: 3.25rem; }
+      .edition-card { max-width: 34rem; }
+      .views-header .section-intro, .methods-heading .section-intro { margin-top: 0; }
+      .view-grid { grid-template-columns: repeat(2, 1fr); }
+      .tour-row, .tour-row--reverse { grid-template-columns: 1fr; }
+      .tour-row--reverse .tour-media, .tour-row--reverse .tour-copy { grid-column: auto; grid-row: auto; }
+      .tour-row--reverse .tour-media { order: 1; }
+      .tour-row--reverse .tour-copy { order: 2; }
+      .tour-media { width: min(100%, 760px); }
+      .method-grid { grid-template-columns: repeat(2, 1fr); gap: 2.5rem 1.25rem; }
+      .brief-card { grid-template-columns: 1fr; }
+      .brief-card .button { justify-self: start; }
+      .studio-copy { max-width: 580px; }
+    }
+
+    @media (max-width: 760px) {
+      .shell { width: min(calc(100% - 1.5rem), var(--shell)); }
+      .nav { min-height: 4.75rem; }
+      .nav-links { display: none; }
+      .brand-copy span:last-child { display: none; }
+      .hero { padding: 8.75rem 0 10rem; }
+      .hero h1 { font-size: clamp(3.65rem, 17vw, 6.8rem); }
+      .hero h1 em { -webkit-text-stroke-width: 1px; }
+      .product-frame-wrap { margin-top: -7rem; }
+      .frame-bar span:nth-child(2) { display: none; }
+      .proof { padding-bottom: 5.75rem; }
+      .proof-list { grid-template-columns: repeat(2, 1fr); }
+      .proof-item { min-width: 0; padding: 1.35rem 1rem; }
+      .proof-item:first-child { padding-left: 1rem; }
+      .proof-item:nth-child(2) { border-right: 0; }
+      .proof-item:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+      .proof-item dt { font-size: .6rem; }
+      .views, .methods, .studio { padding: 5.75rem 0; }
+      .tour-intro { padding: 5.75rem 0 3rem; }
+      .tour-row { padding: 3.5rem 0; }
+      .source-note { grid-template-columns: 1fr; gap: .65rem; }
+      .footer-grid { grid-template-columns: 1fr; gap: 1rem; padding: 2rem 0; }
+    }
+
+    @media (max-width: 540px) {
+      .nav-launch { min-height: 2.55rem; padding-inline: .85rem; }
+      .hero-actions { align-items: stretch; flex-direction: column; }
+      .hero-actions .button { width: 100%; }
+      .edition-card { padding: 1.4rem; }
+      .product-frame { margin-inline: -.25rem; padding: .35rem; border-radius: .9rem; }
+      .frame-bar { min-height: 2.35rem; }
+      .product-frame img { border-radius: .58rem; }
+      .view-grid, .method-grid { grid-template-columns: 1fr; }
+      .view-card { min-height: 15.5rem; }
+      .view-card h3 { margin-top: 3rem; }
+      .tour-media::before, .tour-row--reverse .tour-media::before { inset: 1rem -.4rem -.85rem 12%; }
+      .method-card span { margin-bottom: 1.7rem; }
+      .brief { padding-top: .75rem; }
+      .brief-card { padding: 2.15rem 1.5rem; border-radius: 1.15rem; }
+      .brief-card .button, .studio .button { width: 100%; }
+      .footer-links { flex-direction: column; gap: .55rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+      }
+    }
   </style>
 </head>
+
 <body>
+  <a class="skip-link" href="#main">Skip to main content</a>
 
-  <div class="hero">
-    <h1>The Power-4 <span>Girth Index</span></h1>
-    <p class="tag">Who has the biggest bodies in college football? Every
-      recruit's height, weight, and rating — 2016 to 2026, football and
-      basketball, all 67 SEC, Big Ten, ACC &amp; Big 12 programs — turned into
-      interactive charts a fan can read and an analyst can defend.</p>
-    <a class="launch" id="launch"
-       href="https://019eb854-79ca-079b-a1d7-f5b7e4f673b0.share.connect.posit.cloud/">
-       Launch the app &rarr;</a>
-    <div class="sub">Free · no sign-up · works on your phone</div>
-    <div class="sub" id="freshness" hidden></div>
-  </div>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="Power-4 Girth Index home">
+        <span class="brand-mark" aria-hidden="true">P4/GI</span>
+        <span class="brand-copy">
+          <span>Girth Index</span>
+          <span>Desert Data Labs</span>
+        </span>
+      </a>
 
-  <div class="shot">
-    <img src="assets/bodymap.png"
-         alt="The Body Map: every player in the conference by height and weight, with your team highlighted by position">
-  </div>
+      <div class="nav-links">
+        <a href="#views">Key views</a>
+        <a href="#tour">Product tour</a>
+        <a href="#methodology">Methodology</a>
+        <a href="brief/">Weekly brief</a>
+      </div>
 
-  <section>
-    <h2>What's inside</h2>
-    <p class="lede">Ten interactive views, one control bar. Pick your team
-      once — the app remembers it.</p>
-    <div class="grid">
-      <div class="card"><div class="emoji">🗺️</div><h3>The Body Map</h3>
-        <p>Every player in the conference plotted by height × weight, your
-        team highlighted by position. Tap any dot for the recruit's card.</p></div>
-      <div class="card"><div class="emoji">🥩</div><h3>Conference Beef</h3>
-        <p>Leaderboards for weight, height, and pounds-per-inch — commit
-        classes or current rosters, with a Trenches filter.</p></div>
-      <div class="card"><div class="emoji">🔬</div><h3>Conference Lab</h3>
-        <p>SEC vs Big Ten vs ACC vs Big 12 — rating, blue-chip share and size
-        as honest distributions, not headline bars. Win% and SP+ deliberately
-        left out (a league plays itself).</p></div>
-      <div class="card"><div class="emoji">🃏</div><h3>Player Cards</h3>
-        <p>Tap a name in any pinned card and a holographic player card spins
-        in — size, rating, hometown, miles from campus, and their 247 link.</p></div>
-      <div class="card"><div class="emoji">🛡️</div><h3>The War Room</h3>
-        <p>Every defensive body mapped onto Arizona's 3-3-5 odd-stack roles —
-        two-deep targets, incoming adds at projected weights, auto-written brief.</p></div>
-      <div class="card"><div class="emoji">🏆</div><h3>Talent vs Results</h3>
-        <p>Recruiting composites joined to real season records and SP+ —
-        who outplays their talent, and who wastes it.</p></div>
-      <div class="card"><div class="emoji">📈</div><h3>Coach Eras</h3>
-        <p>Every head coach's recruiting fingerprint: ratings, blue-chips,
-        size, footprint — era by era, class by class.</p></div>
+      <a class="nav-launch" href="https://019eb854-79ca-079b-a1d7-f5b7e4f673b0.share.connect.posit.cloud/">Open the index</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-grid shell">
+        <div>
+          <p class="eyebrow">Power-4 roster intelligence</p>
+          <h1 id="hero-title">The measure of a <em>modern roster.</em></h1>
+          <p class="hero-copy">The Power-4 Girth Index turns every reported inch, pound and recruiting rating into a comparative view of how <strong>67 programs</strong> build football and basketball teams.</p>
+
+          <div class="hero-actions">
+            <a class="button button--primary" id="launch" href="https://019eb854-79ca-079b-a1d7-f5b7e4f673b0.share.connect.posit.cloud/">Explore the live app</a>
+            <a class="button button--ghost" href="#views">See what is inside</a>
+          </div>
+
+          <div class="hero-note" aria-label="Product details">
+            <span>No sign-up</span>
+            <span>Nightly refresh</span>
+            <span id="freshness" aria-live="polite" hidden></span>
+          </div>
+        </div>
+
+        <aside class="edition-card" aria-label="Current data edition">
+          <p class="edition-label">Current edition</p>
+          <p class="edition-cycle">2027 <span>Recruiting cycle in progress</span></p>
+          <div class="conference-list" aria-label="Conferences covered">
+            <span>SEC</span><span>Big Ten</span><span>ACC</span><span>Big 12</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <div class="product-frame-wrap shell" aria-label="Power-4 Girth Index product preview">
+      <div class="product-frame">
+        <div class="frame-bar" aria-hidden="true">
+          <span class="frame-dots"><i></i><i></i><i></i></span>
+          <span>The Body Map / Power 4</span>
+          <span>Live product</span>
+        </div>
+        <img src="assets/bodymap.png" width="1800" height="1275" fetchpriority="high" alt="The Body Map in the Girth Index, plotting Power-4 players by height and weight with position and team controls">
+      </div>
     </div>
-  </section>
 
-  <section>
-    <h2>Built to be argued with</h2>
-    <p class="lede">Pin cards to a chart, drag them where you want, and save
-      the whole annotated view as a PNG — receipts included.</p>
-    <div class="two">
-      <img src="assets/h2h.png" alt="Head-to-head weigh-in: Arizona vs Arizona State by position group">
-      <img src="assets/scoreboard.png" alt="Arizona scoreboard: wins per season vs talent on hand">
-    </div>
-  </section>
+    <section class="proof" aria-label="Coverage at a glance">
+      <div class="shell">
+        <dl class="proof-list">
+          <div class="proof-item"><dd>67</dd><dt>Power-4 programs</dt></div>
+          <div class="proof-item"><dd>4</dd><dt>Conferences</dt></div>
+          <div class="proof-item"><dd>2</dd><dt>Sports</dt></div>
+          <div class="proof-item"><dd>2016&ndash;now</dd><dt>Recruiting window</dt></div>
+        </dl>
+      </div>
+    </section>
 
-  <section>
-    <div class="sources">
-      <strong>Data &amp; transparency.</strong> Recruiting classes and rosters
-      from 247Sports (2016–2026, portal transfers included from 2021); season
-      records and SP+ from CollegeFootballData. Heights and weights are as
-      reported by programs — treat them as directional, not lab-measured.
-      Every chart in the app states its player pool and source, and every
-      metric has a methods note. Found a data error?
-      <a href="mailto:desertdatalabs@gmail.com?subject=Girth%20Index%20data">Tell us</a>
-      — data validity outranks everything else here.
-    </div>
-    <div class="sources" style="border-left-color: var(--cardinal); margin-top: 14px;">
-      <strong>This week in the Power 4.</strong> New commits, portal additions,
-      and class movement across all 67 programs — auto-written from the
-      nightly data, every number with its sample size.
-      <a href="brief/">Read the latest brief &rarr;</a>
-    </div>
-  </section>
+    <section class="views" id="views" aria-labelledby="views-title">
+      <div class="shell">
+        <div class="views-header">
+          <div>
+            <p class="eyebrow">One control surface</p>
+            <h2 class="section-heading" id="views-title">Every angle on how a roster gets built.</h2>
+          </div>
+          <p class="section-intro">Choose a program once, then move from national context to a single position room. Filters, pinned comparisons and export-ready charts stay within reach.</p>
+        </div>
 
-  <section>
-    <div class="cta">
-      <h2>✋ Want one for your team?</h2>
-      <p>The War Room is tuned to Arizona's 3-3-5. Desert Data Labs builds
-        custom recruiting dashboards, scrapers, and analytics for programs,
-        conferences, podcasts, and businesses — tuned to your scheme and
-        your questions.</p>
-      <a class="mail"
-         href="mailto:desertdatalabs@gmail.com?subject=Custom%20build">
-         desertdatalabs@gmail.com</a>
-    </div>
-  </section>
+        <div class="view-grid">
+          <article class="view-card"><span class="view-number">01</span><h3>The Body Map</h3><p>Plot height against weight across a conference, with program and position detail available on every player.</p><span class="view-tag">Scale</span></article>
+          <article class="view-card"><span class="view-number">02</span><h3>Conference Beef</h3><p>Rank teams by weight, height and pounds per inch across full rosters or the players who define the trenches.</p><span class="view-tag">Rank</span></article>
+          <article class="view-card"><span class="view-number">03</span><h3>Conference Lab</h3><p>Compare recruiting rating, blue-chip share and size as full distributions across all four Power conferences.</p><span class="view-tag">Compare</span></article>
+          <article class="view-card"><span class="view-number">04</span><h3>Head-to-Head</h3><p>Put two programs on the same scale and inspect the physical difference by position group and class.</p><span class="view-tag">Match up</span></article>
+          <article class="view-card"><span class="view-number">05</span><h3>Player Cards</h3><p>Open a recruit-level profile for size, rating, hometown, distance to campus and the original recruiting page.</p><span class="view-tag">Inspect</span></article>
+          <article class="view-card"><span class="view-number">06</span><h3>The War Room</h3><p>Map Arizona defenders to 3-3-5 roles, two-deep targets and incoming projected weights in one football view.</p><span class="view-tag">Plan</span></article>
+          <article class="view-card"><span class="view-number">07</span><h3>Talent vs Results</h3><p>Join roster talent to season records and SP+ to find teams that develop, outperform or leave value unused.</p><span class="view-tag">Evaluate</span></article>
+          <article class="view-card"><span class="view-number">08</span><h3>Coach Eras</h3><p>Trace each staff's recruiting fingerprint through ratings, blue-chip share, size and geographic footprint.</p><span class="view-tag">History</span></article>
+        </div>
+      </div>
+    </section>
 
-  <footer>
-    Built by <a href="mailto:desertdatalabs@gmail.com">Desert Data Labs</a>
-    · Tucson, AZ · Data: 247Sports &amp; CollegeFootballData ·
-    Not affiliated with the University of Arizona or any conference or program.
+    <section class="tour" id="tour" aria-labelledby="tour-title">
+      <div class="tour-intro shell">
+        <p class="eyebrow eyebrow--light">Built for the comparison</p>
+        <h2 class="section-heading" id="tour-title">From conference scale to one position room.</h2>
+        <p class="section-intro">The interface is designed for exploration first and evidence second: isolate a question, pin the answer, then export the view with its context intact.</p>
+      </div>
+
+      <div class="shell">
+        <article class="tour-row">
+          <div class="tour-media">
+            <img src="assets/h2h.png" width="1725" height="1200" loading="lazy" alt="Head-to-head Girth Index view comparing Arizona and Arizona State roster size by position group">
+          </div>
+          <div class="tour-copy">
+            <span class="tour-kicker">Direct comparison</span>
+            <h3>Put rivals on the same scale.</h3>
+            <p>Move past roster averages. The head-to-head view reveals where one program is longer, heavier or more highly rated at the exact position groups that decide a matchup.</p>
+            <ul><li>Position-by-position splits</li><li>Recruiting class or current roster</li><li>Pin, annotate and export</li></ul>
+          </div>
+        </article>
+
+        <article class="tour-row tour-row--reverse">
+          <div class="tour-media">
+            <img src="assets/scoreboard.png" width="1440" height="660" loading="lazy" alt="Talent versus results scoreboard showing Arizona season wins against roster talent">
+          </div>
+          <div class="tour-copy">
+            <span class="tour-kicker">Performance context</span>
+            <h3>See what programs do with talent.</h3>
+            <p>Recruiting is an input, not an outcome. The scoreboard brings composite talent, wins and SP+ together so development and underperformance are visible across seasons.</p>
+            <ul><li>Season-level roster composites</li><li>Wins and advanced ratings</li><li>Coach-era context</li></ul>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="methods" id="methodology" aria-labelledby="methods-title">
+      <div class="shell">
+        <div class="methods-heading">
+          <div>
+            <p class="eyebrow">Transparent by design</p>
+            <h2 class="section-heading" id="methods-title">A method you can inspect, not a black box.</h2>
+          </div>
+          <p class="section-intro">Every chart names its player pool, unit of analysis and source. The app separates reported measurements from modeled comparisons and keeps the caveats beside the result.</p>
+        </div>
+
+        <div class="method-grid">
+          <article class="method-card"><span>01 / COLLECT</span><h3>Recruiting and rosters</h3><p>247Sports classes and team rosters from 2016 through the current 2027 cycle, with portal additions included from 2021.</p></article>
+          <article class="method-card"><span>02 / NORMALIZE</span><h3>Comparable positions</h3><p>Team labels, positions, measurements and ratings are standardized so like-for-like comparisons remain possible.</p></article>
+          <article class="method-card"><span>03 / CONNECT</span><h3>Results in context</h3><p>Season records and SP+ from CollegeFootballData connect recruiting inputs to on-field football performance.</p></article>
+          <article class="method-card"><span>04 / DISCLOSE</span><h3>Limits stay visible</h3><p>Program-reported heights and weights are directional, not lab measurements. Samples and definitions travel with each view.</p></article>
+        </div>
+
+        <div class="source-note">
+          <strong>Data note</strong>
+          <p>Sources: 247Sports and CollegeFootballData. Refreshed nightly; reported data errors are reviewed at the source level.</p>
+          <a class="text-link" href="mailto:desertdatalabs@gmail.com?subject=Girth%20Index%20data%20review">Report an issue</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="brief" aria-labelledby="brief-title">
+      <div class="shell">
+        <div class="brief-card">
+          <div>
+            <p class="brief-kicker">The weekly Power-4 brief</p>
+            <h2 id="brief-title">The movement behind the rankings.</h2>
+            <p>New commitments, portal additions and class movement across all 67 programs, written from the nightly data with the sample behind every claim.</p>
+          </div>
+          <a class="button" href="brief/">Read the latest brief</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="studio" aria-labelledby="studio-title">
+      <div class="studio-grid shell">
+        <div>
+          <p class="eyebrow">Desert Data Labs</p>
+          <h2 id="studio-title">Your question. A sharper data product.</h2>
+        </div>
+        <div class="studio-copy">
+          <p>The Girth Index is one example of how Desert Data Labs turns difficult data into useful, defensible tools for programs, conferences, media teams and growing businesses.</p>
+          <div class="studio-services" aria-label="Desert Data Labs services"><span>Custom dashboards</span><span>Data pipelines</span><span>Decision tools</span><span>Editorial analytics</span></div>
+          <a class="button" href="mailto:desertdatalabs@gmail.com?subject=Desert%20Data%20Labs%20project">Start a conversation</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-grid shell">
+      <p>Built by Desert Data Labs in Tucson, Arizona. Data from 247Sports and CollegeFootballData. Not affiliated with any university, conference or program.</p>
+      <div class="footer-links">
+        <a href="https://019eb854-79ca-079b-a1d7-f5b7e4f673b0.share.connect.posit.cloud/">Open the app</a>
+        <a href="mailto:desertdatalabs@gmail.com">Contact</a>
+      </div>
+    </div>
   </footer>
 
   <script>
-    /* pre-warm the app while the visitor reads this page */
+    /* Pre-warm the app while the visitor reads this page. */
     fetch(document.getElementById('launch').href, { mode: 'no-cors' })
-      .catch(function() {});
+      .catch(function () {});
 
-    /* progressive freshness line: fill "Data updated {date}" from the
-       same-origin status.json the nightly pipeline writes. Any miss
-       (file absent, offline, bad JSON) leaves the line hidden -- no error. */
+    /* Fill the freshness line from status.json written by the nightly pipeline.
+       Any miss leaves the line hidden without an error. */
     fetch('status.json', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (s) {
-        if (!s || !s.updated) return;
-        var el = document.getElementById('freshness');
-        if (!el) return;
-        var d = new Date(s.updated + 'T00:00:00');
-        var label = isNaN(d.getTime()) ? s.updated
-          : d.toLocaleDateString('en-US',
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (status) {
+        if (!status || !status.updated) return;
+        var element = document.getElementById('freshness');
+        if (!element) return;
+        var date = new Date(status.updated + 'T00:00:00');
+        var label = isNaN(date.getTime()) ? status.updated
+          : date.toLocaleDateString('en-US',
               { year: 'numeric', month: 'short', day: 'numeric' });
-        el.textContent = 'Data updated ' + label;
-        el.hidden = false;
+        element.textContent = 'Data updated ' + label;
+        element.hidden = false;
       })
       .catch(function () {});
   </script>
