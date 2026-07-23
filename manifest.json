@@ -3897,7 +3897,7 @@
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
     },
     "R/dashboard_status.R": {
-      "checksum": "adbd74e6a568c59bc9292b6fc1d4afce"
+      "checksum": "fbf947a232f646f635744bdc7066da61"
     },
     "R/functions.R": {
       "checksum": "8fe6234237d81c9adb65c0a39488d08f"
@@ -3906,19 +3906,19 @@
       "checksum": "e83630a42e92b44834e22e2f5a25717f"
     },
     "R/girth_plots.R": {
-      "checksum": "468a51807b68fa2c54b7ce38c42f7ee7"
+      "checksum": "01096609eebe865062762093d8157d4e"
     },
     "R/home_fingerprint.R": {
-      "checksum": "befe5f2c8cfbcc5df903709b5d6c4266"
+      "checksum": "f658c8e04f9f6919b1a5f6fa23ddb473"
     },
     "R/talent_origins.R": {
       "checksum": "7cc7fe11528f143c87c47270038d3acf"
     },
     "R/team_config.R": {
-      "checksum": "90e0675fca76239910d3471ec87b4ddb"
+      "checksum": "64bf8285c6f06e224ea0fea5c74a59f7"
     },
     "app.R": {
-      "checksum": "ac0c26823fca35c28181336b9e24cfab"
+      "checksum": "b689c6f4db7a6b0fd7f99b964ee9ff79"
     },
     "data/recruiting.db": {
       "checksum": "450443e27020c7001b3f80ae932c1d88"
@@ -4005,7 +4005,7 @@
       "checksum": "2cd7afb9b4269810ea72df0ac51805d5"
     },
     "www/girth-v9.css": {
-      "checksum": "d44183c83ef262cc513c9b7a3ba857c0"
+      "checksum": "3260e102bebccf91fd215d144d959600"
     },
     "www/girth-v9.js": {
       "checksum": "83931aa291e2c443b4fffb59626ad561"
@@ -4093,6 +4093,9 @@
     },
     "www/penn-state.png": {
       "checksum": "513d353c0120c078cc0c24c870ce707c"
+    },
+    "www/pipeline-status.json": {
+      "checksum": "25b9b38241c6bf9da9d57a95c3255a92"
     },
     "www/pittsburgh.png": {
       "checksum": "04f5199a5f4256e882e5e5a4a30ff425"
