@@ -71,6 +71,22 @@ scope_note <- function(players_note) {
   paste0(" Showing: ", players_note, ".")
 }
 
+## The global comparison picker spans every onboarded Power-4 program, while
+## several boards deliberately calculate a single conference's benchmark. Keep
+## that statistical boundary honest in the copy: an out-of-league selection is
+## a useful reference, but it must not look like it was plotted or ranked when
+## it was intentionally excluded from the active conference pool.
+comparison_highlight_note <- function(team_slug, compare_slug = NULL,
+                                      surface = "conference view") {
+  ctx <- comparison_context(team_slug, compare_slug)
+  if (!isTRUE(ctx$active)) return(glue("{ctx$team_name} highlighted."))
+  if (!isTRUE(ctx$cross_conference)) {
+    return(glue("{ctx$team_name} vs {ctx$compare_name} highlighted."))
+  }
+  glue("{ctx$team_name} highlighted; {ctx$compare_name} ({ctx$compare_conference}) is ",
+       "an external Power-4 reference. It is not included in this {ctx$team_conference} {surface}.")
+}
+
 ## metric metadata: db column -> axis label + value formatter
 girth_metrics <- list(
   AvgWeight   = list(label = "Average Weight (lbs)",
@@ -301,44 +317,82 @@ beef_board_data <- function(size_data, team_slug, sport,
   if (!is.null(year_min)) {
     size_data <- dplyr::filter(size_data, Year >= year_min, Year <= year_max)
   }
-  ## pool only the active team's conference members (all 16 at Phase 0)
-  size_data <- scope_to_conf(size_data, team_slug)
+  ## Keep the active conference as the statistical board. A cross-conference
+  ## comparator is pulled separately as a clearly labeled reference row, never
+  ## mixed into averages, ranks, or the table's conference denominator.
   size_data <- filter_pos(size_data, pos_filter)
+  conf_data <- scope_to_conf(size_data, team_slug)
+  ctx <- comparison_context(team_slug, compare_slug)
+  external_requested <- isTRUE(ctx$cross_conference)
+  external_data <- if (external_requested) {
+    dplyr::filter(size_data, School == ctx$compare_slug)
+  } else {
+    size_data[0, , drop = FALSE]
+  }
+  has_external <- external_requested && nrow(external_data) > 0
   m <- girth_metrics[[metric]]
-  ## NULL-safe compare slug (School == NULL inside case_when errors)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
-
-  ## hover card per team dot: the top players driving that average,
-  ## metric-aware and following the active position filter
   pcol <- metric_player_col[[metric]]
-  tips <- size_data %>%
-    group_by(School) %>%
-    group_modify(~ data.frame(tip = top_players_tip(
-      .x, pcol, n = 3, fmt = m$fmt, school = .y$School,
-      header = glue("<b>{team_label(.y$School)} — top 3, ",
-                    "{tolower(pos_filter_label(pos_filter))}</b>")))) %>%
-    ungroup()
 
-  board <- team_size_summary(size_data) %>%
-    left_join(tips, by = "School") %>%
-    mutate(Value = .data[[metric]]) %>%
-    arrange(Value) %>%
-    mutate(
-      TeamName = factor(TeamName, levels = TeamName),
-      role = case_when(School == team_slug ~ "main",
-                       School == cmp_safe ~ "compare",
-                       TRUE ~ "other"),
-      ## understated class-size chip, same style as the sibling boards
-      val_lab = paste0(m$fmt(Value), "  (n=", Players, ")"),
-      value = Value,
-      n = Players
+  metric_tips <- function(d, external = FALSE) {
+    if (!nrow(d)) return(data.frame(School = character(), tip = character()))
+    d %>%
+      group_by(School) %>%
+      group_modify(~ data.frame(tip = top_players_tip(
+        .x, pcol, n = 3, fmt = m$fmt, school = .y$School,
+        header = if (external) {
+          glue("<b>{team_label(.y$School)} — {team_conference(.y$School)} external reference, not ranked in {conf_label(team_slug)}</b>")
+        } else {
+          glue("<b>{team_label(.y$School)} — top 3, {tolower(pos_filter_label(pos_filter))}</b>")
+        }))) %>%
+      ungroup()
+  }
+
+  make_board <- function(d, tips, role, external = FALSE) {
+    team_size_summary(d) %>%
+      left_join(tips, by = "School") %>%
+      mutate(
+        Value = .data[[metric]],
+        role = .env$role,
+        external_reference = .env$external,
+        val_lab = paste0(
+          m$fmt(Value), "  (n=", Players, ")",
+          ifelse(.env$external,
+                 paste0(" · ", team_conference(School), " ref"), "")),
+        value = Value,
+        n = Players
+      )
+  }
+
+  board <- make_board(conf_data, metric_tips(conf_data), role = "other") %>%
+    mutate(role = case_when(School == team_slug ~ "main",
+                            School == cmp_safe ~ "compare",
+                            TRUE ~ role)) %>%
+    arrange(Value)
+
+  if (has_external) {
+    board <- bind_rows(
+      board,
+      make_board(external_data, metric_tips(external_data, external = TRUE),
+                 role = "external", external = TRUE)
     )
+  }
+
+  board <- board %>%
+    mutate(TeamName = factor(as.character(TeamName),
+                             levels = as.character(TeamName)))
   attr(board, "value_label") <- m$label
   attr(board, "value_fmt") <- girth_metric_sprintf[[metric]]
   attr(board, "value_fmt_fn") <- m$fmt
-  attr(board, "yr_rng") <- paste0(min(size_data$Year), "–",
-                                  max(size_data$Year))
-  attr(board, "conf_avg") <- mean(board$Value)
+  attr(board, "yr_rng") <- paste0(min(conf_data$Year), "–", max(conf_data$Year))
+  attr(board, "conf_avg") <- mean(board$Value[!board$external_reference])
+  attr(board, "external_reference") <- has_external
+  attr(board, "external_requested") <- external_requested
+  attr(board, "external_note") <- if (has_external) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) is an external Power-4 reference; it does not affect the {ctx$team_conference} average or rank.")
+  } else if (external_requested) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) has no qualifying {pos_filter_label(pos_filter)} reference in this selected window; it is not plotted and does not affect the {ctx$team_conference} average or rank.")
+  } else ""
   board
 }
 
@@ -358,26 +412,54 @@ plot_beef_board <- function(size_data, team_slug, sport,
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
   conf_avg <- attr(board, "conf_avg")
+  external_ref <- isTRUE(attr(board, "external_reference"))
+  external_note <- attr(board, "external_note") %||% ""
+  external_missing <- isTRUE(attr(board, "external_requested")) && !external_ref
   logos <- team_logo_labels(width = 30, prefix = logo_prefix)
-  ## rows never overlap on a board, so the compare team keeps its true
-  ## primary color (the similar-hue fallback is for overlapping charts)
+  ## Rows never overlap on a board, so the external reference uses its own
+  ## primary color and a diamond. That makes the comparison visible without
+  ## suggesting that it belongs to (or changes) the conference ranking.
   role_cols <- c(main = unname(hl["main"]),
-                 compare = ifelse(is.null(compare_slug), "grey60",
-                                  team_color(compare_slug)),
+                 compare = ifelse(cmp_safe == "", "grey60",
+                                  team_color(cmp_safe)),
+                 external = ifelse(external_ref && nzchar(cmp_safe),
+                                   team_color(cmp_safe), "grey60"),
                  other = "grey60")
+  role_shapes <- c(main = 16, compare = 18, external = 23, other = 16)
+  subtitle <- if (external_ref) {
+    glue("{m$label}, {context} ({team_label(team_slug)} highlighted; ",
+         "{team_label(cmp_safe)} is shown as a {team_conference(cmp_safe)} ",
+         "external reference and does not affect the {conf_label(team_slug)} average or rank.)")
+  } else if (external_missing) {
+    glue("{m$label}, {context} ({team_label(team_slug)} highlighted; {team_label(cmp_safe)} has no qualifying {pos_filter_label(pos_filter)} row in this selection and is not plotted. The {conf_label(team_slug)} average and rank are unchanged.)")
+  } else {
+    glue("{m$label}, {context} ({team_label(team_slug)}",
+         "{ifelse(cmp_safe == '', '', paste0(' vs ', team_label(cmp_safe)))}",
+         " highlighted)")
+  }
+  caption_base <- if (!is.null(source_label)) {
+    paste(
+      "Roster weights are CURRENT (after college S&C) while commit-class",
+      "weights are from signing day — expect the roster to run heavier",
+      "(see Weight Room). The year window doesn't apply to the current",
+      "roster. Tap or hover a dot for the top players.")
+  } else {
+    paste0("Tap or hover a dot for the top players behind the number. ",
+           "Data: 247Sports.", scope_note(players_note))
+  }
+  caption <- paste0(caption_base,
+                    if (nzchar(external_note)) paste0(" ", external_note) else "")
 
   ggplot(board, aes(x = Value, y = TeamName)) +
     geom_vline(xintercept = conf_avg, linetype = "dotted",
                color = "grey45", linewidth = 0.8) +
-    ## sticks anchor at the conference average so length honestly encodes
-    ## "lbs above/below the league" (a floating baseline exaggerates spread)
+    ## Sticks anchor at the conference average so length honestly encodes
+    ## distance from the active league's average.
     geom_segment(aes(x = conf_avg, xend = Value, yend = TeamName,
                      color = role), linewidth = 1.4, show.legend = FALSE) +
-    geom_point_interactive(aes(color = role, tooltip = tip,
+    geom_point_interactive(aes(color = role, shape = role, tooltip = tip,
                                data_id = School),
                            size = 5, show.legend = FALSE) +
-    ## hjust/expansion match the sibling boards -- the n-chip makes these
-    ## labels longer, so they need the wider right margin retention uses
     geom_text(aes(label = val_lab, color = role),
               hjust = -0.15, size = 3.6, fontface = "bold",
               show.legend = FALSE) +
@@ -385,36 +467,22 @@ plot_beef_board <- function(size_data, team_slug, sport,
              label = glue("{conf_label(team_slug)} avg: {m$fmt(conf_avg)}"),
              size = 3.3, color = "grey35", hjust = -0.05, fontface = "italic") +
     scale_color_manual(values = role_cols) +
+    scale_shape_manual(values = role_shapes) +
     scale_y_discrete(labels = logos) +
     scale_x_continuous(
-      expand = expansion(mult = c(0.01, 0.28)),
+      expand = expansion(mult = c(0.01, 0.30)),
       labels = if (metric == "AvgHeight") function(x) format_height(x) else waiver()
     ) +
     labs(
       title = wrap_title(
         glue("{conf_label(team_slug)} Beef Board — {pos_filter_label(pos_filter)}"), 38),
-      subtitle = wrap_title(glue(
-        "{m$label}, {context} ",
-        "({team_label(team_slug)}",
-        "{ifelse(cmp_safe == '', '', paste0(' vs ', team_label(cmp_safe)))}",
-        " highlighted)"), 52),
+      subtitle = wrap_title(subtitle, 58),
       x = m$label, y = NULL,
-      caption = if (!is.null(source_label)) {
-        wrap_title(paste(
-          "Roster weights are CURRENT (after college S&C) while commit-class",
-          "weights are from signing day — expect the roster to run heavier",
-          "(see Weight Room). The year window doesn't apply to the current",
-          "roster. Tap or hover a dot for the top players."), 95)
-      } else {
-        paste0("Tap or hover a dot for the top players behind the number. ",
-               "Data: 247Sports.", scope_note(players_note))
-      }
+      caption = wrap_title(caption, 95)
     ) +
-    ## bare theme (not theme_girth): keeps element_markdown alive on ggplot2 4.x
+    ## Bare theme keeps element_markdown alive on ggplot2 4.x.
     theme_girth_md()
 }
-
-## ---------------------------------------------------------------------------
 ## 3) SIZE OVER TIME -- team trajectory vs the conference band
 ## ---------------------------------------------------------------------------
 plot_size_trend <- function(size_data, team_slug, sport,
@@ -817,6 +885,8 @@ plot_class_retention <- function(size_commits, roster_data, team_slug,
                                  compare_slug = NULL, logo_prefix = "www/") {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
+                                        "retention board")
   ## single source of truth: the chart draws exactly the table twin's frame
   board <- retention_board_data(size_commits, roster_data, team_slug,
                                 compare_slug = compare_slug)
@@ -845,9 +915,7 @@ plot_class_retention <- function(size_commits, roster_data, team_slug,
       subtitle = wrap_title(glue(
         "Share of {min(cls_years)}–{max(cls_years)} HS signees still on the ",
         "current roster (conference avg: {round(conf_avg)}%). ",
-        "{team_label(team_slug)}",
-        "{ifelse(cmp_safe == '', '', paste0(' vs ', team_label(cmp_safe)))}",
-        " highlighted."), 58),
+        "{cmp_note}"), 58),
       x = "% of Signees Still on the Roster", y = NULL,
       caption = wrap_title(paste0(
         "Name-matched to 247Sports roster pages; departures include the ",
@@ -1009,6 +1077,8 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
                                    direction = "gain") {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
+                                        "weight-room board")
   ## single source of truth: the chart draws exactly the table twin's frame
   board <- wr_board_data(wr_data, team_slug, sport,
                          compare_slug = compare_slug, direction = direction)
@@ -1049,9 +1119,7 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
         "{str_to_title(sport)}. Matched HS signees still on the roster only ",
         "(conference avg: {ifelse(direction == 'gain', '+', '−')}",
         "{round(conf_avg, 1)} lbs{ifelse(direction == 'gain', '/yr', '')}). ",
-        "{team_label(team_slug)}",
-        "{ifelse(cmp_safe == '', '', paste0(' vs ', team_label(cmp_safe)))}",
-        " highlighted."), 58),
+        "{cmp_note}"), 58),
       x = ifelse(direction == "gain",
                  "Average Pounds Gained per Year on Campus",
                  "Average Weight Trimmed Among Slimmers (lbs)"),
@@ -2221,6 +2289,8 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
                                 compare_slug = NULL) {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
+                                        "talent-vs-results panel")
   ## single source of truth: the chart draws exactly the table twin's frame
   agg <- quadrant_data(team_seasons, size_data, team_slug,
                        compare_slug = compare_slug)
@@ -2264,7 +2334,8 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
       subtitle = wrap_title(glue(
         "Each dot = one program, seasons {yr_rng}. X = rolling 4-class talent ",
         "composite (mean of the window's top-20 HS + portal ratings); ",
-        "Y = win percentage. Dashed lines = conference medians.{bc_note}"), 84),
+        "Y = win percentage. Dashed lines = conference medians.{bc_note} ",
+        "{cmp_note}"), 84),
       x = "Average Talent Composite (247 rating points)",
       y = "Win Percentage",
       caption = "Records: CollegeFootballData.com. Talent: 247Sports classes 2016-2026. Tap or hover dots for the receipts."
@@ -2370,6 +2441,8 @@ wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
 plot_wat <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
+                                        "talent-to-wins model")
   ## single source of truth: the ladder draws exactly the table twin's frame
   board <- wat_data(team_seasons, size_data, team_slug,
                     compare_slug = compare_slug)
@@ -2406,9 +2479,7 @@ plot_wat <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
         "Seasons {yr_rng}. Grey dot = expected win % from the league ",
         "talent-to-wins fit; colored dot = actual. Row label = wins per ",
         "season above (+) or below (-) that expectation. ",
-        "{team_label(team_slug)}",
-        "{ifelse(cmp_safe == '', '', paste0(' vs ', team_label(cmp_safe)))}",
-        " highlighted."), 60),
+        "{cmp_note}"), 60),
       x = "Win Percentage", y = NULL,
       caption = wrap_title(glue(
         "Expected = a quasibinomial fit of season wins on the rolling ",

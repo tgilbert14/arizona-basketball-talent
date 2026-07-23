@@ -19,6 +19,34 @@
   if (is.na(value)) default else value
 }
 
+
+.dashboard_text <- function(x, default = "") {
+  if (is.null(x) || !length(x) || is.na(x[[1]])) return(default)
+  value <- trimws(as.character(x[[1]]))
+  if (!nzchar(value)) default else value
+}
+
+## The bundled SQLite ledger is authoritative for source rows, but a failed
+## refresh deliberately does not ship that mutable database. This tiny static
+## sidecar lets the deployed Home rail report the newer pipeline outcome while
+## retaining DB-derived capture dates and coverage counts.
+dashboard_pipeline_sidecar <- function(path = file.path("www", "pipeline-status.json")) {
+  empty <- list(checked_date = NULL, status = NULL, note = "")
+  if (is.null(path) || !length(path) || !file.exists(path)) return(empty)
+
+  raw <- tryCatch(
+    jsonlite::fromJSON(path, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (!is.list(raw)) return(empty)
+
+  status <- .dashboard_text(raw$pipeline_status, default = "")
+  list(
+    checked_date = .dashboard_date(raw$pipeline_checked),
+    status = if (nzchar(status)) tolower(status) else NULL,
+    note = .dashboard_text(raw$pipeline_message, default = "")
+  )
+}
 .dashboard_table_snapshot <- function(conn, table, team_col = "School",
                                       stamp_col = "ScrapedAt",
                                       year_col = NULL) {
@@ -117,8 +145,10 @@ dashboard_source_meta <- function(conn) {
   if (!nrow(out)) NULL else out[1, , drop = FALSE]
 }
 
-dashboard_refresh_meta <- function(conn) {
+dashboard_refresh_meta <- function(conn,
+                                   status_path = file.path("www", "pipeline-status.json")) {
   source <- dashboard_source_meta(conn)
+  sidecar <- dashboard_pipeline_sidecar(status_path)
   latest <- .dashboard_refresh_row(conn)
   updated <- .dashboard_refresh_row(
     conn, "status IN ('ok', 'degraded') AND finished_at IS NOT NULL")
@@ -136,12 +166,26 @@ dashboard_refresh_meta <- function(conn) {
               is.na(latest$notes[[1]])) "" else
     trimws(as.character(latest$notes[[1]]))
 
+  ## A sidecar only overrides the ledger when it represents an equally recent
+  ## or newer check. This prevents an old static file from masking a fresher
+  ## deployed database, while allowing a rollback/failure to be visible
+  ## without committing mutable SQLite rows.
+  sidecar_is_current <- !is.null(sidecar$checked_date) &&
+    !is.null(sidecar$status) &&
+    (is.null(checked_date) || sidecar$checked_date >= as.Date(checked_date[[1]]))
+  if (sidecar_is_current) {
+    checked_date <- sidecar$checked_date
+    status <- sidecar$status
+    note <- sidecar$note
+  }
+
   list(
     checked_date = checked_date,
     updated_date = updated_date,
     capture_date = source$capture_date,
     status = if (nzchar(status)) status else "unknown",
     note = note,
+    status_from_sidecar = isTRUE(sidecar_is_current),
     sources = source
   )
 }
@@ -229,6 +273,9 @@ dashboard_pipeline_info <- function(meta, today = Sys.Date()) {
   }
   critical <- status %in% c("failed", "failure", "error")
   degraded <- identical(status, "degraded")
+  note <- if (is.list(meta) && isTRUE(meta$status_from_sidecar)) {
+    .dashboard_text(meta$note, default = "")
+  } else ""
 
   if (is.null(checked) || !length(checked) || is.na(checked[[1]])) {
     return(list(
@@ -266,7 +313,19 @@ dashboard_pipeline_info <- function(meta, today = Sys.Date()) {
   } else {
     paste("Pipeline checked", checked_lab)
   }
-  detail <- if (lagging) {
+  capture_lab <- if (is.null(captured) || !length(captured) ||
+                     is.na(captured[[1]])) {
+    "the last published source snapshot"
+  } else {
+    paste0("the ", format(as.Date(captured[[1]]), "%b %d, %Y"),
+           " source snapshot")
+  }
+  detail <- if (critical && nzchar(note)) {
+    paste0(note, " This dashboard remains on ", capture_lab, ".")
+  } else if (critical) {
+    paste0("The refresh was rolled back after its validation gate failed; ",
+           "this dashboard remains on ", capture_lab, ".")
+  } else if (lagging) {
     "The dashboard is using the newer source capture shown above."
   } else {
     "The dataset is a worker-start snapshot refreshed by the release pipeline."

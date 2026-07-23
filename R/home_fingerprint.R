@@ -512,3 +512,185 @@ home_program_fingerprint <- function(size_data, team_slug,
     )
   )
 }
+## ---- direct cross-conference matchup -------------------------------------
+
+## Build a side-by-side frame without inventing a blended Power-4 rank. Each
+## program is evaluated against its own conference, while displayed values stay
+## directly comparable.
+program_matchup_data <- function(size_data, team_slug, compare_slug,
+                                 team_conf_slugs = NULL,
+                                 compare_conf_slugs = NULL,
+                                 sport = "football",
+                                 min_team_n = 3L,
+                                 subgroup_min_n = 2L) {
+  team_slug <- .hf_scalar(team_slug)
+  compare_slug <- .hf_scalar(compare_slug)
+  if (!nzchar(team_slug) || !nzchar(compare_slug) || identical(team_slug, compare_slug)) {
+    return(data.frame())
+  }
+
+  own <- program_fingerprint_data(
+    size_data = size_data, team_slug = team_slug,
+    conf_slugs = team_conf_slugs, sport = sport,
+    min_team_n = min_team_n, subgroup_min_n = subgroup_min_n
+  )
+  peer <- program_fingerprint_data(
+    size_data = size_data, team_slug = compare_slug,
+    conf_slugs = compare_conf_slugs, sport = sport,
+    min_team_n = min_team_n, subgroup_min_n = subgroup_min_n
+  )
+
+  keep <- c("metric_key", "metric_label", "metric_detail", "min_n",
+            "selected_value", "selected_n", "selected_eligible",
+            "selected_percentile", "benchmark_teams")
+  own <- own[, keep, drop = FALSE]
+  peer <- peer[, keep, drop = FALSE]
+  names(own)[names(own) != "metric_key"] <- paste0("team_", names(own)[names(own) != "metric_key"])
+  names(peer)[names(peer) != "metric_key"] <- paste0("compare_", names(peer)[names(peer) != "metric_key"])
+  out <- merge(own, peer, by = "metric_key", sort = FALSE)
+  out <- out[match(own$metric_key, out$metric_key), , drop = FALSE]
+  out$delta <- out$compare_selected_value - out$team_selected_value
+  out
+}
+
+.hf_matchup_conf_label <- function(slug, fallback = "Conference") {
+  conf_fn <- get0("team_conference", mode = "function", inherits = TRUE)
+  conf <- if (!is.null(conf_fn)) tryCatch(conf_fn(slug), error = function(e) NA_character_) else NA_character_
+  .hf_scalar(conf, fallback)
+}
+
+.hf_matchup_logo <- function(slug, name) {
+  logo_fn <- get0("team_logo", mode = "function", inherits = TRUE)
+  src <- if (!is.null(logo_fn)) {
+    tryCatch(.hf_scalar(logo_fn(slug, prefix = "")),
+             error = function(e) tryCatch(.hf_scalar(logo_fn(slug)),
+                                          error = function(e2) ""))
+  } else ""
+  if (nzchar(src)) htmltools::tags$img(src = src, alt = "") else htmltools::tags$span(substr(name, 1, 1))
+}
+
+.hf_matchup_delta <- function(metric_key, delta) {
+  delta <- suppressWarnings(as.numeric(delta[[1]]))
+  if (!is.finite(delta)) return("Insufficient data")
+  sign <- if (delta > 0) "+" else if (delta < 0) "−" else "="
+  mag <- abs(delta)
+  switch(
+    metric_key,
+    avg_rating = sprintf("%s%.1f rating", sign, mag),
+    blue_chip_share = sprintf("%s%.0f pp", sign, mag),
+    avg_weight = sprintf("%s%.0f lb", sign, mag),
+    trench_weight = sprintf("%s%.0f lb", sign, mag),
+    avg_height = sprintf("%s%.1f in", sign, mag),
+    frontcourt_height = sprintf("%s%.1f in", sign, mag),
+    sprintf("%s%.1f", sign, mag)
+  )
+}
+
+## Render a concise matchup card for Home and the dedicated Matchup route.
+## It deliberately surfaces primary facts before offering detail, so comparison
+## adds orientation rather than a wall of data.
+home_program_matchup <- function(size_data, team_slug, compare_slug,
+                                 team_conf_slugs = NULL,
+                                 compare_conf_slugs = NULL,
+                                 sport = "football",
+                                 sport_label = NULL,
+                                 window_label = NULL,
+                                 min_team_n = 3L,
+                                 subgroup_min_n = 2L,
+                                 cta_id = NULL,
+                                 cta_label = "Open full comparison") {
+  frame <- program_matchup_data(
+    size_data = size_data, team_slug = team_slug, compare_slug = compare_slug,
+    team_conf_slugs = team_conf_slugs, compare_conf_slugs = compare_conf_slugs,
+    sport = sport, min_team_n = min_team_n, subgroup_min_n = subgroup_min_n
+  )
+  if (!nrow(frame)) return(NULL)
+
+  team_name <- .hf_team_name(size_data, team_slug)
+  compare_name <- .hf_team_name(size_data, compare_slug, "Comparison team")
+  team_conf <- .hf_matchup_conf_label(team_slug)
+  compare_conf <- .hf_matchup_conf_label(compare_slug)
+  sport_label <- .hf_scalar(sport_label, tools::toTitleCase(sport))
+
+  cross_conference <- !identical(team_conf, compare_conf)
+  footer_text <- if (cross_conference) {
+    paste0("A cross-conference selection is an external reference: it never changes ",
+           team_conf, " averages, ranks, or outcome calibration.")
+  } else {
+    paste0("This is an in-conference peer comparison on the shared ",
+           team_conf, " reference field.")
+  }
+
+  window_label <- .hf_scalar(window_label)
+
+  metric_tags <- lapply(seq_len(nrow(frame)), function(i) {
+    row <- frame[i, , drop = FALSE]
+    team_pct <- if (isTRUE(row$team_selected_eligible[[1]]) && is.finite(row$team_selected_percentile[[1]])) {
+      .hf_ordinal(row$team_selected_percentile[[1]])
+    } else "Percentile withheld"
+    compare_pct <- if (isTRUE(row$compare_selected_eligible[[1]]) && is.finite(row$compare_selected_percentile[[1]])) {
+      .hf_ordinal(row$compare_selected_percentile[[1]])
+    } else "Percentile withheld"
+    htmltools::tags$article(
+      class = "gi-matchup-metric",
+      htmltools::tags$div(class = "gi-matchup-metric__label", row$team_metric_label[[1]]),
+      htmltools::tags$div(class = "gi-matchup-metric__detail", row$team_metric_detail[[1]]),
+      htmltools::tags$div(
+        class = "gi-matchup-metric__values",
+        htmltools::tags$div(
+          class = "gi-matchup-metric__team gi-matchup-metric__team--main",
+          htmltools::tags$strong(.hf_value_label(row$metric_key[[1]], row$team_selected_value[[1]])),
+          htmltools::tags$span(team_pct)
+        ),
+        htmltools::tags$div(
+          class = "gi-matchup-metric__delta",
+          .hf_matchup_delta(row$metric_key[[1]], row$delta[[1]])
+        ),
+        htmltools::tags$div(
+          class = "gi-matchup-metric__team gi-matchup-metric__team--compare",
+          htmltools::tags$strong(.hf_value_label(row$metric_key[[1]], row$compare_selected_value[[1]])),
+          htmltools::tags$span(compare_pct)
+        )
+      )
+    )
+  })
+
+  htmltools::tags$section(
+    class = "gi-matchup",
+    `aria-label` = paste("Direct comparison between", team_name, "and", compare_name),
+    htmltools::tags$header(
+      class = "gi-matchup__head",
+      htmltools::tags$div(
+        htmltools::tags$div(class = "gi-matchup__eyebrow", "Direct Power-4 comparison"),
+        htmltools::tags$h2(paste(team_name, "vs", compare_name)),
+        htmltools::tags$p("Direct recruiting facts side by side; conference percentiles remain calibrated to each program's own league.")
+      ),
+      htmltools::tags$div(
+        class = "gi-matchup__badges",
+        htmltools::tags$span(class = "gi-matchup__badge", sport_label),
+        if (nzchar(window_label)) htmltools::tags$span(class = "gi-matchup__badge", window_label)
+      )
+    ),
+    htmltools::tags$div(
+      class = "gi-matchup__teams",
+      htmltools::tags$div(
+        class = "gi-matchup-team gi-matchup-team--main",
+        htmltools::tags$div(class = "gi-matchup-team__logo", .hf_matchup_logo(team_slug, team_name)),
+        htmltools::tags$div(htmltools::tags$strong(team_name), htmltools::tags$span(team_conf))
+      ),
+      htmltools::tags$div(class = "gi-matchup__versus", "VS"),
+      htmltools::tags$div(
+        class = "gi-matchup-team gi-matchup-team--compare",
+        htmltools::tags$div(class = "gi-matchup-team__logo", .hf_matchup_logo(compare_slug, compare_name)),
+        htmltools::tags$div(htmltools::tags$strong(compare_name), htmltools::tags$span(compare_conf))
+      )
+    ),
+    htmltools::tags$div(class = "gi-matchup__grid", metric_tags),
+    htmltools::tags$footer(
+      class = "gi-matchup__footer",
+      htmltools::tags$p(icon("circle-info"), footer_text),
+      if (!is.null(cta_id) && nzchar(cta_id)) shiny::actionButton(
+        cta_id, cta_label, class = "btn-primary", icon = icon("arrow-right"))
+    )
+  )
+}

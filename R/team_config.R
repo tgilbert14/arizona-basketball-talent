@@ -295,6 +295,43 @@ team_color <- function(slug) {
   ifelse(is.na(col), "#0072B2", col)
 }
 
+## The global comparison picker deliberately spans all onboarded Power-4
+## programs. This helper makes that choice explicit at every rendering
+## surface: a same-league team is a conference peer; an out-of-league team is
+## an external reference that must never alter the active conference's ranks,
+## averages, or outcome calibration.
+comparison_context <- function(team_slug, compare_slug = NULL) {
+  team_slug <- as.character(team_slug)[1]
+  compare_slug <- if (is.null(compare_slug) || !length(compare_slug)) "" else
+    as.character(compare_slug)[1]
+  compare_slug <- trimws(compare_slug)
+
+  team_ok <- !is.na(team_slug) && team_slug %in% TEAM_CONFIG$slug
+  cmp_ok <- !is.na(compare_slug) && nzchar(compare_slug) &&
+    compare_slug %in% TEAM_CONFIG$slug && !identical(compare_slug, team_slug)
+
+  team_conf <- if (team_ok) team_conference(team_slug) else NA_character_
+  cmp_conf <- if (cmp_ok) team_conference(compare_slug) else NA_character_
+  cross_conf <- isTRUE(cmp_ok) && !is.na(team_conf) && !is.na(cmp_conf) &&
+    !identical(team_conf, cmp_conf)
+
+  list(
+    active = isTRUE(cmp_ok),
+    cross_conference = cross_conf,
+    same_conference = isTRUE(cmp_ok) && !cross_conf,
+    team_slug = if (team_ok) team_slug else "",
+    compare_slug = if (cmp_ok) compare_slug else "",
+    team_name = if (team_ok) team_label(team_slug) else "",
+    compare_name = if (cmp_ok) team_label(compare_slug) else "",
+    team_conference = team_conf,
+    compare_conference = cmp_conf
+  )
+}
+
+is_cross_conference_compare <- function(team_slug, compare_slug = NULL) {
+  isTRUE(comparison_context(team_slug, compare_slug)$cross_conference)
+}
+
 ## html <img> labels for ggtext axis logos, named by any key column
 team_logo_labels <- function(key = TEAM_CONFIG$team_name, width = 32,
                              prefix = "www/") {
