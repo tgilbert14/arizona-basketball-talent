@@ -22,8 +22,10 @@
 ## never on a data-only refresh. That keeps this step incapable of breaking the
 ## Connect Cloud package install.
 ##
-##   Rscript scripts/updateManifest.R            # rewrite in place
-##   Rscript scripts/updateManifest.R --check    # exit 1 if out of date, no write
+##   Rscript scripts/updateManifest.R                       # rewrite in place
+##   Rscript scripts/updateManifest.R --check               # exit 1 if out of date, no write
+##   Rscript scripts/updateManifest.R --paths=www/pipeline-status.json
+##       # update only listed runtime checksums; preserves all other entries
 ##
 ## Run from the repo root, after precompute and before the deploy commit.
 ## ===========================================================================
@@ -37,6 +39,17 @@ args     <- commandArgs(trailingOnly = TRUE)
 check_only <- "--check" %in% args
 manifest_path <- "manifest.json"
 
+target_args <- grep("^--paths=", args, value = TRUE)
+if (length(target_args) > 1L) stop("pass at most one --paths= argument")
+target_paths <- if (length(target_args)) {
+  raw <- sub("^--paths=", "", target_args[[1]])
+  raw <- strsplit(raw, ",", fixed = TRUE)[[1]]
+  trimws(gsub("\\\\", "/", raw))
+} else NULL
+if (!is.null(target_paths) &&
+    (!length(target_paths) || any(!nzchar(target_paths)))) {
+  stop("--paths= needs one or more comma-separated runtime paths")
+}
 if (!file.exists(manifest_path)) {
   stop("manifest.json not found -- run from the repo root")
 }
@@ -66,8 +79,18 @@ expand_files <- function(roots) {
   out[!grepl("\\.(orig|rej)$", out, ignore.case = TRUE)]
 }
 
-files <- expand_files(runtime_roots)
-files <- sort(unique(files))
+all_files <- expand_files(runtime_roots)
+all_files <- sort(unique(all_files))
+if (!is.null(target_paths)) {
+  missing_targets <- setdiff(target_paths, all_files)
+  if (length(missing_targets)) {
+    stop("--paths= is not a present runtime file: ",
+         paste(missing_targets, collapse = ", "))
+  }
+  files <- target_paths
+} else {
+  files <- all_files
+}
 
 ## Git stores text as LF, while a Windows checkout can expose the same tracked
 ## bytes as CRLF.  Connect deploys the committed form, so normalize CRLF to LF
@@ -100,11 +123,19 @@ checks <- vapply(files, runtime_md5, character(1), USE.NAMES = FALSE)
 if (any(is.na(checks))) {
   stop("could not checksum: ", paste(files[is.na(checks)], collapse = ", "))
 }
-new_files <- setNames(lapply(checks, function(c) list(checksum = unname(c))), files)
 
 ## Read the existing manifest, swap ONLY the files section, preserve the rest.
 m <- fromJSON(manifest_path, simplifyVector = FALSE)
 old_files <- m$files %||% list()
+
+if (!is.null(target_paths)) {
+  new_files <- old_files
+  for (i in seq_along(files)) {
+    new_files[[files[[i]]]] <- list(checksum = unname(checks[[i]]))
+  }
+} else {
+  new_files <- setNames(lapply(checks, function(c) list(checksum = unname(c))), files)
+}
 
 ## Compare (added / dropped / changed) for logging + the --check gate.
 old_keys <- names(old_files)

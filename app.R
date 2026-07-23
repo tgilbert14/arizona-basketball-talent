@@ -238,7 +238,7 @@ parse_url_state <- function(query) {
   tab <- g("tab")
   if (!is.null(tab) && tab %in% VALID_TABS) {
     ## v8 Distance Lab links now land on the consolidated Program Reach page.
-    out$tab <- if (identical(tab, "compare")) "summary" else tab
+    out$tab <- tab
   }
 
   out
@@ -337,9 +337,21 @@ twin_table_html <- function(frame, caption, value_col = "value",
                             bar_ramp = c("#0072B2", "#98A4B3", "#D55E00")) {
   esc <- htmltools::htmlEscape
   d <- as.data.frame(frame)
-  d <- d[order(-d[[value_col]]), , drop = FALSE]
+  ## Some conference boards append an outside-league reference. It stays
+  ## visible, but sorts after the ranked field and never changes its ranks or
+  ## percentile bars. Normal boards simply have no external_reference column.
+  external <- if ("external_reference" %in% names(d)) {
+    as.logical(d$external_reference)
+  } else {
+    rep(FALSE, nrow(d))
+  }
+  external[is.na(external)] <- FALSE
+  ord <- order(ifelse(external, 1L, 0L), -d[[value_col]], na.last = TRUE)
+  d <- d[ord, , drop = FALSE]
+  external <- external[ord]
   n_row <- nrow(d)
   vals <- d[[value_col]]
+  n_ranked <- sum(!external)
 
   vlab <- attr(frame, "value_label") %||% "Value"
   fmt_fn <- attr(frame, "value_fmt_fn")
@@ -348,17 +360,33 @@ twin_table_html <- function(frame, caption, value_col = "value",
     fmt_fn <- function(v) sprintf(fspec, v)
   }
 
-  ## percentile within the field (leader = 100, last = 0) -> bar width + ramp
+  ## Percentile bars describe the ranked conference field. An outside reference
+  ## is placed against that unchanged range, then clipped to its endpoints.
   fin <- is.finite(vals)
+  ranked_fin <- fin & !external
   pct <- rep(0, n_row)
-  if (sum(fin) > 1) {
-    pct[fin] <- 100 * (rank(vals[fin], ties.method = "average") - 1) /
-      (sum(fin) - 1)
-  } else if (sum(fin) == 1) {
-    pct[fin] <- 100
+  if (sum(ranked_fin) > 1) {
+    pct[ranked_fin] <- 100 * (rank(vals[ranked_fin], ties.method = "average") - 1) /
+      (sum(ranked_fin) - 1)
+  } else if (sum(ranked_fin) == 1) {
+    pct[ranked_fin] <- 100
+  }
+  if (any(external & fin) && any(ranked_fin)) {
+    field <- vals[ranked_fin]
+    lo <- min(field)
+    hi <- max(field)
+    if (is.finite(lo) && is.finite(hi) && hi > lo) {
+      pct[external & fin] <- pmin(pmax(100 * (vals[external & fin] - lo) / (hi - lo), 0), 100)
+    } else {
+      pct[external & fin] <- 50
+    }
   }
 
-  team <- esc(as.character(d$TeamName))
+  team_display <- as.character(d$TeamName)
+  if (any(external)) {
+    team_display[external] <- paste0(team_display[external], " (external reference)")
+  }
+  team <- esc(team_display)
   logo <- TEAM_CONFIG$logo[match(d$School, TEAM_CONFIG$slug)]
   logo_img <- ifelse(is.na(logo), "",
                      paste0("<img src=\"", logo,
@@ -375,17 +403,22 @@ twin_table_html <- function(frame, caption, value_col = "value",
   ex_cells <- lapply(extras, function(f) as.character(f(d)))
 
   role <- as.character(d$role)
-  row_cls <- ifelse(role == "main", " class=\"twin-main\"",
-                    ifelse(role == "compare", " class=\"twin-compare\"", ""))
+  row_cls <- ifelse(external, " class=\"twin-external\"",
+                    ifelse(role == "main", " class=\"twin-main\"",
+                           ifelse(role == "compare", " class=\"twin-compare\"", "")))
+  rank_display <- rep("N/R", n_row)
+  rank_display[!external] <- as.character(seq_len(n_ranked))
+  rank_note <- ifelse(external,
+                      "external Power-4 reference, not ranked in this conference",
+                      paste0("rank ", rank_display, " of ", n_ranked))
 
-  ## one concise announcement per row for keyboard / screen-reader users,
-  ## e.g. "Arizona, 231.4 average weight (lbs), rank 3 of 16, n=27"
+  ## One concise announcement per row for keyboard / screen-reader users.
   extra_aria <- rep("", n_row)
   for (i in seq_along(ex_heads)) {
     extra_aria <- paste0(extra_aria, ", ", ex_heads[i], " ", ex_cells[[i]])
   }
-  aria <- esc(paste0(as.character(d$TeamName), ", ", val_txt, " ",
-                     tolower(vlab), ", rank ", seq_len(n_row), " of ", n_row,
+  aria <- esc(paste0(team_display, ", ", val_txt, " ",
+                     tolower(vlab), ", ", rank_note,
                      extra_aria, ", ", chip_txt), attribute = TRUE)
 
   extra_th <- if (length(ex_heads)) {
@@ -399,7 +432,7 @@ twin_table_html <- function(frame, caption, value_col = "value",
 
   rows <- paste0(
     "<tr tabindex=\"0\"", row_cls, " aria-label=\"", aria, "\">",
-    "<td class=\"twin-rank\">", seq_len(n_row), "</td>",
+    "<td class=\"twin-rank\">", rank_display, "</td>",
     "<td class=\"twin-team\">", logo_img, team, "</td>",
     "<td class=\"twin-bar-cell\"><div class=\"twin-bar\" aria-hidden=\"true\"",
     " style=\"width:", sprintf("%.1f", pct), "%;background:",
@@ -422,7 +455,6 @@ twin_table_html <- function(frame, caption, value_col = "value",
     "<th scope=\"col\">n</th></tr></thead>",
     "<tbody>", rows, "</tbody></table></div>")
 }
-
 ## the Conference Lab table twin -- conference-keyed (4 rows), a different
 ## shape from the team boards, so it gets its own small renderer. Reuses the
 ## twin-table CSS. `tbl` is a conf_spread_table() frame.
@@ -737,6 +769,7 @@ ui <- dashboardPage(
                 menuItem("Conference Beef", tabName = "beef", icon = icon("dumbbell")),
                 menuItem("Conference Lab", tabName = "conflab", icon = icon("layer-group")),
                 tags$li(class = "header", "PROGRAM"),
+                menuItem("Matchup", tabName = "compare", icon = icon("scale-balanced")),
                 menuItem("Weight Room", tabName = "weightroom", icon = icon("weight-hanging")),
                 menuItem("Coach Eras", tabName = "eras", icon = icon("user-tie")),
                 menuItem("War Room (3-3-5)", tabName = "brief", icon = icon("shield-halved")),
@@ -1975,6 +2008,9 @@ ui <- dashboardPage(
                   valueBoxOutput("vb_home_dev", width = NULL)))
               ),
               fluidRow(
+                column(width = 12, uiOutput("home_matchup"))
+              ),
+              fluidRow(
                 ## Renders only when this device has a meaningful prior visit.
                 column(width = 12, uiOutput("last_visit_strip"))
               ),
@@ -2055,6 +2091,57 @@ ui <- dashboardPage(
               )
       ),
 
+      ## MATCHUP ----------------------------------------------------------------
+      ## Direct program comparison lives on its own route so a cross-conference
+      ## pick adds clarity rather than quietly changing conference boards.
+      tabItem(tabName = "compare",
+              uiOutput("matchup_empty"),
+              conditionalPanel(
+                condition = "input.g_compare && input.g_compare !== '' && input.g_compare !== input.g_team",
+                uiOutput("matchup_context"),
+                fluidRow(
+                  column(width = 12, uiOutput("matchup_scorecard"))
+                ),
+                fluidRow(
+                  box(
+                    title = "Head-to-head: position-group weigh-in",
+                    status = "primary", solidHeader = TRUE, width = 8,
+                    spin(girafeOutput("matchup_h2h_plot", height = "470px"),
+                         color = "#0C234B"),
+                    footer = HTML("<em style='color:#777;'>Each point compares the two programs directly within one position group. This is the fastest way to see where a raw size edge actually lives.</em>")
+                  ),
+                  box(
+                    title = "Read this matchup",
+                    status = "warning", solidHeader = TRUE, width = 4,
+                    tags$div(
+                      class = "gi-matchup-guide",
+                      tags$p(tags$strong("Raw values answer the direct question."),
+                             " The scorecard shows the actual recruiting profile on both sides."),
+                      tags$p(tags$strong("Percentiles keep the context honest."),
+                             " Arizona is evaluated in the Big 12 and the comparison school in its own conference."),
+                      tags$p(tags$strong("Conference boards remain conference boards."),
+                             " External references never alter a league rank, average, or outcome model.")
+                    )
+                  )
+                ),
+                fluidRow(
+                  box(
+                    title = "Continue the investigation",
+                    status = "primary", solidHeader = TRUE, width = 12,
+                    div(
+                      class = "gi-matchup-actions",
+                      actionButton("go_compare_sizelab",
+                                   tagList(icon("ruler-combined"), "Map every body"),
+                                   class = "btn-default"),
+                      actionButton("go_compare_reach",
+                                   tagList(icon("route"), "Compare recruiting reach"),
+                                   class = "btn-default")
+                    ),
+                    footer = HTML("<em style='color:#777;'>Use Size Lab for player-level body distributions and Program Reach for the geographic footprint behind each class.</em>")
+                  )
+                )
+              )
+      ),
       ## SIZE LAB ---------------------------------------------------------------
       tabItem(tabName = "sizelab",
               fluidRow(
@@ -3235,12 +3322,16 @@ server <- function(input, output, session) {
                         commit = "HS commits",
                         transfer = "transfers only",
                         "commits + transfers")
+    cmp_ctx <- comparison_context(input$g_team, g_cmp())
     tags$span(
       class = "cb-summary-text",
       logo(input$g_team), team_label(input$g_team),
       if (!is.null(g_cmp())) tags$span(class = "cb-dim", "vs"),
       if (!is.null(g_cmp())) logo(g_cmp()),
       if (!is.null(g_cmp())) team_label(g_cmp()),
+      if (isTRUE(cmp_ctx$cross_conference)) tags$span(
+        class = "cb-dim cb-compare-context",
+        glue("· {cmp_ctx$compare_conference} reference")),
       tags$span(
         class = "cb-dim",
         glue("· {str_to_title(g_sport())} · ",
@@ -3284,6 +3375,9 @@ server <- function(input, output, session) {
       sizelab = list(
         eyebrow = "BODY PROFILE", title = "Size Lab",
         body = "Map every addition by height and weight, then compare the selected program with its conference peers."),
+      compare = list(
+        eyebrow = "DIRECT POWER-4 COMPARISON", title = "Matchup",
+        body = "Put two programs side by side with raw recruiting facts, then read each one in its own conference context."),
       beef = list(
         eyebrow = "CONFERENCE BOARD", title = "Conference Beef",
         body = "Rank team body profiles by position, source, and an explicitly labeled recruiting window."),
@@ -3330,6 +3424,17 @@ server <- function(input, output, session) {
       glue("{team_label(input$g_team)}{cmp_scope} · {str_to_title(g_sport())} · ",
            "{input$g_years[1]}–{input$g_years[2]} · {players_lab()}")
     } else if (identical(tab, "notes")) {
+    } else if (identical(tab, "compare")) {
+      cmp <- g_cmp()
+      if (is.null(cmp)) {
+        glue("{team_label(input$g_team)} · choose any Power-4 program · ",
+             "{str_to_title(g_sport())} · {input$g_years[1]}–{input$g_years[2]}")
+      } else {
+        ctx <- comparison_context(input$g_team, cmp)
+        glue("{ctx$team_name} · {ctx$team_conference} vs ",
+             "{ctx$compare_name} · {ctx$compare_conference} · ",
+             "{str_to_title(g_sport())} · {input$g_years[1]}–{input$g_years[2]}")
+      }
       paste0("Power-4 coverage",
              if (!is.null(last_refresh_label))
                paste0(" · updated ", last_refresh_label) else "")
@@ -3547,6 +3652,9 @@ server <- function(input, output, session) {
   ## Cover and task-path buttons.
   observeEvent(input$cover_sizelab, updateTabItems(session, "tabs", "sizelab"))
   observeEvent(input$cover_conflab, updateTabItems(session, "tabs", "conflab"))
+  observeEvent(input$go_compare, updateTabItems(session, "tabs", "compare"))
+  observeEvent(input$go_compare_sizelab, updateTabItems(session, "tabs", "sizelab"))
+  observeEvent(input$go_compare_reach, updateTabItems(session, "tabs", "summary"))
   observeEvent(input$go_sizelab, updateTabItems(session, "tabs", "sizelab"))
   observeEvent(input$go_beef, updateTabItems(session, "tabs", "beef"))
   observeEvent(input$go_conflab, updateTabItems(session, "tabs", "conflab"))
@@ -3749,6 +3857,78 @@ server <- function(input, output, session) {
     )
   })
 
+  ## A comparison has a dedicated, small-screen-friendly surface. Raw values
+  ## can be compared across Power-4 programs; percentiles intentionally use
+  ## each program's own conference instead of manufacturing a blended ranking.
+  matchup_context_r <- reactive({
+    req(input$g_team)
+    compare_slug <- g_cmp()
+    if (is.null(compare_slug)) return(NULL)
+    comparison_context(input$g_team, compare_slug)
+  })
+
+  matchup_card <- function(cta_id = NULL, cta_label = "Open full comparison") {
+    ctx <- matchup_context_r()
+    if (is.null(ctx)) return(NULL)
+    yrs <- g_years_d()
+    open_scope <- if (yrs[2] > arriving_class) paste0(" · ", yrs[2], " open") else ""
+    home_program_matchup(
+      size_data = size_window(),
+      team_slug = ctx$team_slug,
+      compare_slug = ctx$compare_slug,
+      team_conf_slugs = conf_pool_slugs(),
+      compare_conf_slugs = onboarded_slugs(ctx$compare_conference),
+      sport = g_sport(),
+      sport_label = str_to_title(g_sport()),
+      window_label = glue("{yrs[1]}–{yrs[2]}{open_scope} · {players_lab()}"),
+      min_team_n = if (g_sport() == "football") 8L else 5L,
+      subgroup_min_n = if (g_sport() == "football") 5L else 3L,
+      cta_id = cta_id,
+      cta_label = cta_label
+    )
+  }
+
+  output$home_matchup <- renderUI({
+    matchup_card(cta_id = "go_compare")
+  })
+
+  output$matchup_empty <- renderUI({
+    req(input$g_team)
+    if (!is.null(g_cmp())) return(NULL)
+    div(
+      class = "gi-matchup-empty",
+      div(class = "gi-matchup__eyebrow", "Direct Power-4 comparison"),
+      h2("Put another program beside ", team_label(input$g_team)),
+      p("Use the Compare to picker in the top bar to open a focused matchup. You can choose any onboarded Power-4 program — conference rival or not."),
+      tags$span(icon("arrow-up-right-from-square"), " Try Arizona vs Alabama to see an honest Big 12–SEC comparison.")
+    )
+  })
+
+  output$matchup_context <- renderUI({
+    ctx <- matchup_context_r()
+    if (is.null(ctx)) return(NULL)
+    relationship <- if (isTRUE(ctx$cross_conference)) {
+      paste0(ctx$compare_name, " is an ", ctx$compare_conference,
+             " reference. It is never mixed into ", ctx$team_conference,
+             " ranks, averages, or outcome calibration.")
+    } else {
+      paste0("Both programs are ", ctx$team_conference,
+             " peers, so the board and percentile context share the same conference pool.")
+    }
+    div(
+      class = "gi-comparison-context",
+      icon("scale-balanced"),
+      div(
+        tags$strong(paste0(ctx$team_name, " · ", ctx$team_conference,
+                           "  vs  ", ctx$compare_name, " · ", ctx$compare_conference)),
+        tags$span(relationship)
+      )
+    )
+  })
+
+  output$matchup_scorecard <- renderUI({
+    matchup_card()
+  })
   ## current-status boxes for the SELECTED team (season-proof: everything is
   ## derived from the window + max class year, never hardcoded)
   output$vb_home_rank <- renderValueBox({
@@ -4240,6 +4420,17 @@ server <- function(input, output, session) {
       name = png_name(glue("h2h-vs-{g_cmp()}"))), "head to head")
   })
 
+  output$matchup_h2h_plot <- renderGirafe({
+    cmp <- g_cmp()
+    validate(need(!is.null(cmp),
+                  "Pick a Compare to program in the top bar to build this matchup."))
+    girafe_try(girafe_wrap(
+      plot_head_to_head(size_window(), input$g_team, cmp, g_sport(),
+                        source_label = paste(players_lab(), "recruiting additions"),
+                        players_note = players_lab()),
+      w = 10.5, h = 4.8,
+      name = png_name(glue("matchup-h2h-vs-{cmp}"))), "matchup head to head")
+  })
   ## ---- WEIGHT ROOM ---------------------------------------------------------------------
   wr_team <- reactive({
     wr_data_r() %>% filter(School == input$g_team)
@@ -4592,6 +4783,8 @@ server <- function(input, output, session) {
       glue("{beef_source_label()}; the year window does not apply to ",
            "current roster weights.")
     }
+    external_note <- attr(b, "external_note") %||% ""
+    if (nzchar(external_note)) cap_note <- paste(cap_note, external_note)
     HTML(twin_table_html(
       b, caption = glue("{active_conf_lab()} Beef Board - ",
                         "{pos_filter_label(input$size_pos)} - table view"),

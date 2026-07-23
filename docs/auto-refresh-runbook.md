@@ -35,6 +35,12 @@ transcript log. Stages, in order:
 
 If nothing changed upstream the run logs `noop` and publishes nothing.
 
+A successful HTTP 200 with zero parsed players is **not** assumed to mean an
+empty class. `refreshClassYear.R` logs `VERIFIED EMPTY` only when 247 renders
+an explicit no-commitments empty-state message; every other zero response logs
+`EMPTY RESPONSE`, retains existing rows, and is surfaced for re-checking. Neither
+path deletes a school-year on its own.
+
 ## One-time setup checklist
 
 - Register the schedule: `powershell -NoProfile -ExecutionPolicy Bypass
@@ -89,9 +95,13 @@ Exit codes: `0` success or no-op, `1` failure, `2` degraded -- the manifest
   `logs/refresh_manifest_<ts>.json`
 - `backups/pre_run_<ts>.db` -- pre-run db snapshots (gitignored);
   `backups/recruiting_HEAD.db` is never pruned
+- `docs/status.json` -- public-cover beacon. `source_capture` names the
+  published source snapshot; `pipeline_status` and `pipeline_checked` report
+  the latest known refresh health separately.
 - `refresh_log` table in `data/recruiting.db` -- run history; status is one
-  of `ok | degraded | failed | noop`; the app's "Data updated" badge shows
-  the latest `ok`/`degraded` row
+  of `ok | degraded | failed | noop`. The Home status rail shows both capture
+  freshness and the latest pipeline result; a failed validation says that the
+  prior snapshot was retained.
 
 ## Recovery
 
@@ -111,6 +121,17 @@ lock older than 3 hours as stale on its own).
 
 Compare a suspect db against a snapshot at any time:
 `Rscript scripts/validateRefresh.R backups/pre_run_<ts>.db`
+
+## Confirmed active-cycle decommits
+
+Do **not** loosen the 40% school-year retention gate to accept a plausible
+roster move. After checking the current 247 class page, add one reviewed row to
+`scripts/refresh-validation-exceptions.csv` only when all of these are known:
+the exact table, school, active class year, baseline/live row counts, removed
+commit, retained commit, source URL, review date, and a short expiration. The
+validator requires every one of those fields to match. It never waives a
+zero-row hole or a historical class. Remove the row once a successful baseline
+has rolled forward, or when it expires and needs re-verification.
 
 ## New-cycle rollover (automatic)
 

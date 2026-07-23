@@ -5,7 +5,10 @@
 ##
 ##   (a) recruit_class_* : total rows shrank no more than 5%, and no
 ##       (School, Year) group that had rows in the baseline lost more
-##       than 40% of them
+##       than 40% of them. The only exception is an exact, source-reviewed,
+##       active-cycle nonzero decommit listed in
+##       scripts/refresh-validation-exceptions.csv; zero-row and historical
+##       regressions are never exempted.
 ##   (b) roster_*        : per-RosterYear totals within +/-20% of baseline
 ##       for years present in BOTH dbs, counted among BASELINE schools only
 ##       (new schools/years are onboarding growth and pass), and at least
@@ -68,6 +71,143 @@ n_rows <- function(db, tbl) {
 has_col <- function(db, tbl, col) {
   col %in% q(db, paste0("PRAGMA table_info(", tbl, ")"))$name
 }
+## ---------------------------------------------------------------------------
+## Exact, source-reviewed active-cycle decommit exceptions
+## ---------------------------------------------------------------------------
+## A one-player class can legitimately move 2 -> 1 overnight. That should not
+## cause a permanent rollback loop, but a broad threshold exception would make
+## the safety gate blind to real scraper losses. The registry therefore binds
+## a waiver to the exact table, school, year, before/after counts, removed and
+## retained commit names, source-verification date, and a short expiry. It can
+## never waive a zero-row regression or a historical class.
+DECOMMIT_EXCEPTION_PATH <- Sys.getenv(
+  "GIRTH_DECOMMIT_EXCEPTION_PATH",
+  unset = file.path("scripts", "refresh-validation-exceptions.csv")
+)
+
+empty_decommit_exceptions <- function() {
+  data.frame(
+    tbl = character(), school = character(), year = integer(),
+    baseline_rows = integer(), live_rows = integer(),
+    removed_name = character(), retained_name = character(),
+    expires_on = as.Date(character()), verified_on = as.Date(character()),
+    source_url = character(), reason = character(),
+    stringsAsFactors = FALSE
+  )
+}
+
+load_decommit_exceptions <- function(path = DECOMMIT_EXCEPTION_PATH) {
+  if (!file.exists(path)) return(empty_decommit_exceptions())
+
+  raw <- tryCatch(
+    utils::read.csv(path, stringsAsFactors = FALSE, na.strings = c("", "NA"),
+                    check.names = FALSE),
+    error = function(e) stop("could not read decommit exception registry: ",
+                             conditionMessage(e), call. = FALSE)
+  )
+  required <- c("tbl", "school", "year", "baseline_rows", "live_rows",
+                "removed_name", "retained_name", "expires_on", "verified_on",
+                "source_url", "reason")
+  missing <- setdiff(required, names(raw))
+  if (length(missing)) {
+    stop("decommit exception registry missing column(s): ",
+         paste(missing, collapse = ", "), call. = FALSE)
+  }
+
+  out <- raw[, required, drop = FALSE]
+  out$tbl <- trimws(tolower(as.character(out$tbl)))
+  out$school <- trimws(tolower(as.character(out$school)))
+  out$year <- suppressWarnings(as.integer(out$year))
+  out$baseline_rows <- suppressWarnings(as.integer(out$baseline_rows))
+  out$live_rows <- suppressWarnings(as.integer(out$live_rows))
+  out$removed_name <- trimws(as.character(out$removed_name))
+  out$retained_name <- trimws(as.character(out$retained_name))
+  out$expires_on <- suppressWarnings(as.Date(out$expires_on))
+  out$verified_on <- suppressWarnings(as.Date(out$verified_on))
+  out$source_url <- trimws(as.character(out$source_url))
+  out$reason <- trimws(as.character(out$reason))
+
+  text_ok <- function(x) !is.na(x) & nzchar(x)
+  if (any(!out$tbl %in% c("recruit_class_football",
+                           "recruit_class_basketball")) ||
+      any(!text_ok(out$school)) || any(!text_ok(out$removed_name)) ||
+      any(!text_ok(out$retained_name)) || any(!text_ok(out$source_url)) ||
+      any(!text_ok(out$reason)) || any(!is.finite(out$year)) ||
+      any(!is.finite(out$baseline_rows)) || any(!is.finite(out$live_rows)) ||
+      any(is.na(out$expires_on)) || any(is.na(out$verified_on))) {
+    stop("decommit exception registry has an invalid required value", call. = FALSE)
+  }
+  if (any(out$baseline_rows != out$live_rows + 1L) ||
+      any(out$live_rows < 1L)) {
+    stop("decommit exceptions must be one-row nonzero losses",
+         call. = FALSE)
+  }
+  if (any(out$expires_on < out$verified_on)) {
+    stop("decommit exception expiry cannot precede source verification",
+         call. = FALSE)
+  }
+  key <- paste(out$tbl, out$school, out$year, sep = "\r")
+  if (anyDuplicated(key)) {
+    stop("decommit exception registry has duplicate table/school/year rows",
+         call. = FALSE)
+  }
+  out
+}
+
+active_class_year <- function(year, today = Sys.Date()) {
+  current <- as.integer(format(as.Date(today), "%Y"))
+  is.finite(year) && year >= current && year <= current + 1L
+}
+
+name_key <- function(x) {
+  tolower(gsub("\\s+", " ", trimws(as.character(x))))
+}
+
+school_year_commits <- function(db, tbl, school, year) {
+  if (!has_col(db, tbl, "Name") || !has_col(db, tbl, "Type")) {
+    return(data.frame(Name = character(), Type = character(),
+                      stringsAsFactors = FALSE))
+  }
+  conn <- dbConnect(SQLite(), db)
+  on.exit(dbDisconnect(conn), add = TRUE)
+  dbGetQuery(
+    conn,
+    paste0("SELECT Name, Type FROM ", tbl,
+           " WHERE School = ? AND Year = ?"),
+    params = list(school, as.integer(year))
+  )
+}
+
+approved_nonzero_decommit <- function(exceptions, base_db, live_db, tbl,
+                                      school, year, n_base, n_live) {
+  if (!nrow(exceptions) || !active_class_year(year)) return(NULL)
+  hit <- exceptions[
+    exceptions$tbl == tbl & exceptions$school == tolower(school) &
+      exceptions$year == as.integer(year) &
+      exceptions$baseline_rows == as.integer(n_base) &
+      exceptions$live_rows == as.integer(n_live) &
+      exceptions$verified_on <= Sys.Date() &
+      Sys.Date() <= exceptions$expires_on,
+    , drop = FALSE]
+  if (nrow(hit) != 1L || as.integer(n_live) < 1L) return(NULL)
+
+  base_players <- school_year_commits(base_db, tbl, school, year)
+  live_players <- school_year_commits(live_db, tbl, school, year)
+  base_commits <- name_key(base_players$Name[base_players$Type == "Commit"])
+  live_commits <- name_key(live_players$Name[live_players$Type == "Commit"])
+  removed <- name_key(hit$removed_name[[1]])
+  retained <- name_key(hit$retained_name[[1]])
+  if (!(removed %in% base_commits) || removed %in% live_commits ||
+      !(retained %in% base_commits) ||
+      !(retained %in% live_commits)) return(NULL)
+  hit
+}
+
+decommit_exceptions <- load_decommit_exceptions()
+if (nrow(decommit_exceptions)) {
+  cat("[INFO] loaded ", nrow(decommit_exceptions),
+      " exact active-cycle decommit exception(s)\n", sep = "")
+}
 
 ## Scale roster coverage with the shipped program universe. This is 51 of 67
 ## today and automatically moves if onboarding changes again.
@@ -112,22 +252,28 @@ for (tbl in c("recruit_class_football", "recruit_class_basketball")) {
     m <- merge(bg, lg, by = c("School", "Year"), all.x = TRUE)
     m$n_live[is.na(m$n_live)] <- 0L
     bad <- m[m$n_base > 0 & m$n_live < 0.6 * m$n_base, , drop = FALSE]
-    ## exempt school-years the hole audit has deliberately STOPPED healing
-    ## (heal streak exhausted = probable decommit; the row loss there is the
-    ## source being honored, not a scrape failure) -- see auditRefreshHoles.R
-    if (nrow(bad) > 0 && has_table(live_db, "audit_heals")) {
-      aged <- q(live_db, paste0(
-        "SELECT School, Year FROM audit_heals WHERE tbl = '", tbl,
-        "' AND streak > 3"))
-      if (nrow(aged) > 0) {
-        keep <- !(paste(bad$School, bad$Year) %in%
-                    paste(aged$School, aged$Year))
-        if (any(!keep)) {
-          cat("[INFO] ", tbl, ": ", sum(!keep), " group(s) exempted from the",
-              " retention gate (aged-out heals / probable decommits)\n",
-              sep = "")
+    ## A source-reviewed exception can only clear the exact active-cycle,
+    ## nonzero drop it names. It cannot waive a zero-row hole, an old class,
+    ## a different player, or any total-table regression above.
+    if (nrow(bad) > 0 && nrow(decommit_exceptions) > 0) {
+      approved <- vector("list", nrow(bad))
+      for (i in seq_len(nrow(bad))) {
+        approved[[i]] <- approved_nonzero_decommit(
+          decommit_exceptions, base_db, live_db, tbl,
+          bad$School[i], bad$Year[i], bad$n_base[i], bad$n_live[i]
+        )
+      }
+      allow <- vapply(approved, function(x) !is.null(x), logical(1))
+      if (any(allow)) {
+        for (i in which(allow)) {
+          hit <- approved[[i]]
+          cat(sprintf(
+            "[INFO] %s: exact verified decommit allowed for %s %s (%d -> %d); verified %s, expires %s\n",
+            tbl, bad$School[i], bad$Year[i], bad$n_base[i], bad$n_live[i],
+            format(hit$verified_on[[1]]), format(hit$expires_on[[1]])))
+          cat("       source:", hit$source_url[[1]], "\n")
         }
-        bad <- bad[keep, , drop = FALSE]
+        bad <- bad[!allow, , drop = FALSE]
       }
     }
     detail <- if (nrow(bad) > 0) {
@@ -136,10 +282,10 @@ for (tbl in c("recruit_class_football", "recruit_class_basketball")) {
                                 bad$n_base, bad$n_live), 3),
                    collapse = "; "))
     } else ""
-    check(paste0(tbl, ": no (School, Year) group lost > 40% of its rows"),
+    check(paste0(tbl, ": no unresolved (School, Year) group lost > 40% of its rows"),
           nrow(bad) == 0, detail)
   } else {
-    check(paste0(tbl, ": no (School, Year) group lost > 40% of its rows"),
+    check(paste0(tbl, ": no unresolved (School, Year) group lost > 40% of its rows"),
           TRUE, "baseline empty -- nothing to lose")
   }
 }

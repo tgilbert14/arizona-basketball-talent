@@ -52,13 +52,12 @@ live_path <- if (!is.na(arg_live) && nzchar(arg_live) && file.exists(arg_live)) 
 live <- dbConnect(RSQLite::SQLite(), live_path)
 base <- dbConnect(RSQLite::SQLite(), base_path)
 
-## heal ledger: a hole healed on MANY CONSECUTIVE runs is not a fetch
-## failure -- it is 247 persistently NOT listing those commits (a decommit /
-## reclassification; e.g. Kayden Allen leaving Cincinnati's 2026 class made
-## the audit resurrect him nightly). Heal a school-year at most
-## MAX_HEAL_STREAK runs in a row; after that, stop healing and say so
-## loudly -- the next snapshot then rolls forward without the rows and the
-## ledger entry clears itself. Transient page glitches still get healed.
+## heal ledger: a hole healed on MANY CONSECUTIVE runs may be a real
+## decommit/reclassification rather than a fetch failure. Heal a school-year
+## at most MAX_HEAL_STREAK runs in a row; after that, stop auto-healing and
+## surface it for source review. This ledger does not waive the post-refresh
+## validation gate: an unresolved wipe still restores the last trusted
+## snapshot. Transient page glitches still get healed.
 MAX_HEAL_STREAK <- 3
 dbExecute(live, paste0(
   "CREATE TABLE IF NOT EXISTS audit_heals (",
@@ -118,10 +117,10 @@ for (tbl in c("recruit_class_football", "recruit_class_basketball")) {
       ", last_healed = excluded.last_healed"))
 
     if (streak > MAX_HEAL_STREAK) {
-      cat("  NOT healed:", holes$School[i], holes$Year[i],
+      cat("  NOT auto-healed:", holes$School[i], holes$Year[i],
           "(healed on", MAX_HEAL_STREAK, "consecutive runs already --",
-          "probable decommit/removal on 247; letting the source win;",
-          "pre-run snapshots in backups/ keep the history)\n")
+          "requires manual source review; validation remains strict and",
+          "will restore the last trusted snapshot if unresolved)\n")
       next
     }
 

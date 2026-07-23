@@ -5,7 +5,5 @@
   "pipeline_checked": "2026-07-22",
   "pipeline_message": "Latest refresh failed validation; the previous source snapshot remains published.",
   "football_rows": 22828,
-  "basketball_rows": 3655,
-  "newest_class": 2027,
-  "brief": "brief/"
+  "basketball_rows": 3655
 }

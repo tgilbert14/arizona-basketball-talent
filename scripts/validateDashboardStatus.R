@@ -16,8 +16,11 @@ check <- function(ok, message) {
 
 conn <- dbConnect(SQLite(), ":memory:")
 on.exit(dbDisconnect(conn), add = TRUE)
+isolated_status_path <- tempfile(fileext = ".json")
+on.exit(unlink(isolated_status_path), add = TRUE)
 
-empty <- dashboard_refresh_meta(conn)
+
+empty <- dashboard_refresh_meta(conn, status_path = isolated_status_path)
 check(identical(empty$status, "unknown"), "empty database status failed")
 check(is.null(empty$capture_date), "empty database capture should be NULL")
 check(identical(dashboard_freshness_info(empty)$state, "unknown"),
@@ -60,7 +63,7 @@ dbExecute(conn, paste(
   "INSERT INTO team_seasons_football VALUES",
   "('arizona',2025,9),('asu',2025,10),('arizona',2024,8)"))
 
-meta <- dashboard_refresh_meta(conn)
+meta <- dashboard_refresh_meta(conn, status_path = isolated_status_path)
 check(identical(meta$checked_date, as.Date("2026-07-16")),
       "pipeline check date failed")
 check(identical(meta$capture_date, as.Date("2026-07-18")),
@@ -88,7 +91,7 @@ dbExecute(conn, paste(
   "INSERT INTO refresh_log VALUES",
   "('b','2026-07-18 01:00:00','2026-07-18 01:02:00','noop','{}','')"))
 noop <- dashboard_pipeline_info(
-  dashboard_refresh_meta(conn), as.Date("2026-07-18"))
+  dashboard_refresh_meta(conn, status_path = isolated_status_path), as.Date("2026-07-18"))
 check(identical(noop$state, "fresh") &&
         grepl("no source changes", noop$label, fixed = TRUE),
       "fresh noop presentation failed")
@@ -98,7 +101,7 @@ dbExecute(conn, paste(
   "INSERT INTO refresh_log VALUES",
   "('c','2026-07-18 01:00:00','2026-07-18 01:10:00','degraded','{}','partial')"))
 degraded <- dashboard_pipeline_info(
-  dashboard_refresh_meta(conn), as.Date("2026-07-18"))
+  dashboard_refresh_meta(conn, status_path = isolated_status_path), as.Date("2026-07-18"))
 check(identical(degraded$state, "warning"),
       "degraded refresh should warn")
 
@@ -107,10 +110,21 @@ dbExecute(conn, paste(
   "INSERT INTO refresh_log VALUES",
   "('d','2026-07-18 01:00:00','2026-07-18 01:10:00','failed','{}','network')"))
 failed <- dashboard_pipeline_info(
-  dashboard_refresh_meta(conn), as.Date("2026-07-18"))
+  dashboard_refresh_meta(conn, status_path = isolated_status_path), as.Date("2026-07-18"))
 check(identical(failed$state, "stale") &&
         grepl("failed", failed$label, fixed = TRUE),
       "failed refresh should be explicit")
+check(grepl("rolled back", failed$detail, fixed = TRUE) &&
+        grepl("Jul 18, 2026", failed$detail, fixed = TRUE),
+      "failed refresh detail should name the retained source snapshot")
+
+sidecar_path <- tempfile(fileext = ".json")
+on.exit(unlink(sidecar_path), add = TRUE)
+jsonlite::write_json(list(pipeline_status = "failed", pipeline_checked = "2026-07-22", pipeline_message = "Latest refresh failed validation; the previous source snapshot remains published."), sidecar_path, auto_unbox = TRUE)
+sidecar_meta <- dashboard_refresh_meta(conn, status_path = sidecar_path)
+check(identical(sidecar_meta$checked_date, as.Date("2026-07-22")) && identical(sidecar_meta$status, "failed") && identical(sidecar_meta$capture_date, as.Date("2026-07-18")), "newer sidecar should override only pipeline status")
+sidecar_failed <- dashboard_pipeline_info(sidecar_meta, as.Date("2026-07-23"))
+check(identical(sidecar_failed$state, "stale") && grepl("Latest refresh failed validation", sidecar_failed$detail, fixed = TRUE) && grepl("Jul 18, 2026", sidecar_failed$detail, fixed = TRUE), "sidecar failure should retain the DB-derived source snapshot")
 
 dbExecute(conn, "UPDATE recruit_class_football SET ScrapedAt = NULL")
 missing_stamp <- .dashboard_table_snapshot(conn, "recruit_class_football")

@@ -79,6 +79,22 @@ abs_247 <- function(href) {
   ifelse(grepl("^/", href), paste0("https://247sports.com", href),
          NA_character_))))
 }
+## Return TRUE only when a successful 247 page exposes an explicit empty-state
+## message. A selector/parser miss remains "unclassified", never a verified
+## empty class, and rows are retained in both cases.
+explicit_empty_commit_page <- function(page) {
+  nodes <- html_nodes(page, paste(
+    c(".ri-page__empty", ".ri-page__no-results", ".no-results",
+      ".no-results-message", "[class*='empty']", "[class*='no-result']"),
+    collapse = ", "))
+  if (!length(nodes)) return(FALSE)
+  text <- tolower(gsub("\\s+", " ", paste(html_text(nodes, trim = TRUE),
+                                             collapse = " ")))
+  grepl(
+    "(there (is|are) no (commitments?|commits|prospects?|players?)|no (commitments?|commits|prospects?|players?)( yet| found| available| for this class)?)",
+    text, perl = TRUE
+  )
+}
 
 ## ---------------------------------------------------------------------------
 ## scrape the commits page for one school/year/sport
@@ -196,7 +212,11 @@ scrape_class <- function(slug, sport, year) {
   }
 
   out <- bind_rows(commits, transfers)
-  if (nrow(out) == 0) return(out)
+  if (nrow(out) == 0) {
+    attr(out, "empty_state") <- if (explicit_empty_commit_page(page))
+      "verified" else "unclassified"
+    return(out)
+  }
   out %>%
     mutate(Year = year, School = slug) %>%
     distinct(Name, Type, .keep_all = TRUE)
@@ -310,6 +330,8 @@ cat("Refreshing ", sport, " ", year, " classes", scope_note, "...\n\n", sep = ""
 fresh <- list()
 ok_slugs <- character(0)   # only these schools' old rows get replaced
 failed_slugs <- character(0)
+verified_empty_slugs <- character(0)
+unclassified_empty_slugs <- character(0)
 for (slug in target_slugs) {
   res <- NULL
   for (attempt in 1:3) {   # transient fetch failures get retried
@@ -342,8 +364,16 @@ for (slug in target_slugs) {
         failed_slugs <- c(failed_slugs, slug)
       }
     } else {
-      cat(sprintf("  %-16s scraped EMPTY -- existing rows kept\n", slug))
-      failed_slugs <- c(failed_slugs, slug)
+      empty_state <- attr(res, "empty_state")
+      if (identical(empty_state, "verified")) {
+        cat(sprintf("  %-16s VERIFIED EMPTY (explicit 247 empty-state; existing rows kept)\n",
+                    slug))
+        verified_empty_slugs <- c(verified_empty_slugs, slug)
+      } else {
+        cat(sprintf("  %-16s EMPTY RESPONSE (no explicit 247 empty marker; existing rows kept)\n",
+                    slug))
+        unclassified_empty_slugs <- c(unclassified_empty_slugs, slug)
+      }
     }
   }
   Sys.sleep(runif(1, 2, 4))
@@ -353,6 +383,14 @@ cat("\nScraped", nrow(fresh), "players across", length(ok_slugs), "schools\n")
 if (length(failed_slugs) > 0) {
   cat("FAILED schools (rows kept, re-run later):",
       paste(failed_slugs, collapse = ", "), "\n")
+}
+if (length(unclassified_empty_slugs) > 0) {
+  cat("UNCLASSIFIED empty pages (rows kept; re-check source/selector):",
+      paste(unclassified_empty_slugs, collapse = ", "), "\n")
+}
+if (length(verified_empty_slugs) > 0) {
+  cat("VERIFIED empty pages (explicit 247 message; rows kept):",
+      paste(verified_empty_slugs, collapse = ", "), "\n")
 }
 ## the ahead-year probe: before 247 opens a cycle's pages, every school
 ## scrapes to nothing -- that is expected, not a failure. Exit here, BEFORE

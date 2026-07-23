@@ -186,7 +186,7 @@ run_child <- function(label, script, extra_args = character(0),
   ## harvest per-school failures from the child's own log lines
   if (harvest_failures) {
     m <- regmatches(out, regexec(
-      "^\\s*([a-z0-9-]+)\\s+(GAVE UP|DEMOTED|FAILED:|scraped EMPTY)", out))
+      "^\\s*([a-z0-9-]+)\\s+(GAVE UP|DEMOTED|FAILED:|EMPTY RESPONSE)", out))
     slugs <- vapply(m[lengths(m) > 0], function(x) x[2], character(1))
     if (length(slugs) > 0) {
       failed_schools <<- unique(c(failed_schools, slugs))
@@ -274,8 +274,125 @@ update_log_row <- function(finished_at, status, tables_json, note_txt) {
     "tables_json = ?, notes = ? WHERE run_id = ?"),
     params = list(finished_at, status, tables_json, note_txt, run_id))
 }
+## Public landing-page beacon: source capture and pipeline health are different
+## facts. Keep them separate so a failed validation cannot be presented as a
+## new dataset. This intentionally publishes a concise controlled message, not
+## raw run notes (which can contain operator-only detail).
+source_capture_date <- function(db) {
+  conn <- dbConnect(SQLite(), db)
+  on.exit(dbDisconnect(conn), add = TRUE)
+  tables <- intersect(
+    c("recruit_class_football", "recruit_class_basketball",
+      "roster_football", "roster_basketball"),
+    dbListTables(conn)
+  )
+  stamps <- unlist(lapply(tables, function(tbl) {
+    fields <- dbListFields(conn, tbl)
+    if (!"ScrapedAt" %in% fields) return(NA_character_)
+    value <- dbGetQuery(conn, paste0("SELECT MAX(ScrapedAt) AS stamp FROM ",
+                                    tbl))$stamp
+    if (!length(value) || is.na(value[[1]])) NA_character_ else value[[1]]
+  }), use.names = FALSE)
+  days <- suppressWarnings(as.Date(substr(as.character(stamps), 1, 10)))
+  days <- days[!is.na(days)]
+  if (!length(days)) NULL else max(days)
+}
+
+public_pipeline_message <- function(status) {
+  switch(tolower(trimws(as.character(status)[1])),
+         failed = "Latest refresh failed validation; the previous source snapshot remains published.",
+         failure = "Latest refresh failed; the previous source snapshot remains published.",
+         error = "Latest refresh failed; the previous source snapshot remains published.",
+         degraded = "Latest refresh completed with warnings; review the pipeline status before treating it as a new snapshot.",
+         noop = "Latest refresh found no source changes.",
+         ok = "Latest refresh completed.",
+         "Latest pipeline status is unavailable.")
+}
+
+write_public_status <- function(status, checked_at = Sys.time()) {
+  tryCatch({
+    cnts <- table_counts(db_path)
+    getn <- function(tbl) {
+      if (tbl %in% names(cnts)) as.integer(cnts[[tbl]]) else 0L
+    }
+    newest <- tryCatch(
+      suppressWarnings(max(newest_year(db_path, "football"),
+                           newest_year(db_path, "basketball"), na.rm = TRUE)),
+      error = function(e) NA_integer_
+    )
+    if (!is.finite(newest)) newest <- NA_integer_
+    captured <- source_capture_date(db_path)
+    checked <- suppressWarnings(as.Date(substr(as.character(checked_at)[1], 1, 10)))
+    if (is.na(checked)) checked <- Sys.Date()
+    beacon <- list(
+      updated = if (is.null(captured)) NULL else format(captured),
+      source_capture = if (is.null(captured)) NULL else format(captured),
+      pipeline_status = tolower(trimws(as.character(status)[1])),
+      pipeline_checked = format(checked),
+      pipeline_message = public_pipeline_message(status),
+      football_rows = getn("recruit_class_football"),
+      basketball_rows = getn("recruit_class_basketball"),
+      newest_class = newest,
+      brief = "brief/"
+    )
+    status_paths <- c(file.path("docs", "status.json"),
+                      file.path("www", "pipeline-status.json"))
+    for (status_path in status_paths) {
+      jsonlite::write_json(
+        beacon, status_path,
+        auto_unbox = TRUE, pretty = TRUE, null = "null",
+        na = "null"
+      )
+    }
+    TRUE
+  }, error = function(e) {
+    cat("[status.json] write skipped (", conditionMessage(e), ")\n", sep = "")
+    FALSE
+  })
+}
 
 ## the one exit ramp: ledger + manifests + summary + alert + lock + quit
+
+status_beacon_paths <- function() {
+  c(file.path("docs", "status.json"),
+    file.path("www", "pipeline-status.json"))
+}
+
+publish_status_only <- function(status) {
+  paths <- status_beacon_paths()
+
+  if (isTRUE(no_push) || !nzchar(Sys.which("git"))) {
+    cat("[status publish] skipped -- push disabled or git unavailable\n")
+    return(FALSE)
+  }
+
+  sidecar_untracked <- git_run("ls-files", "--error-unmatch",
+                               "www/pipeline-status.json") != 0L
+  dirty_beacon <- sidecar_untracked ||
+    git_run("diff", "--quiet", "--", paths) != 0L
+  if (!dirty_beacon) return(TRUE)
+
+  if (git_run("diff", "--quiet", "--", "manifest.json") != 0L) {
+    cat("[status publish] skipped -- manifest.json has unrelated edits\n")
+    return(FALSE)
+  }
+
+  manifest_result <- run_child(
+    "update status manifest", "updateManifest.R",
+    extra_args = "--paths=www/pipeline-status.json", harvest_failures = FALSE)
+  if (!isTRUE(manifest_result$ok)) return(FALSE)
+
+  commit_paths <- c(paths, "manifest.json")
+  st <- git_run("add", "--", commit_paths)
+  if (st == 0L) {
+    st <- git_run("commit", "-m",
+                  paste0("Update pipeline status ", format(Sys.Date()), " [auto]"))
+  }
+  if (st == 0L) st <- git_run("push")
+  if (st != 0L) cat("[status publish] git update did not reach origin\n")
+  st == 0L
+}
+
 finalize <- function(status, exit_code, extra_note = NULL) {
   if (!is.null(extra_note)) notes <<- c(notes, extra_note)
   finished_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
@@ -296,6 +413,13 @@ finalize <- function(status, exit_code, extra_note = NULL) {
     }
   }, silent = TRUE)
 
+  ## Keep the local beacon truthful even on early failures; the release path
+  ## decides whether it is published, but it must never retain a fake success.
+  status_written <- tryCatch(
+    write_public_status(status, finished_at),
+    error = function(e) FALSE
+  )
+
   ## manifests: compact (committed) + full (logs/, gitignored)
   compact <- build_compact(status, finished_at, counts_now)
   try(write_manifest(file.path("data", "refresh-manifest.json"), compact),
@@ -311,6 +435,9 @@ finalize <- function(status, exit_code, extra_note = NULL) {
   try(write_manifest(
     file.path("logs", paste0("refresh_manifest_", run_id, ".json")), full),
     silent = TRUE)
+  if (isTRUE(status_written)) {
+    publish_status_only(status)
+  }
 
   ## summary
   cat("\n==== NIGHTLY REFRESH SUMMARY ====\n")
@@ -692,35 +819,26 @@ tryCatch({
     }
   }
 
-  ## docs/status.json -- the machine-readable freshness beacon the landing
-  ## page reads to show an understated "data updated {date}" line. Written
-  ## whenever the night changed (an unchanged night leaves the published
-  ## beacon standing), independent of the brief above so it stays correct even
-  ## if the brief child warned. Counts come through the short-lived-connection
-  ## helpers; weeklyBrief.R writes the same shape on the manual path.
-  if (isTRUE(changed)) {
-    st_ok <- tryCatch({
-      cnts <- table_counts(db_path)
-      getn <- function(t) if (t %in% names(cnts)) as.integer(cnts[[t]]) else 0L
-      newest <- suppressWarnings(max(newest_year(db_path, "football"),
-                                     newest_year(db_path, "basketball"),
-                                     na.rm = TRUE))
-      if (!is.finite(newest)) newest <- NA_integer_
-      status <- list(updated         = format(Sys.Date()),
-                     football_rows   = getn("recruit_class_football"),
-                     basketball_rows = getn("recruit_class_basketball"),
-                     newest_class    = newest,
-                     brief           = "brief/")
-      jsonlite::write_json(status, file.path("docs", "status.json"),
-                           auto_unbox = TRUE, pretty = TRUE)
-      TRUE
-    }, error = function(e) {
-      cat("[status.json] write skipped (", conditionMessage(e), ")\n", sep = "")
-      FALSE
-    })
-    cat("[status.json]", if (isTRUE(st_ok)) "written" else "not written", "\n")
+  ## docs/status.json distinguishes source-capture freshness from the latest
+  ## pipeline result. It is written before a data publish so the same commit
+  ## carries both facts; finalize writes it again with the terminal status.
+  beacon_status <- if (any(unlist(stages) %in% c("failed", "warn"))) {
+    "degraded"
   } else {
-    cat("[status.json] skipped -- content unchanged, beacon stands\n")
+    status_s5
+  }
+  st_ok <- write_public_status(beacon_status, Sys.time())
+  cat("[status.json]", if (isTRUE(st_ok)) "written" else "not written", "\n")
+
+  if (isTRUE(st_ok) && isTRUE(changed) && identical(stages$precompute, "ok")) {
+    status_manifest <- run_child(
+      "update status manifest", "updateManifest.R",
+      extra_args = "--paths=www/pipeline-status.json", harvest_failures = FALSE)
+    if (!isTRUE(status_manifest$ok)) {
+      stages$precompute <- "failed"
+      notes <- c(notes, paste0(
+        "updateManifest.R could not checksum www/pipeline-status.json; publish skipped"))
+    }
   }
 
   ## -------------------------------------------------------------------------
@@ -792,7 +910,7 @@ tryCatch({
     ## the whole data commit -- the db must ship regardless.
     add_paths <- c("data/recruiting.db", "precomputed", "manifest.json",
                    "data/refresh-manifest.json", "docs/brief",
-                   "docs/status.json")
+                    "docs/status.json", "www/pipeline-status.json")
     add_paths <- add_paths[file.exists(add_paths)]
     st <- git_run("add", "--", add_paths)
     where <- "add"

@@ -363,6 +363,14 @@
       content: "";
     }
 
+    .hero-note .freshness--warning { color: rgba(255, 218, 139, .92); }
+    .hero-note .freshness--warning::before { background: #F4B942; }
+    .hero-note .freshness--failed { color: rgba(255, 202, 207, .96); }
+    .hero-note .freshness--failed::before {
+      background: #FF6675;
+      box-shadow: 0 0 0 3px rgba(255, 102, 117, .17);
+    }
+
     .edition-card {
       position: relative;
       padding: 1.75rem;
@@ -1137,19 +1145,39 @@
     fetch(document.getElementById('launch').href, { mode: 'no-cors' })
       .catch(function () {});
 
-    /* Fill the freshness line from status.json written by the nightly pipeline.
-       Any miss leaves the line hidden without an error. */
+    /* Show both the published source snapshot and the latest pipeline result.
+       A failed validation must never masquerade as a newly refreshed dataset. */
     fetch('status.json', { cache: 'no-store' })
       .then(function (response) { return response.ok ? response.json() : null; })
       .then(function (status) {
-        if (!status || !status.updated) return;
+        if (!status || !(status.source_capture || status.updated)) return;
         var element = document.getElementById('freshness');
         if (!element) return;
-        var date = new Date(status.updated + 'T00:00:00');
-        var label = isNaN(date.getTime()) ? status.updated
-          : date.toLocaleDateString('en-US',
-              { year: 'numeric', month: 'short', day: 'numeric' });
-        element.textContent = 'Data updated ' + label;
+        var formatDate = function (value) {
+          if (!value) return '';
+          var date = new Date(value + 'T00:00:00');
+          return isNaN(date.getTime()) ? value
+            : date.toLocaleDateString('en-US',
+                { year: 'numeric', month: 'short', day: 'numeric' });
+        };
+        var snapshot = formatDate(status.source_capture || status.updated);
+        var checked = formatDate(status.pipeline_checked);
+        var state = String(status.pipeline_status || '').toLowerCase();
+        element.classList.remove('freshness--warning', 'freshness--failed');
+        element.removeAttribute('title');
+        if (state === 'failed' || state === 'failure' || state === 'error') {
+          element.textContent = 'Source snapshot ' + snapshot +
+            ' · refresh check failed' + (checked ? ' ' + checked : '');
+          element.classList.add('freshness--failed');
+        } else if (state === 'degraded') {
+          element.textContent = 'Source snapshot ' + snapshot +
+            ' · refresh warning' + (checked ? ' ' + checked : '');
+          element.classList.add('freshness--warning');
+        } else {
+          element.textContent = 'Data updated ' + snapshot;
+        }
+        if (status.pipeline_message) element.title = status.pipeline_message;
+        element.setAttribute('aria-label', element.textContent);
         element.hidden = false;
       })
       .catch(function () {});

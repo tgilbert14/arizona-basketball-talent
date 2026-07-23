@@ -4,9 +4,18 @@
 > Owned by `triage`; reconciled on every `/questboard` sweep. Keep it honest — a stale
 > status file makes cold-booted agents re-flag shipped or parked work.
 
-**Current:** v9.0 release candidate (2026-07-18) — all 67 Power-4 programs, football and
-basketball, in final local QA; deployment is pending. Production remains git-backed on Posit
-Connect Cloud. Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet + SQLite.
+**Current:** v9.1 release integration (2026-07-23) — all 67 Power-4 programs, football and
+basketball, are live; the next product and refresh-hardening release is in verification. Production
+remains git-backed on Posit Connect Cloud. Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet +
+SQLite.
+
+**Operational data status (2026-07-23):** the published source snapshot is **July 18**. The latest
+scheduled refresh check (**July 22**) failed validation and restored its pre-run snapshot, so no
+partial data was released. The root cause was a source-confirmed Arkansas 2027 basketball 2-to-1
+decommit. The validator now permits only that exact, expiring active-cycle change (including the
+removed and retained player identities); zero-row losses, historical classes, and any other 2-to-1
+change remain blocked. The exception expires 2026-08-31 and must be independently re-verified before
+any extension.
 
 ## ✅ POWER-4 EXPANSION COMPLETE (2026-07-18) — all 67 teams live
 
