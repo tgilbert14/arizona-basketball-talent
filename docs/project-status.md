@@ -4,10 +4,10 @@
 > Owned by `triage`; reconciled on every `/questboard` sweep. Keep it honest — a stale
 > status file makes cold-booted agents re-flag shipped or parked work.
 
-**Current:** v9.1 release integration (2026-07-23) — all 67 Power-4 programs, football and
-basketball, are live; the next product and refresh-hardening release is in verification. Production
-remains git-backed on Posit Connect Cloud. Stack: shinydashboard + ggplot2 4.0 + ggiraph + leaflet +
-SQLite.
+**Current:** v9.2 release (2026-07-23) — all 67 Power-4 programs, football and basketball, the
+direct cross-conference Matchup view, and transparent refresh status are live on Posit Connect Cloud
+and the ShinyApps fallback. Production remains git-backed on Posit Connect Cloud. Stack:
+shinydashboard + ggplot2 4.0 + ggiraph + leaflet + SQLite.
 
 **Operational data status (2026-07-23):** the published source snapshot is **July 18**. The latest
 scheduled refresh check (**July 22**) failed validation and restored its pre-run snapshot, so no
