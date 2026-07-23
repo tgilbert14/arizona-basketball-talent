@@ -1,6 +1,6 @@
 # Roadmap — Power-4 Girth Index (v9 and beyond)
 
-Updated July 18, 2026. The product now covers all 67 programs in the SEC,
+Updated July 23, 2026. The product now covers all 67 programs in the SEC,
 Big Ten, ACC, and Big 12 across football and basketball. The foundation is
 live: conference-aware analysis, Conference Lab, automated refreshes, a public
 cover, and a weekly change brief.
@@ -23,6 +23,56 @@ the experience fast and legible second, then add deeper analytical layers.
   classification, state and position boards, open-cycle trends, table twins,
   exact deep links, and a consolidated Program Reach workspace.
 
+## Comparator completeness backlog (captured July 23, 2026)
+
+These are deliberate follow-ups, not shipped behavior. They must preserve
+conference-native averages, ranks, and models while making a selected rival
+useful as a clearly labeled external reference.
+
+Tracked in GitHub: [#14](https://github.com/tgilbert14/arizona-basketball-talent/issues/14)
+and [#15](https://github.com/tgilbert14/arizona-basketball-talent/issues/15).
+
+1. **P1 — Cross-conference Program Reach parity.** Reproduce with Arizona vs
+   Georgia, then extend the selected-rival path from the pipeline map to the
+   Player-Level Reach table (farthest), Travel by Signing Class, and Miles from
+   Listed Origin by Position Group. Use a durable role system in addition to
+   contrast-safe color: a filled circle for the selected program and an
+   outlined diamond or triangle for the rival, with a textual legend, program
+   name in every popup/table row, and an explicit no-coverage receipt. For
+   class travel, use separate trends/marks; for position miles, prefer aligned
+   panels with a shared scale over four overplotted series.
+
+   **Done when:** Arizona-vs-Georgia renders both programs under the global
+   filters in all four Reach surfaces; each player, summary, and tooltip is
+   attributable to a program; similar team colors remain distinguishable in
+   grayscale; and Arizona-vs-ASU remains a normal peer comparison.
+
+2. **P1 — Cross-conference outcome references.** Add an explicitly external
+   rival marker/row to Talent vs Results and Wins Above Talent when data
+   exists. Build the selected team's conference aggregate and medians first,
+   then derive the rival separately. Talent vs Results must leave the selected
+   conference medians unchanged. Wins Above Talent must keep the selected
+   conference fit fixed and clearly state whether the rival is scored against
+   that fit or its own-conference fit; external rows are never ranked with the
+   selected conference. Table twins must use the same external-reference
+   semantics.
+
+   **Done when:** Arizona-vs-Georgia shows two unambiguous, accessible
+   references in both outcome views; choosing Georgia leaves all active-
+   conference medians, model coefficients, residuals, and ranks unchanged;
+   and missing rival data produces a concise receipt instead of a silent drop.
+
+3. **P2 — Comparator-policy and visual-token audit.** Inventory every chart
+   with a selected team plus a conference average, distribution, or model.
+   Where a cross-conference comparison is meaningful, add an external overlay
+   with a second visual encoding and source-conference label; where it is not,
+   say why instead of silently omitting the rival. Centralize main/peer/
+   external color, shape, and linetype tokens so close primaries such as
+   Arizona and Georgia cannot collide. Review Class Retention and Weight Room
+   as likely external-reference candidates; leave intentionally conference-
+   only views such as State Retention constrained unless their question is
+   deliberately reframed. Add Arizona-vs-Georgia and Arizona-vs-ASU regression
+   cases for every affected view.
 ## 1. Release hardening
 
 1. **Production smoke pack:** automate first-load, tab-navigation, deep-link,
