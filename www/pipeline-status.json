@@ -1,9 +1,11 @@
 {
-  "updated": "2026-07-18",
-  "source_capture": "2026-07-18",
-  "pipeline_status": "failed",
-  "pipeline_checked": "2026-07-22",
-  "pipeline_message": "Latest refresh failed validation; the previous source snapshot remains published.",
-  "football_rows": 22828,
-  "basketball_rows": 3655
+  "updated": "2026-07-23",
+  "source_capture": "2026-07-23",
+  "pipeline_status": "ok",
+  "pipeline_checked": "2026-07-23",
+  "pipeline_message": "Latest refresh completed.",
+  "football_rows": 22838,
+  "basketball_rows": 3655,
+  "newest_class": 2027,
+  "brief": "brief/"
 }
