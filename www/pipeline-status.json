@@ -1,10 +1,10 @@
 {
-  "updated": "2026-07-23",
-  "source_capture": "2026-07-23",
+  "updated": "2026-07-25",
+  "source_capture": "2026-07-25",
   "pipeline_status": "ok",
-  "pipeline_checked": "2026-07-23",
+  "pipeline_checked": "2026-07-25",
   "pipeline_message": "Latest refresh completed.",
-  "football_rows": 22838,
+  "football_rows": 22839,
   "basketball_rows": 3655,
   "newest_class": 2027,
   "brief": "brief/"
