@@ -4812,10 +4812,13 @@ server <- function(input, output, session) {
     ## the chart's subtitle names the four classes measured -- so must the
     ## table (cls_years = the last four completed cycles, from the frame)
     cy <- attr(b, "cls_years")
+    cap_note <- glue("HS signees from the {min(cy)}-{max(cy)} classes ",
+                     "vs the current roster.")
+    external_note <- attr(b, "external_note") %||% ""
+    if (nzchar(external_note)) cap_note <- paste(cap_note, external_note)
     HTML(twin_table_html(
       b, caption = "Class Retention: who keeps their signees? - table view",
-      caption_note = glue("HS signees from the {min(cy)}-{max(cy)} classes ",
-                          "vs the current roster.")))
+      caption_note = cap_note))
   })
   outputOptions(output, "retention_twin", suspendWhenHidden = FALSE)
 
@@ -4834,13 +4837,20 @@ server <- function(input, output, session) {
     ## the chart's pool: the global year window, HS signees only (the
     ## Weight Room is defined as HS-signee development -- see wr_data_r)
     yrs <- g_years_d()
+    cap_note <- glue("Classes {yrs[1]}-{yrs[2]}; matched HS signees ",
+                     "still on the roster only.")
+    match_note <- attr(b, "match_note")
+    if (!is.null(match_note) && !is.na(match_note) && nzchar(match_note)) {
+      cap_note <- paste(cap_note, paste0(match_note, "."))
+    }
+    external_note <- attr(b, "external_note") %||% ""
+    if (nzchar(external_note)) cap_note <- paste(cap_note, external_note)
     HTML(twin_table_html(
       b, caption = ifelse(
         dir == "gain",
         "The Weight Room Effect: pounds added per year - table view",
         "The Cut Room: pounds trimmed per slimmer - table view"),
-      caption_note = glue("Classes {yrs[1]}-{yrs[2]}; matched HS signees ",
-                          "still on the roster only.")))
+      caption_note = cap_note))
   })
   outputOptions(output, "wr_twin", suspendWhenHidden = FALSE)
 

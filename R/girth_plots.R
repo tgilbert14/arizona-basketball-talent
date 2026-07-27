@@ -908,16 +908,23 @@ weight_room_data <- function(size_data, roster_data) {
 retention_board_data <- function(size_commits, roster_data, team_slug,
                                  compare_slug = NULL, logo_prefix = "www/") {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ctx <- comparison_context(team_slug, compare_slug)
+  external_requested <- isTRUE(ctx$cross_conference)
   ## suffix-stripped key on BOTH sides so "Troy Ford Jr." is not counted as a
   ## departure from "Troy Ford" (see norm_name_key)
   nkey <- norm_name_key
 
-  ## pool only the active team's conference members (all 16 at Phase 0)
-  size_commits <- scope_to_conf(size_commits, team_slug)
-  roster_data  <- scope_to_conf(roster_data, team_slug)
+  ## The ranked field remains the active conference. A cross-conference rival
+  ## is derived separately and appended only when both its signing classes and
+  ## current roster are present; otherwise an absent roster is never read as
+  ## 0% retained.
+  all_commits <- size_commits
+  all_rosters <- roster_data
+  conf_commits <- scope_to_conf(all_commits, team_slug)
+  conf_rosters <- scope_to_conf(all_rosters, team_slug)
 
   roster_year <- suppressWarnings(
-    max(as.numeric(roster_data$RosterYear), na.rm = TRUE))
+    max(as.numeric(conf_rosters$RosterYear), na.rm = TRUE))
   ## classes old enough to be enrolled but young enough to still have
   ## eligibility: the last four completed cycles before the current one.
   ## The newest class is CAPPED at the arriving class -- class of N enrolls
@@ -929,11 +936,31 @@ retention_board_data <- function(size_commits, roster_data, team_slug,
   newest_cls <- min(roster_year - 1, arriving_class)
   cls_years <- (newest_cls - 3):newest_cls
 
-  ros_keys <- roster_data %>%
+  external_commits <- if (external_requested) {
+    dplyr::filter(all_commits, School == ctx$compare_slug,
+                  Type == "Commit", Year %in% cls_years)
+  } else {
+    all_commits[0, , drop = FALSE]
+  }
+  external_rosters <- if (external_requested) {
+    dplyr::filter(all_rosters, School == ctx$compare_slug)
+  } else {
+    all_rosters[0, , drop = FALSE]
+  }
+  external_eligible <- external_requested && nrow(external_commits) > 0 &&
+    nrow(external_rosters) > 0
+  analysis_commits <- if (external_eligible) {
+    dplyr::bind_rows(conf_commits, external_commits)
+  } else conf_commits
+  analysis_rosters <- if (external_eligible) {
+    dplyr::bind_rows(conf_rosters, external_rosters)
+  } else conf_rosters
+
+  ros_keys <- analysis_rosters %>%
     transmute(School, key = nkey(Name)) %>%
     distinct()
 
-  pool <- size_commits %>%
+  pool <- analysis_commits %>%
     filter(Type == "Commit", Year %in% cls_years) %>%
     mutate(key = nkey(Name)) %>%
     left_join(ros_keys %>% mutate(on_roster = TRUE),
@@ -955,19 +982,45 @@ retention_board_data <- function(size_commits, roster_data, team_slug,
                 "<br/><em>Tap the dot to pin this card</em>"),
               retention = 100 * sum(kept) / sum(n), n = sum(n),
               .groups = "drop") %>%
-    arrange(retention) %>%
-    mutate(TeamName = factor(TeamName, levels = TeamName),
-           role = case_when(School == team_slug ~ "main",
+    mutate(external_reference = external_eligible &
+             School == ctx$compare_slug,
+           role = case_when(external_reference ~ "external",
+                            School == team_slug ~ "main",
                             School == cmp_safe ~ "compare",
                             TRUE ~ "other"),
-           lab = glue("{round(retention)}%  (n={n})"),
-           value = retention)
+           tip = ifelse(
+             external_reference,
+             paste0(
+               "<b>", TeamName, " - ", team_conference(School),
+               " external reference, not ranked in ",
+               conf_label(team_slug), "</b><br/>",
+               sub("^.*?</b><br/>", "", tip)),
+             tip),
+           lab = paste0(round(retention), "%  (n=", n, ")",
+                        ifelse(external_reference,
+                               paste0(" · ", team_conference(School), " ref"),
+                               "")),
+           value = retention) %>%
+    arrange(external_reference, retention) %>%
+    mutate(TeamName = factor(as.character(TeamName),
+                             levels = as.character(TeamName)))
 
   attr(board, "value_label") <- "% of signees still on the roster"
   attr(board, "value_fmt") <- "%.0f"
   ## the chart's formatter: the twin renders "78%" instead of bare "78.0"
   attr(board, "value_fmt_fn") <- function(v) paste0(round(v), "%")
-  attr(board, "conf_avg") <- 100 * sum(per_class$kept) / sum(per_class$n)
+  has_external <- external_eligible && any(board$external_reference)
+  conf_per_class <- per_class %>%
+    filter(School %in% conf_slugs(ctx$team_conference))
+  attr(board, "conf_avg") <- 100 * sum(conf_per_class$kept) /
+    sum(conf_per_class$n)
+  attr(board, "external_reference") <- has_external
+  attr(board, "external_requested") <- external_requested
+  attr(board, "external_note") <- if (has_external) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) is an external Power-4 reference; it does not affect the {ctx$team_conference} average or rank.")
+  } else if (external_requested) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) has no qualifying current-roster retention reference for the {min(cls_years)}-{max(cls_years)} HS signee classes; it is not plotted and does not affect the {ctx$team_conference} average or rank.")
+  } else ""
   attr(board, "cls_years") <- cls_years
   ## no match_note on retention: "still on the roster" IS this board's metric
   ## (the subtitle's retention rate), so a "matched P%" receipt would just
@@ -981,29 +1034,40 @@ plot_class_retention <- function(size_commits, roster_data, team_slug,
                                  compare_slug = NULL, logo_prefix = "www/") {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
-  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
-                                        "retention board")
   ## single source of truth: the chart draws exactly the table twin's frame
   board <- retention_board_data(size_commits, roster_data, team_slug,
                                 compare_slug = compare_slug)
   cls_years <- attr(board, "cls_years")
   conf_avg <- attr(board, "conf_avg")
+  external_ref <- isTRUE(attr(board, "external_reference"))
+  external_note <- attr(board, "external_note") %||% ""
+  external_missing <- isTRUE(attr(board, "external_requested")) &&
+    !external_ref
+  cmp_note <- if (external_ref || external_missing) {
+    glue("{team_label(team_slug)} highlighted; {external_note}")
+  } else {
+    comparison_highlight_note(team_slug, compare_slug, "retention board")
+  }
   logos <- team_logo_labels(width = 30, prefix = logo_prefix)
   role_cols <- c(main = unname(hl["main"]),
                  compare = ifelse(cmp_safe == "", "grey60",
                                   team_color(cmp_safe)),
+                 external = ifelse(external_ref && nzchar(cmp_safe),
+                                   team_color(cmp_safe), "grey60"),
                  other = "grey60")
+  role_shapes <- c(main = 16, compare = 18, external = 23, other = 16)
 
   ggplot(board, aes(x = retention, y = TeamName)) +
     geom_vline(xintercept = conf_avg, linetype = "dotted", color = "grey45") +
     geom_segment(aes(x = conf_avg, xend = retention, yend = TeamName,
                      color = role), linewidth = 1.4, show.legend = FALSE) +
-    geom_point_interactive(aes(color = role, tooltip = tip,
+    geom_point_interactive(aes(color = role, shape = role, tooltip = tip,
                                data_id = School),
                            size = 5, show.legend = FALSE) +
     geom_text(aes(label = lab, color = role), hjust = -0.15, size = 3.4,
               fontface = "bold", show.legend = FALSE) +
     scale_color_manual(values = role_cols) +
+    scale_shape_manual(values = role_shapes) +
     scale_y_discrete(labels = logos) +
     scale_x_continuous(expand = expansion(mult = c(0.02, 0.2))) +
     labs(
@@ -1016,7 +1080,8 @@ plot_class_retention <- function(size_commits, roster_data, team_slug,
       caption = wrap_title(paste0(
         "Name-matched to 247Sports roster pages; departures include the ",
         "portal, the NFL, medicals, and early graduation. Tap or hover a dot ",
-        "for the class-by-class breakdown."), 95)
+        "for the class-by-class breakdown.",
+        if (nzchar(external_note)) paste0(" ", external_note) else ""), 95)
         ## NB: no "join quality %" line here -- on THIS board the roster match
         ## IS the metric (the retention rate the subtitle already prints), so a
         ## second "matched P%" line would restate it under a misleading name.
@@ -1100,10 +1165,26 @@ wr_board_data <- function(wr_data, team_slug, sport,
                           compare_slug = NULL, logo_prefix = "www/",
                           direction = "gain") {
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
-  ## capture the name-match receipt BEFORE scoping (dplyr::filter drops
-  ## attributes), then pool only the active team's conference (all 16 at Phase 0)
+  ctx <- comparison_context(team_slug, compare_slug)
+  external_requested <- isTRUE(ctx$cross_conference)
+  ## Capture the name-match receipt before any filtering. The active
+  ## conference remains the ranked field; a cross-conference rival is
+  ## derived from the untouched Power-4 pool and appended separately.
   mn_note <- attr(wr_data, "match_note")
-  wr_data <- scope_to_conf(wr_data, team_slug)
+  all_wr_data <- wr_data
+  conf_wr_data <- scope_to_conf(all_wr_data, team_slug)
+  external_wr_data <- if (external_requested) {
+    dplyr::filter(all_wr_data, School == ctx$compare_slug)
+  } else {
+    all_wr_data[0, , drop = FALSE]
+  }
+  external_eligible <- if (!external_requested) FALSE else if (direction == "gain") {
+    any(is.finite(external_wr_data$GainPerYr))
+  } else {
+    any(is.finite(external_wr_data$WeightGain) &
+          external_wr_data$WeightGain < 0)
+  }
+  wr_data <- conf_wr_data
   gain_fmt <- function(v) paste0(ifelse(v >= 0, "+", ""), round(v, 1),
                                  " lbs/yr")
   ## loss-mode tips must come from actual slimmers, not "smallest gainers"
@@ -1136,11 +1217,56 @@ wr_board_data <- function(wr_data, team_slug, sport,
   board <- board %>%
     left_join(tips, by = "School") %>%
     arrange(AvgGain) %>%
-    mutate(TeamName = factor(TeamName, levels = TeamName),
+    mutate(external_reference = FALSE,
            role = case_when(School == team_slug ~ "main",
                             School == cmp_safe ~ "compare",
                             TRUE ~ "other"),
            value = AvgGain)
+
+  external_tips_src <- if (direction == "gain") external_wr_data else
+    external_wr_data %>% filter(WeightGain < 0)
+  external_tips <- if (external_eligible) {
+    external_tips_src %>%
+      group_by(School) %>%
+      group_modify(~ data.frame(tip = top_players_tip(
+        .x, "GainPerYr", n = 3, fmt = gain_fmt, school = .y$School,
+        desc = (direction == "gain"),
+        header = glue(
+          "<b>{team_label(.y$School)} — {team_conference(.y$School)} ",
+          "external reference, not ranked in {conf_label(team_slug)}</b><br/>",
+          "<em>{ifelse(direction == 'gain', 'top gainers',
+                       'biggest slim-downs')}</em>")))) %>%
+      ungroup()
+  } else {
+    data.frame(School = character(), tip = character())
+  }
+
+  external_board <- if (external_eligible) {
+    ext <- if (direction == "gain") {
+      external_wr_data %>%
+        group_by(School, TeamName) %>%
+        summarize(AvgGain = mean(GainPerYr), n = n(), .groups = "drop") %>%
+        mutate(lab = glue("+{round(AvgGain, 1)} lbs/yr  (n={n})"))
+    } else {
+      external_wr_data %>%
+        filter(WeightGain < 0) %>%
+        group_by(School, TeamName) %>%
+        summarize(AvgGain = mean(-WeightGain), n = n(), .groups = "drop") %>%
+        mutate(lab = glue("−{round(AvgGain, 1)} lbs  (n={n})"))
+    }
+    ext %>%
+      left_join(external_tips, by = "School") %>%
+      mutate(lab = paste0(lab, " · ", team_conference(School), " ref"),
+             external_reference = TRUE, role = "external",
+             value = AvgGain)
+  } else {
+    board[0, , drop = FALSE]
+  }
+  board <- bind_rows(board, external_board) %>%
+    arrange(external_reference, AvgGain) %>%
+    mutate(TeamName = factor(as.character(TeamName),
+                             levels = as.character(TeamName)))
+  has_external <- external_eligible && nrow(external_board) > 0
 
   attr(board, "value_label") <- if (direction == "gain") {
     "Avg lbs gained per year on campus"
@@ -1159,6 +1285,15 @@ wr_board_data <- function(wr_data, team_slug, sport,
   } else {
     mean(-wr_data$WeightGain[wr_data$WeightGain < 0])
   }
+  attr(board, "external_reference") <- has_external
+  attr(board, "external_requested") <- external_requested
+  attr(board, "external_note") <- if (has_external) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) is an external Power-4 reference; it does not affect the {ctx$team_conference} average or rank.")
+  } else if (external_requested) {
+    scope_label <- if (direction == "gain") "matched-signee gain" else
+      "slimmed-down signee"
+    glue("{ctx$compare_name} ({ctx$compare_conference}) has no qualifying {scope_label} reference in this selected window; it is not plotted and does not affect the {ctx$team_conference} average or rank.")
+  } else ""
   ## carry the name-match receipt weight_room_data stamped on wr_data through
   ## to the board, so the chart caption + table twin can both surface it
   ## (captured before the conference scope filter dropped the attribute)
@@ -1173,18 +1308,28 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
                                    direction = "gain") {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
-  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
-                                        "weight-room board")
   ## single source of truth: the chart draws exactly the table twin's frame
   board <- wr_board_data(wr_data, team_slug, sport,
                          compare_slug = compare_slug, direction = direction)
   logos <- team_logo_labels(width = 30, prefix = logo_prefix)
   conf_avg <- attr(board, "conf_avg")
-  ## boards keep the compare team's true primary color (rows don't overlap)
+  external_ref <- isTRUE(attr(board, "external_reference"))
+  external_note <- attr(board, "external_note") %||% ""
+  external_missing <- isTRUE(attr(board, "external_requested")) &&
+    !external_ref
+  cmp_note <- if (external_ref || external_missing) {
+    glue("{team_label(team_slug)} highlighted; {external_note}")
+  } else {
+    comparison_highlight_note(team_slug, compare_slug, "weight-room board")
+  }
+  ## The external diamond makes membership status legible without color.
   role_cols <- c(main = unname(hl["main"]),
-                 compare = ifelse(is.null(compare_slug), "grey60",
-                                  team_color(compare_slug)),
+                 compare = ifelse(cmp_safe == "", "grey60",
+                                  team_color(cmp_safe)),
+                 external = ifelse(external_ref && nzchar(cmp_safe),
+                                   team_color(cmp_safe), "grey60"),
                  other = "grey60")
+  role_shapes <- c(main = 16, compare = 18, external = 23, other = 16)
 
   p <- ggplot(board, aes(x = AvgGain, y = TeamName))
   ## conference line only when it exists (no slimmers anywhere -> NaN)
@@ -1195,12 +1340,13 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
   p +
     geom_segment(aes(x = 0, xend = AvgGain, yend = TeamName, color = role),
                  linewidth = 1.4, show.legend = FALSE) +
-    geom_point_interactive(aes(color = role, tooltip = tip,
+    geom_point_interactive(aes(color = role, shape = role, tooltip = tip,
                                data_id = School),
                            size = 5, show.legend = FALSE) +
     geom_text(aes(label = lab, color = role), hjust = -0.15, size = 3.4,
               fontface = "bold", show.legend = FALSE) +
     scale_color_manual(values = role_cols) +
+    scale_shape_manual(values = role_shapes) +
     scale_y_discrete(labels = logos) +
     scale_x_continuous(expand = expansion(mult = c(0.02, 0.22))) +
     labs(
@@ -1229,7 +1375,8 @@ plot_weight_room_board <- function(wr_data, team_slug, sport,
         ## departures, NOT a broken scrape).
         {mn <- attr(board, "match_note")
          if (!is.null(mn) && !is.na(mn)) paste0(" ", mn, ".")
-         else ""}), 95)
+         else ""},
+        if (nzchar(external_note)) paste0(" ", external_note) else ""), 95)
     ) +
     theme_girth_md()
 }
