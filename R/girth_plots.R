@@ -1001,9 +1001,17 @@ retention_board_data <- function(size_commits, roster_data, team_slug,
                                paste0(" · ", team_conference(School), " ref"),
                                "")),
            value = retention) %>%
+    mutate(lab = ifelse(external_reference,
+                        paste0(lab, " (N/R)"), lab)) %>%
     arrange(external_reference, retention) %>%
     mutate(TeamName = factor(as.character(TeamName),
-                             levels = as.character(TeamName)))
+                             ## Discrete y scales draw their first level at the
+                             ## bottom. Put an outside-league reference there,
+                             ## below the ranked field, while the table keeps
+                             ## sorting the frame independently.
+                             levels = unique(c(
+                               as.character(TeamName[external_reference]),
+                               as.character(TeamName[!external_reference])))))
 
   attr(board, "value_label") <- "% of signees still on the roster"
   attr(board, "value_fmt") <- "%.0f"
@@ -1263,9 +1271,15 @@ wr_board_data <- function(wr_data, team_slug, sport,
     board[0, , drop = FALSE]
   }
   board <- bind_rows(board, external_board) %>%
+    mutate(lab = ifelse(external_reference,
+                        paste0(lab, " (N/R)"), lab)) %>%
     arrange(external_reference, AvgGain) %>%
     mutate(TeamName = factor(as.character(TeamName),
-                             levels = as.character(TeamName)))
+                             ## First y level is the bottom row, where an
+                             ## unranked outside-league reference belongs.
+                             levels = unique(c(
+                               as.character(TeamName[external_reference]),
+                               as.character(TeamName[!external_reference])))))
   has_external <- external_eligible && nrow(external_board) > 0
 
   attr(board, "value_label") <- if (direction == "gain") {

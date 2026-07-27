@@ -59,6 +59,23 @@ expect_shape_cue <- function(plot) {
   }, logical(1))))
 }
 
+expect_external_below_ranked_field <- function(board, plot) {
+  ext_name <- as.character(board$TeamName[board$external_reference])
+  stopifnot(length(ext_name) == 1L,
+            identical(levels(board$TeamName)[1], ext_name),
+            identical(levels(plot$data$TeamName)[1], ext_name),
+            grepl("(N/R)", board$lab[board$external_reference], fixed = TRUE))
+}
+
+expect_external_last_in_twin <- function(html, external_name = "Georgia") {
+  rows <- regmatches(
+    html, gregexpr("<tr tabindex=\"0\".*?</tr>", html, perl = TRUE)
+  )[[1]]
+  stopifnot(length(rows) > 1L,
+            grepl(external_name, tail(rows, 1L), fixed = TRUE),
+            grepl("N/R", tail(rows, 1L), fixed = TRUE))
+}
+
 ## Class Retention: Georgia appends once; the Big 12 field and weighted
 ## conference average remain byte-for-byte equivalent to the no-rival board.
 commits <- fb %>% dplyr::filter(Type == "Commit")
@@ -67,11 +84,14 @@ ret_ext <- retention_board_data(commits, roster, main, external)
 expect_external_row(ret_ext)
 expect_same_field(ret_base, ret_ext, "retention")
 stopifnot(is.na(attr(ret_ext, "match_note")))
-expect_shape_cue(plot_class_retention(commits, roster, main, external))
+ret_plot <- plot_class_retention(commits, roster, main, external)
+expect_shape_cue(ret_plot)
+expect_external_below_ranked_field(ret_ext, ret_plot)
 ret_twin <- twin_table_html(ret_ext, "retention comparator regression")
 stopifnot(grepl("N/R", ret_twin, fixed = TRUE),
           grepl("Georgia (external reference)", ret_twin, fixed = TRUE),
           grepl("class=\"twin-external\"", ret_twin, fixed = TRUE))
+expect_external_last_in_twin(ret_twin)
 
 ret_peer <- retention_board_data(commits, roster, main, peer)
 stopifnot(!any(ret_peer$external_reference),
@@ -103,12 +123,15 @@ wr_ext <- wr_board_data(wr, main, "football", external, direction = "gain")
 expect_external_row(wr_ext)
 expect_same_field(wr_base, wr_ext, "AvgGain")
 stopifnot(identical(attr(wr_base, "match_note"), attr(wr_ext, "match_note")))
-expect_shape_cue(plot_weight_room_board(
-  wr, main, "football", external, direction = "gain"))
+wr_plot <- plot_weight_room_board(
+  wr, main, "football", external, direction = "gain")
+expect_shape_cue(wr_plot)
+expect_external_below_ranked_field(wr_ext, wr_plot)
 wr_twin <- twin_table_html(wr_ext, "weight-room comparator regression")
 stopifnot(grepl("N/R", wr_twin, fixed = TRUE),
           grepl("Georgia (external reference)", wr_twin, fixed = TRUE),
           grepl("class=\"twin-external\"", wr_twin, fixed = TRUE))
+expect_external_last_in_twin(wr_twin)
 
 wr_peer <- wr_board_data(wr, main, "football", peer, direction = "gain")
 stopifnot(!any(wr_peer$external_reference),
