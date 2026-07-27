@@ -22,8 +22,13 @@
 
 $ErrorActionPreference = 'Continue'
 
-$RepoRoot = 'C:\Users\tsgil\OneDrive\Documents\VGS - R\arizona-basketball-talent'
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$PublishBranch = 'main'
+$NightlyBranch = 'automation/nightly-main'
 Set-Location -LiteralPath $RepoRoot
+
+$env:GIRTH_PUBLISH_BRANCH = $PublishBranch
+$env:GIRTH_NIGHTLY_BRANCH = $NightlyBranch
 
 $LogDir = Join-Path $RepoRoot 'logs'
 if (-not (Test-Path -LiteralPath $LogDir)) {
@@ -64,7 +69,84 @@ try {
         Write-Output ('Args    : ' + ($args -join ' '))
     }
 
-    if (-not (Test-Path -LiteralPath $Rscript)) {
+    # The scheduled runner must be isolated from interactive checkouts.
+    $PublishReady = $true
+    $Git = Get-Command 'git.exe' -ErrorAction SilentlyContinue
+    if (-not $Git) {
+        Write-Output 'FATAL: git.exe not found; refusing to run a publish-capable refresh.'
+        $PublishReady = $false
+    }
+
+    if ($PublishReady) {
+        $BranchOutput = @(& git -C $RepoRoot branch --show-current)
+        $GitExit = $LASTEXITCODE
+        $CurrentBranch = ($BranchOutput -join '').Trim()
+        if (($GitExit -ne 0) -or ($CurrentBranch -ne $NightlyBranch)) {
+            Write-Output ('FATAL: nightly runner is on ''' + $CurrentBranch +
+                          '''; expected dedicated branch ''' + $NightlyBranch + '''.')
+            $PublishReady = $false
+        }
+    }
+
+    if ($PublishReady) {
+        $TrackedChanges = @(& git -C $RepoRoot status --porcelain --untracked-files=no)
+        if (($LASTEXITCODE -ne 0) -or ($TrackedChanges.Count -gt 0)) {
+            Write-Output 'FATAL: dedicated nightly worktree has tracked changes; refusing to overwrite them.'
+            if ($TrackedChanges.Count -gt 0) {
+                $TrackedChanges | ForEach-Object { Write-Output ('  ' + $_) }
+            }
+            $PublishReady = $false
+        }
+    }
+
+    if ($PublishReady) {
+        & git -C $RepoRoot fetch origin $PublishBranch --prune 2>&1 |
+            ForEach-Object { "$_" }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Output ('FATAL: could not fetch origin/' + $PublishBranch + '.')
+            $PublishReady = $false
+        }
+    }
+
+    if ($PublishReady) {
+        & git -C $RepoRoot rebase ('origin/' + $PublishBranch) 2>&1 |
+            ForEach-Object { "$_" }
+        if ($LASTEXITCODE -ne 0) {
+            & git -C $RepoRoot rebase --abort 2>$null | Out-Null
+            Write-Output ('FATAL: could not rebase the nightly branch onto origin/' +
+                          $PublishBranch + '.')
+            $PublishReady = $false
+        }
+    }
+
+    # Ship a clean commit left behind by a previous transient push failure,
+    # even when tonight's scrape later finds no new source changes.
+    if ($PublishReady) {
+        $AheadRange = ('origin/' + $PublishBranch + '..HEAD')
+        $AheadOutput = @(& git -C $RepoRoot rev-list --count $AheadRange)
+        $AheadCount = 0
+        if (($LASTEXITCODE -ne 0) -or
+            (-not [int]::TryParse(($AheadOutput -join '').Trim(), [ref]$AheadCount))) {
+            Write-Output 'FATAL: could not determine whether the nightly branch is ahead.'
+            $PublishReady = $false
+        }
+        elseif ($AheadCount -gt 0) {
+            Write-Output ('Recovering ' + $AheadCount +
+                          ' previously committed nightly update(s) to origin/' +
+                          $PublishBranch + '.')
+            & git -C $RepoRoot push origin ('HEAD:' + $PublishBranch) 2>&1 |
+                ForEach-Object { "$_" }
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output ('FATAL: recovery push to origin/' + $PublishBranch + ' failed.')
+                $PublishReady = $false
+            }
+        }
+    }
+
+    if (-not $PublishReady) {
+        $ExitCode = 1
+    }
+    elseif (-not (Test-Path -LiteralPath $Rscript)) {
         Write-Output 'FATAL: Rscript.exe not found (pinned path missing and not on PATH).'
         $ExitCode = 1
     }

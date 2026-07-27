@@ -94,6 +94,15 @@ no_push       <- flag("no-push")
 no_deploy     <- flag("no-deploy")
 no_alert      <- flag("no-alert")
 
+## Publishing is deliberately pinned to main. The scheduled wrapper runs in
+## a dedicated automation worktree/branch so a developer's interactive
+## checkout can never decide where the nightly data commit lands.
+publish_branch <- trimws(Sys.getenv("GIRTH_PUBLISH_BRANCH", "main"))
+nightly_branch <- trimws(Sys.getenv(
+  "GIRTH_NIGHTLY_BRANCH", "automation/nightly-main"))
+if (!nzchar(publish_branch)) publish_branch <- "main"
+if (!nzchar(nightly_branch)) nightly_branch <- "automation/nightly-main"
+
 rscript_bin <- file.path(R.home("bin"), "Rscript.exe")
 if (!file.exists(rscript_bin)) rscript_bin <- "Rscript"
 
@@ -105,6 +114,7 @@ stages         <- list()
 notes          <- character(0)
 failed_schools <- character(0)
 push_probe_ok  <- TRUE
+publish_guard_ok <- FALSE
 lock_acquired  <- FALSE
 log_written    <- FALSE
 snap           <- NULL
@@ -250,6 +260,14 @@ verify_url <- function(url, attempts = 3, wait_s = 30, marker = NULL) {
 
 git_run <- function(...) suppressWarnings(system2("git", c(...)))
 
+git_capture <- function(...) {
+  out <- suppressWarnings(system2(
+    "git", c(...), stdout = TRUE, stderr = TRUE))
+  status <- attr(out, "status")
+  if (is.null(status)) status <- 0L
+  list(ok = identical(status, 0L), status = status, output = out)
+}
+
 ## compact manifest per the shared contract
 build_compact <- function(status, finished_at, counts_now = NULL) {
   if (is.null(counts_now)) {
@@ -365,6 +383,10 @@ publish_status_only <- function(status) {
     cat("[status publish] skipped -- push disabled or git unavailable\n")
     return(FALSE)
   }
+  if (!isTRUE(publish_guard_ok)) {
+    cat("[status publish] skipped -- publish branch guard did not pass\n")
+    return(FALSE)
+  }
 
   sidecar_untracked <- git_run("ls-files", "--error-unmatch",
                                "www/pipeline-status.json") != 0L
@@ -385,10 +407,16 @@ publish_status_only <- function(status) {
   commit_paths <- c(paths, "manifest.json")
   st <- git_run("add", "--", commit_paths)
   if (st == 0L) {
-    st <- git_run("commit", "-m",
-                  paste0("Update pipeline status ", format(Sys.Date()), " [auto]"))
+    status_msg <- paste0(
+      "Update pipeline status ", format(Sys.Date()), " [auto]")
+    st <- git_run("commit", "-m", shQuote(status_msg, type = "cmd"))
   }
-  if (st == 0L) st <- git_run("push")
+  if (st == 0L) {
+    st <- git_run("pull", "--rebase", "origin", publish_branch)
+  }
+  if (st == 0L) {
+    st <- git_run("push", "origin", paste0("HEAD:", publish_branch))
+  }
   if (st != 0L) cat("[status publish] git update did not reach origin\n")
   st == 0L
 }
@@ -510,6 +538,29 @@ tryCatch({
   }
   cat("quick_check: ok\n")
 
+  ## Refuse to publish from an arbitrary interactive feature branch. This
+  ## guard runs before any scrape mutates the database. Manual no-push runs
+  ## remain available from any branch for diagnostics.
+  if (!no_push && nzchar(Sys.which("git"))) {
+    current <- git_capture("branch", "--show-current")
+    current_branch <- if (isTRUE(current$ok) && length(current$output) > 0L) {
+      trimws(current$output[[1]])
+    } else {
+      ""
+    }
+    allowed_branches <- unique(c(publish_branch, nightly_branch))
+    if (!nzchar(current_branch) || !(current_branch %in% allowed_branches)) {
+      stages$preflight <- "failed"
+      finalize("failed", 1L, paste0(
+        "publish guard: refusing to run from branch '",
+        if (nzchar(current_branch)) current_branch else "(detached HEAD)",
+        "'; expected '", publish_branch, "' or '", nightly_branch, "'"))
+    }
+    publish_guard_ok <- TRUE
+    cat("Publish guard: ", current_branch, " -> origin/",
+        publish_branch, "\n", sep = "")
+  }
+
   ## a prior run that died mid 'pull --rebase' leaves the repo in rebase
   ## state and every later git command fails -- clear it before anything else
   if (dir.exists(file.path(".git", "rebase-merge")) ||
@@ -528,7 +579,8 @@ tryCatch({
   if (!no_push && Sys.which("git") != "") {
     Sys.setenv(GIT_TERMINAL_PROMPT = "0")  # fail fast, never prompt
     st <- suppressWarnings(system2(
-      "git", c("ls-remote", "--exit-code", "origin", "HEAD"),
+      "git", c("ls-remote", "--exit-code", "origin",
+               paste0("refs/heads/", publish_branch)),
       stdout = FALSE, stderr = FALSE))
     if (identical(st, 0L)) {
       cat("git ls-remote probe: ok\n")
@@ -928,12 +980,16 @@ tryCatch({
         "then"))
     } else {
       if (st == 0) {
-        st <- git_run("pull", "--rebase", "--autostash")
+        st <- git_run("pull", "--rebase", "--autostash",
+                      "origin", publish_branch)
         where <- "pull --rebase"
         ## never leave the repo mid-rebase -- abort immediately on failure
         if (st != 0) try(git_run("rebase", "--abort"), silent = TRUE)
       }
-      if (st == 0) { st <- git_run("push"); where <- "push" }
+      if (st == 0) {
+        st <- git_run("push", "origin", paste0("HEAD:", publish_branch))
+        where <- paste0("push origin HEAD:", publish_branch)
+      }
       if (st == 0) {
         stages$push <- "ok"
         cat("[push] committed and pushed:", msg, "\n")
