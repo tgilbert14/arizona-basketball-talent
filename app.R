@@ -290,7 +290,7 @@ ctx_note <- function(...) {
 ## re-rendered and never display:none'd (the 0-width first-paint trap), and
 ## the table renders lazily via input$twin_<chart_id>.
 
-## the understated header toggle: "view the numbers" <-> "view the chart".
+## the understated header toggle: "Table" <-> "Chart".
 ## JS (see the twin-toggle script) flips the box class, the visible label,
 ## and aria-pressed, and reports the state as input$twin_<chart_id>.
 ## a11y contract: role="button" because aria-pressed promises button
@@ -301,7 +301,7 @@ ctx_note <- function(...) {
 twin_toggle <- function(chart_id) {
   actionLink(
     inputId = paste0("twin_link_", chart_id),
-    label = "view the numbers",
+    label = "Table",
     class = "twin-toggle",
     `data-chart` = chart_id,
     role = "button",
@@ -729,6 +729,10 @@ INFO_MODALS <- list(
       247Sports recruiting profile. For non-portal recruits this is usually
       the last listed high school or prep program, not birthplace. Shaded
       shapes are smoothed convex hulls of the selected program's footprint.</p>
+      <p><strong>Comparison roles:</strong> blue filled circles always mean
+      the selected program. Orange star pins always mean the comparison,
+      regardless of school colors. Hover labels and popups repeat both the
+      role and program name.</p>
       <p><strong>Gaps:</strong> transfers join only when a listed origin is
       present. Earlier transfer classes are often unmapped; new records reach
       the map after the nightly geocoding pass.</p>"),
@@ -739,8 +743,21 @@ INFO_MODALS <- list(
       recruit's listed origin to campus, from geocoded 247 locations.</p>
       <p><strong>Outliers:</strong> the toggle hides points beyond 1.5×IQR
       from the middle 50% (standard boxplot rule) and recomputes the bands.</p>
+      <p><strong>Comparisons:</strong> selected-program circles and
+      comparison-program triangles stay separate. Bands and boxes are
+      calculated within the named program; a requested program with no usable
+      origin is reported instead of silently disappearing.</p>
       <p><strong>Verify anything:</strong> hover a dot for the recruit card;
       click to open their 247 page.</p>")
+)
+
+## One methods article can have multiple visible launch points, but every
+## actionLink still needs a unique DOM/input ID. Talent Origins has three
+## mutually exclusive chart panels, all routed to the canonical article.
+INFO_MODAL_ALIASES <- c(
+  info_origins_board = "info_origins",
+  info_origins_positions = "info_origins",
+  info_origins_trend = "info_origins"
 )
 
 ## era metric choices (Coach Eras)
@@ -1386,7 +1403,7 @@ ui <- dashboardPage(
           /* only the VISIBLE label swaps -- the accessible name is the
              constant aria-label ('table view') set in twin_toggle(), so
              aria-pressed alone announces the state */
-          t.textContent = on ? 'view the chart' : 'view the numbers';
+          t.textContent = on ? 'Chart' : 'Table';
           if (window.Shiny && Shiny.setInputValue) {
             Shiny.setInputValue('twin_' + t.getAttribute('data-chart'), on);
           }
@@ -2531,11 +2548,9 @@ ui <- dashboardPage(
                                   info_btn("info_results")),
                   width = 12, status = "danger", solidHeader = TRUE,
                   HTML("<p style='font-size:14px; color:#555; margin:0;'>
-                    Season records and SP+ from CollegeFootballData joined to
-                    each program's rolling 4-class talent composite (HS +
-                    portal ratings). Above the diagonal of expectations =
-                    coaching and development adding wins; below it = talent
-                    leaking value.</p>")
+                    Rolling four-class talent (HS + portal) meets records and
+                    SP+. Above expectation = development adding wins; below =
+                    talent left unused.</p>")
                 )
               ),
               fluidRow(
@@ -2649,7 +2664,7 @@ ui <- dashboardPage(
             box(
               title = tagList(
                 "State Talent Board",
-                info_btn("info_origins"),
+                info_btn("info_origins_board"),
                 twin_toggle("origin_board")
               ),
               status = "primary", solidHeader = TRUE, width = 12,
@@ -2668,7 +2683,7 @@ ui <- dashboardPage(
             box(
               title = tagList(
                 "Position Hotbeds",
-                info_btn("info_origins"),
+                info_btn("info_origins_positions"),
                 twin_toggle("origin_positions")
               ),
               status = "primary", solidHeader = TRUE, width = 12,
@@ -2687,7 +2702,7 @@ ui <- dashboardPage(
             box(
               title = tagList(
                 "How the pipeline is changing",
-                info_btn("info_origins"),
+                info_btn("info_origins_trend"),
                 twin_toggle("origin_trend")
               ),
               status = "primary", solidHeader = TRUE, width = 12,
@@ -2719,13 +2734,13 @@ ui <- dashboardPage(
       ## PROGRAM REACH ---------------------------------------------------------------
       tabItem(tabName = "summary",
               fluidRow(
+                column(width = 12, uiOutput("reach_compare_receipt")),
                 box(
                   title = tagList("Program Reach: mapped recruiting pipelines",
                                   info_btn("info_map")),
                   footer = HTML("<span style='color:#888;'>
-                    <em>Dots show mapped listed origins. Shaded shapes trace
-                    your selected program; the comparison pipeline keeps its
-                    own team color.</em></span>"),
+                    <em>Shaded shape = the selected program's footprint; the
+                    comparison remains point-only.</em></span>"),
                   status = "primary",
                   solidHeader = TRUE, width = 12,
                   collapsible = TRUE, collapsed = FALSE,
@@ -2752,8 +2767,8 @@ ui <- dashboardPage(
                   title = tagList("Travel by signing class",
                                   info_btn("info_distance")),
                   footer = HTML("<span style='color:#888;'>
-                    Tap or hover any dot for the recruit card; pin it to open their
-                    247Sports page.</span>"),
+                    Tap or hover any point for the recruit card; pin it to open
+                    the player's 247Sports page.</span>"),
                   status = "primary",
                   solidHeader = TRUE, width = 12,
                   collapsible = TRUE, collapsed = TRUE,
@@ -3225,12 +3240,19 @@ server <- function(input, output, session) {
   ## a function(conf_lab, conf_n) -- the latter names the DATA universe, so it
   ## is resolved against the ACTIVE team's conference at open time (Phase 0:
   ## "Big 12" / 16, so the text is unchanged).
-  lapply(names(INFO_MODALS), function(id) {
+  info_modal_ids <- unique(c(
+    setdiff(names(INFO_MODALS), unname(INFO_MODAL_ALIASES)),
+    names(INFO_MODAL_ALIASES)
+  ))
+  lapply(info_modal_ids, function(id) {
+    modal_id <- if (id %in% names(INFO_MODAL_ALIASES)) {
+      unname(INFO_MODAL_ALIASES[[id]])
+    } else id
     observeEvent(input[[id]], {
-      body <- INFO_MODALS[[id]]$body
+      body <- INFO_MODALS[[modal_id]]$body
       if (is.function(body)) body <- body(active_conf_lab(), active_conf_n())
       showModal(modalDialog(
-        title = INFO_MODALS[[id]]$title,
+        title = INFO_MODALS[[modal_id]]$title,
         HTML(body),
         easyClose = TRUE, footer = modalButton("Got it")
       ))
@@ -3331,7 +3353,7 @@ server <- function(input, output, session) {
       if (!is.null(g_cmp())) team_label(g_cmp()),
       if (isTRUE(cmp_ctx$cross_conference)) tags$span(
         class = "cb-dim cb-compare-context",
-        glue("· {cmp_ctx$compare_conference} reference")),
+        glue("· {cmp_ctx$compare_conference} ref")),
       tags$span(
         class = "cb-dim",
         glue("· {str_to_title(g_sport())} · ",
@@ -4803,10 +4825,13 @@ server <- function(input, output, session) {
     ## the chart's subtitle names the four classes measured -- so must the
     ## table (cls_years = the last four completed cycles, from the frame)
     cy <- attr(b, "cls_years")
+    cap_note <- glue("HS signees from the {min(cy)}-{max(cy)} classes ",
+                     "vs the current roster.")
+    external_note <- attr(b, "external_note") %||% ""
+    if (nzchar(external_note)) cap_note <- paste(cap_note, external_note)
     HTML(twin_table_html(
       b, caption = "Class Retention: who keeps their signees? - table view",
-      caption_note = glue("HS signees from the {min(cy)}-{max(cy)} classes ",
-                          "vs the current roster.")))
+      caption_note = cap_note))
   })
   outputOptions(output, "retention_twin", suspendWhenHidden = FALSE)
 
@@ -4825,13 +4850,20 @@ server <- function(input, output, session) {
     ## the chart's pool: the global year window, HS signees only (the
     ## Weight Room is defined as HS-signee development -- see wr_data_r)
     yrs <- g_years_d()
+    cap_note <- glue("Classes {yrs[1]}-{yrs[2]}; matched HS signees ",
+                     "still on the roster only.")
+    match_note <- attr(b, "match_note")
+    if (!is.null(match_note) && !is.na(match_note) && nzchar(match_note)) {
+      cap_note <- paste(cap_note, paste0(match_note, "."))
+    }
+    external_note <- attr(b, "external_note") %||% ""
+    if (nzchar(external_note)) cap_note <- paste(cap_note, external_note)
     HTML(twin_table_html(
       b, caption = ifelse(
         dir == "gain",
         "The Weight Room Effect: pounds added per year - table view",
         "The Cut Room: pounds trimmed per slimmer - table view"),
-      caption_note = glue("Classes {yrs[1]}-{yrs[2]}; matched HS signees ",
-                          "still on the roster only.")))
+      caption_note = cap_note))
   })
   outputOptions(output, "wr_twin", suspendWhenHidden = FALSE)
 
@@ -4858,12 +4890,14 @@ server <- function(input, output, session) {
         ifelse(is.finite(d$sp), sprintf("%.1f", d$sp), "n/a")
       }
     }
+    quadrant_note <- attr(b, "external_note") %||% ""
     HTML(twin_table_html(
       b, caption = glue("The Over/Underachiever Quadrant ",
                         "({attr(b, 'yr_rng')}) - table view"),
       value_col = "talent", n_col = "seasons_n",
       n_chip = function(n) paste0(n, ifelse(n == 1, " season", " seasons")),
       extras = extras,
+      caption_note = quadrant_note,
       ## neutral navy: the quadrant chart reserves Okabe-Ito blue and
       ## vermillion for over/underachiever, so a blue->red bar ramp here
       ## would collide with that vocabulary
@@ -4891,6 +4925,12 @@ server <- function(input, output, session) {
     ## value is SIGNED WAT, so the twin ranks overachievers (+) to
     ## underachievers (-) top-to-bottom; value_fmt_fn on the frame renders
     ## "+2.1" / "-1.4" to match the ladder's row labels
+    wat_note <- glue(
+      "Seasons {yrs[1]}-{yrs[2]}; wins per season above (+) or below (-) ",
+      "the {team_conference(input$g_team)} talent-to-wins fit ",
+      "({attr(b, 'model_note')}).")
+    external_note <- attr(b, "external_note") %||% ""
+    if (nzchar(external_note)) wat_note <- paste(wat_note, external_note)
     HTML(twin_table_html(
       b, caption = glue("Wins Above Talent ",
                         "({attr(b, 'yr_rng')}) - table view"),
@@ -4899,9 +4939,7 @@ server <- function(input, output, session) {
       extras = list(
         "Actual %" = function(d) sprintf("%.0f%%", d$actual),
         "Expected %" = function(d) sprintf("%.0f%%", d$expected)),
-      caption_note = glue("Seasons {yrs[1]}-{yrs[2]}; wins per season above ",
-                          "(+) or below (-) the league talent-to-wins fit ",
-                          "({attr(b, 'model_note')})."),
+      caption_note = wat_note,
       ## navy neutral ramp: the ladder's colored dots already spend the
       ## over/under-achiever vocabulary, so the twin's percentile bars stay
       ## neutral (same choice as the quadrant twin)
@@ -5212,11 +5250,52 @@ server <- function(input, output, session) {
     )
   })
   ## ---- Program Reach: selected-window table + map + distance plots ---------
+  output$reach_compare_receipt <- renderUI({
+    req(input$g_team, input$g_years)
+    ctx <- comparison_context(input$g_team, g_cmp())
+    if (!isTRUE(ctx$active)) return(NULL)
+
+    coverage <- reach_program_coverage(
+      reach_window(), input$g_team, ctx$compare_slug)
+    role_item <- function(row) {
+      role_key <- row$ReachRoleKey[[1]]
+      div(
+        class = paste("gi-reach-receipt__program",
+                      paste0("gi-reach-receipt__program--", role_key)),
+        icon(if (role_key == "selected") "circle" else "star"),
+        shiny::span(
+          strong(paste0(row$ReachProgram[[1]], " - ",
+                        tolower(row$ReachRole[[1]]))),
+          shiny::span(glue(
+            "{row$mapped[[1]]}/{row$total[[1]]} mapped | ",
+            "{row$distance[[1]]}/{row$total[[1]]} distance-ready"))
+        )
+      )
+    }
+    mapped_gap <- reach_comparison_gap(
+      reach_window(), input$g_team, ctx$compare_slug, metric = "mapped")
+    distance_gap <- reach_comparison_gap(
+      reach_window(), input$g_team, ctx$compare_slug, metric = "distance")
+    gap_note <- if (nzchar(mapped_gap)) mapped_gap else distance_gap
+
+    div(
+      class = "gi-reach-receipt", role = "status",
+      "aria-live" = "polite",
+      div(class = "gi-reach-receipt__roles",
+          lapply(seq_len(nrow(coverage)),
+                 function(i) role_item(coverage[i, , drop = FALSE]))),
+      if (nzchar(gap_note))
+        div(class = "gi-reach-receipt__gap",
+            icon("circle-info"), gap_note)
+    )
+  })
   filtered_data <- reactive({
     req(input$g_team, input$g_years)
     validate(need(input$g_team %in% TEAM_CONFIG$slug, "Unknown team."))
-    d <- reach_window() %>% filter(School == input$g_team)
-    validate(need(nrow(d) > 0, "No players in this window."))
+    d <- reach_program_data(reach_window(), input$g_team, g_cmp())
+    validate(need(
+      nrow(d %>% filter(ReachRoleKey == "selected")) > 0,
+      "No players in this window."))
     d %>% mutate(
       Ranking = suppressWarnings(as.numeric(Ranking)),
       NationalRank = suppressWarnings(as.numeric(NationalRank)),
@@ -5224,8 +5303,8 @@ server <- function(input, output, session) {
       University = TeamName)
   })
 
-  ## Pipeline map built from the raw-origin frame (main + compare footprints
-  ## in team colors); unlike body charts, geography does not require size data.
+  ## Pipeline map uses fixed role colors/shapes for selected + comparison
+  ## footprints; unlike body charts, geography does not require size data.
   output$gridPlot <- renderLeaflet({
     req(input$g_team, input$g_years)
     team_w <- reach_window() %>% filter(School == input$g_team)
@@ -5234,12 +5313,8 @@ server <- function(input, output, session) {
       is.finite(suppressWarnings(as.numeric(team_w$long)))
     validate(need(sum(mapped) > 0,
                   "No recruits with mapped listed origins in this window."))
-    ## say on the map itself how many window players CAN'T be mapped yet
-    ## (transfers appear once the nightly profile backfill captures a listed
-    ## origin; a few non-portal recruits still lack geocodes)
-    n_unmapped <- sum(!mapped)
     build_pipeline_map(reach_window(), input$g_team, g_sport(),
-                       compare_slug = g_cmp(), n_unmapped = n_unmapped)
+                       compare_slug = g_cmp())
   })
 
   ## v4.4: themed interactive rebuild (the sourced scripts/box_plot.R is
@@ -5251,7 +5326,8 @@ server <- function(input, output, session) {
       filter(School == input$g_team, !is.na(miles_away))
     validate(need(nrow(d) > 0,
                   "No recruits with mapped listed origins in this window."))
-    girafe_try(girafe_wrap(plot_distance_box(reach_window(), input$g_team, g_sport()),
+    girafe_try(girafe_wrap(plot_distance_box(
+                  reach_window(), input$g_team, g_sport(), compare_slug = g_cmp()),
                 w = 10.5, h = 4.2, name = png_name("distance-box")), "distance box")
   })
 
@@ -5263,7 +5339,8 @@ server <- function(input, output, session) {
       filter(School == input$g_team, !is.na(miles_away))
     validate(need(nrow(d) > 0, "No recruits with mapped listed origins in this window."))
     girafe_try(girafe_wrap(plot_distance_lab(reach_window(), input$g_team, g_sport(),
-                                  show_outliers = input$show_outliers),
+                                  show_outliers = input$show_outliers,
+                                  compare_slug = g_cmp()),
                 name = png_name("distance-lab")), "distance lab")
   })
 
@@ -5273,18 +5350,41 @@ server <- function(input, output, session) {
       return(data.frame(Message =
         "No recruits found for the selected filters. Please adjust your selections."))
     }
+    ctx <- comparison_context(input$g_team, g_cmp())
+    coverage <- reach_program_coverage(
+      reach_window(), input$g_team, g_cmp())
+    table_caption <- NULL
+    if (isTRUE(ctx$active)) {
+      cmp_row <- coverage %>% filter(ReachRoleKey == "comparison")
+      receipt <- if (cmp_row$total[[1]] == 0) {
+        glue("{ctx$compare_name}: no records in this window.")
+      } else {
+        glue("{ctx$compare_name} distance coverage: {cmp_row$distance[[1]]}/{cmp_row$total[[1]]} records.")
+      }
+      table_caption <- tags$caption(
+        style = "caption-side: top; text-align: left;",
+        receipt)
+    }
+
     d <- filtered_data() %>%
-      select(Name, miles_away, Location, University, Ranking,
+      select(Role = ReachRole, Name, miles_away, Location, University, Ranking,
              NationalRank, Position, Height, Weight, Year) %>%
       arrange(desc(miles_away))
 
-    datatable(
+    table <- datatable(
       as.data.frame(d),
-      colnames = c("Recruit", "Distance from Listed Origin (miles)",
+      caption = table_caption,
+      colnames = c("Role", "Recruit", "Distance from Listed Origin (miles)",
                    "Listed Origin", "Destination Program", "247Sports Rating",
                    "National Ranking", "Position", "Height", "Weight", "Year"),
       options = list(pageLength = 10, lengthChange = FALSE),
       rownames = FALSE)
+    formatStyle(
+      table, "Role",
+      color = styleEqual(c("Selected", "Comparison"),
+                         unname(reach_role_colors())),
+      fontWeight = "700"
+    )
   })
 
 }

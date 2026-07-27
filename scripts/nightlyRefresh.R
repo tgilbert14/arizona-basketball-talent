@@ -94,6 +94,17 @@ no_push       <- flag("no-push")
 no_deploy     <- flag("no-deploy")
 no_alert      <- flag("no-alert")
 
+## Publishing is deliberately pinned to main. The scheduled wrapper runs in
+## a dedicated automation worktree/branch so a developer's interactive
+## checkout can never decide where the nightly data commit lands.
+publish_branch <- trimws(Sys.getenv("GIRTH_PUBLISH_BRANCH", "main"))
+nightly_branch <- trimws(Sys.getenv(
+  "GIRTH_NIGHTLY_BRANCH", "automation/nightly-main"))
+if (!nzchar(publish_branch)) publish_branch <- "main"
+if (!nzchar(nightly_branch)) nightly_branch <- "automation/nightly-main"
+dedicated_nightly_runner <- identical(
+  trimws(Sys.getenv("GIRTH_NIGHTLY_RUNNER", "0")), "1")
+
 rscript_bin <- file.path(R.home("bin"), "Rscript.exe")
 if (!file.exists(rscript_bin)) rscript_bin <- "Rscript"
 
@@ -104,8 +115,11 @@ started_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
 stages         <- list()
 notes          <- character(0)
 failed_schools <- character(0)
-push_probe_ok  <- TRUE
-lock_acquired  <- FALSE
+push_probe_ok       <- TRUE
+publish_guard_ok    <- FALSE
+data_commit_created <- FALSE
+publish_worktree_branch <- ""
+lock_acquired       <- FALSE
 log_written    <- FALSE
 snap           <- NULL
 s2_ran         <- FALSE
@@ -250,6 +264,24 @@ verify_url <- function(url, attempts = 3, wait_s = 30, marker = NULL) {
 
 git_run <- function(...) suppressWarnings(system2("git", c(...)))
 
+git_capture <- function(...) {
+  out <- suppressWarnings(system2(
+    "git", c(...), stdout = TRUE, stderr = FALSE))
+  status <- attr(out, "status")
+  if (is.null(status)) status <- 0L
+  list(ok = identical(status, 0L), status = status, output = out)
+}
+
+git_state_exists <- function(name) {
+  state <- git_capture("rev-parse", "--git-path", name)
+  if (!isTRUE(state$ok) || !length(state$output)) return(FALSE)
+  lines <- trimws(as.character(state$output))
+  lines <- lines[nzchar(lines)]
+  if (!length(lines)) return(FALSE)
+  path <- tail(lines, 1L)
+  dir.exists(path) || file.exists(path)
+}
+
 ## compact manifest per the shared contract
 build_compact <- function(status, finished_at, counts_now = NULL) {
   if (is.null(counts_now)) {
@@ -358,6 +390,32 @@ status_beacon_paths <- function() {
     file.path("www", "pipeline-status.json"))
 }
 
+restore_nightly_managed <- function(paths, reason) {
+  if (!isTRUE(dedicated_nightly_runner) ||
+      !identical(publish_worktree_branch, nightly_branch)) {
+    return(FALSE)
+  }
+  paths <- unique(as.character(paths))
+  st <- git_run("restore", "--staged", "--worktree", "--", paths)
+  if (st != 0L) {
+    cat("[status publish] managed-file recovery failed after ",
+        reason, "\n", sep = "")
+    return(FALSE)
+  }
+
+  remaining <- git_capture(
+    "status", "--porcelain", "--untracked-files=all", "--", paths)
+  remaining_lines <- trimws(as.character(remaining$output))
+  remaining_lines <- remaining_lines[nzchar(remaining_lines)]
+  if (!isTRUE(remaining$ok) || length(remaining_lines)) {
+    cat("[status publish] recovery left managed/untracked files after ",
+        reason, "\n", sep = "")
+    return(FALSE)
+  }
+  cat("[status publish] restored managed files after ", reason, "\n", sep = "")
+  TRUE
+}
+
 publish_status_only <- function(status) {
   paths <- status_beacon_paths()
 
@@ -365,30 +423,93 @@ publish_status_only <- function(status) {
     cat("[status publish] skipped -- push disabled or git unavailable\n")
     return(FALSE)
   }
-
-  sidecar_untracked <- git_run("ls-files", "--error-unmatch",
-                               "www/pipeline-status.json") != 0L
-  dirty_beacon <- sidecar_untracked ||
-    git_run("diff", "--quiet", "--", paths) != 0L
-  if (!dirty_beacon) return(TRUE)
-
-  if (git_run("diff", "--quiet", "--", "manifest.json") != 0L) {
-    cat("[status publish] skipped -- manifest.json has unrelated edits\n")
+  if (!isTRUE(publish_guard_ok)) {
+    cat("[status publish] skipped -- publish branch guard did not pass\n")
     return(FALSE)
   }
 
-  manifest_result <- run_child(
-    "update status manifest", "updateManifest.R",
-    extra_args = "--paths=www/pipeline-status.json", harvest_failures = FALSE)
-  if (!isTRUE(manifest_result$ok)) return(FALSE)
+  rollback_paths <- c(
+    "data/recruiting.db", "data/refresh-manifest.json",
+    "precomputed", "docs/brief", "manifest.json")
+  managed_paths <- unique(c(rollback_paths, paths))
 
-  commit_paths <- c(paths, "manifest.json")
+  ## S7 may have staged files and then failed to commit. Normalize the index
+  ## before deciding what the terminal-status commit owns; keep the worktree
+  ## bytes until the branch-specific decision below.
+  st <- git_run("restore", "--staged", "--", managed_paths)
+  if (st != 0L) {
+    cat("[status publish] could not normalize the managed-file index\n")
+    return(FALSE)
+  }
+
+  if (!isTRUE(data_commit_created)) {
+    ## A no-op or blocked publish must not leak a changed DB/precompute bundle.
+    ## Destructive cleanup is permitted only in the dedicated automation
+    ## worktree; never restore files in an interactive main checkout.
+    if (!isTRUE(restore_nightly_managed(
+      rollback_paths, "an unpublished/no-op data stage"))) {
+      cat("[status publish] skipped -- unsafe or unable to roll back ",
+          "managed files\n", sep = "")
+      return(FALSE)
+    }
+  }
+
+  final_data_paths <- if (isTRUE(data_commit_created)) {
+    c("data/recruiting.db", "data/refresh-manifest.json")
+  } else {
+    character(0)
+  }
+  dirty_paths <- c(paths, final_data_paths)
+  sidecar_untracked <- git_run("ls-files", "--error-unmatch",
+                               "www/pipeline-status.json") != 0L
+  dirty_final <- sidecar_untracked ||
+    git_run("diff", "--quiet", "--", dirty_paths) != 0L
+  if (!dirty_final) return(TRUE)
+
+  terminal_paths <- c(paths, final_data_paths, "manifest.json")
+  if (git_run("diff", "--quiet", "--", "manifest.json") != 0L) {
+    cat("[status publish] skipped -- manifest.json has unrelated edits\n")
+    restore_nightly_managed(terminal_paths, "a dirty terminal manifest")
+    return(FALSE)
+  }
+
+  manifest_targets <- c(
+    "www/pipeline-status.json",
+    if (isTRUE(data_commit_created)) "data/recruiting.db")
+  manifest_result <- run_child(
+    "update terminal manifest", "updateManifest.R",
+    extra_args = paste0("--paths=", paste(manifest_targets, collapse = ",")),
+    harvest_failures = FALSE)
+  if (!isTRUE(manifest_result$ok)) {
+    restore_nightly_managed(terminal_paths, "terminal manifest failure")
+    return(FALSE)
+  }
+
+  commit_paths <- c(paths, final_data_paths, "manifest.json")
   st <- git_run("add", "--", commit_paths)
   if (st == 0L) {
-    st <- git_run("commit", "-m",
-                  paste0("Update pipeline status ", format(Sys.Date()), " [auto]"))
+    status_msg <- paste0(
+      "Finalize pipeline status ", format(Sys.Date()), " [auto]")
+    st <- git_run("commit", "-m", shQuote(status_msg, type = "cmd"))
   }
-  if (st == 0L) st <- git_run("push")
+  if (st != 0L) {
+    restore_nightly_managed(commit_paths, "terminal status commit failure")
+    cat("[status publish] terminal status commit failed\n")
+    return(FALSE)
+  }
+
+  if (!isTRUE(push_probe_ok)) {
+    cat("[status publish] committed locally; remote probe failed earlier\n")
+    return(TRUE)
+  }
+
+  st <- git_run("pull", "--rebase", "origin", publish_branch)
+  if (st != 0L) {
+    try(git_run("rebase", "--abort"), silent = TRUE)
+  }
+  if (st == 0L) {
+    st <- git_run("push", "origin", paste0("HEAD:", publish_branch))
+  }
   if (st != 0L) cat("[status publish] git update did not reach origin\n")
   st == 0L
 }
@@ -420,11 +541,64 @@ finalize <- function(status, exit_code, extra_note = NULL) {
     error = function(e) FALSE
   )
 
-  ## manifests: compact (committed) + full (logs/, gitignored)
+  ## The compact manifest must exist before the terminal commit can include
+  ## it. Record this final Git step as pending there; the gitignored full
+  ## manifest below is rewritten with its actual outcome.
+  status_publish_expected <- isTRUE(status_written) &&
+    !isTRUE(no_push) && nzchar(Sys.which("git")) &&
+    isTRUE(publish_guard_ok)
+  stages$status_publish <- if (!isTRUE(status_written)) {
+    "warn"
+  } else if (status_publish_expected) {
+    "pending"
+  } else {
+    "skipped"
+  }
+
   compact <- build_compact(status, finished_at, counts_now)
   try(write_manifest(file.path("data", "refresh-manifest.json"), compact),
       silent = TRUE)
-  full <- compact
+
+  status_publish_ok <- if (isTRUE(status_written)) {
+    isTRUE(publish_status_only(status))
+  } else {
+    FALSE
+  }
+
+  if (!isTRUE(status_written)) {
+    cleanup_paths <- c(
+      status_beacon_paths(), "data/recruiting.db",
+      "data/refresh-manifest.json", "manifest.json",
+      if (!isTRUE(data_commit_created)) c("precomputed", "docs/brief"))
+    cleanup_ok <- if (!isTRUE(no_push)) {
+      restore_nightly_managed(cleanup_paths, "status-beacon write failure")
+    } else {
+      TRUE
+    }
+    notes <<- c(
+      notes,
+      "terminal pipeline status beacon could not be written",
+      if (!cleanup_ok) paste0(
+        "managed-file cleanup was incomplete; the dedicated worktree ",
+        "requires recovery before its next run"))
+    if (!identical(status, "failed")) {
+      status <- "degraded"
+      exit_code <- max(as.integer(exit_code), 2L)
+    }
+  } else if (status_publish_expected) {
+    stages$status_publish <- if (status_publish_ok) "ok" else "warn"
+    if (!status_publish_ok) {
+      notes <<- c(notes, paste0(
+        "terminal pipeline status commit/push failed; any clean local ",
+        "commit will be retried automatically by the next scheduled run"))
+      if (!identical(status, "failed")) {
+        status <- "degraded"
+        exit_code <- max(as.integer(exit_code), 2L)
+      }
+    }
+  }
+
+  full <- build_compact(status, finished_at, counts_now)
   full$counts_before <- as.list(counts_before)
   full$counts_after  <- as.list(counts_now)
   full$pre_hash      <- pre_hash
@@ -435,9 +609,6 @@ finalize <- function(status, exit_code, extra_note = NULL) {
   try(write_manifest(
     file.path("logs", paste0("refresh_manifest_", run_id, ".json")), full),
     silent = TRUE)
-  if (isTRUE(status_written)) {
-    publish_status_only(status)
-  }
 
   ## summary
   cat("\n==== NIGHTLY REFRESH SUMMARY ====\n")
@@ -502,6 +673,54 @@ tryCatch({
   lock_acquired <- TRUE
   cat("Lock acquired: logs/refresh.lock\n")
 
+  ## Clear an interrupted rebase before asking for the branch name. Linked
+  ## worktrees store this state outside .git, so resolve it through Git.
+  if (isTRUE(dedicated_nightly_runner) && nzchar(Sys.which("git"))) {
+    Sys.setenv(GIT_TERMINAL_PROMPT = "0", GCM_INTERACTIVE = "Never")
+    if (git_state_exists("rebase-merge") ||
+        git_state_exists("rebase-apply")) {
+      cat("Leftover rebase state found -- running git rebase --abort\n")
+      st_abort <- git_run("rebase", "--abort")
+      if (st_abort != 0L) {
+        stages$preflight <- "failed"
+        finalize("failed", 1L,
+                 "preflight could not abort an interrupted Git rebase")
+      }
+      notes <- c(notes, "preflight: aborted a leftover rebase from a prior run")
+    }
+  }
+
+  ## Refuse to publish from an arbitrary interactive feature branch. This
+  ## guard runs before any scrape mutates the database. Manual no-push runs
+  ## remain available from any branch for diagnostics.
+  if (!no_push && nzchar(Sys.which("git"))) {
+    current <- git_capture("branch", "--show-current")
+    branch_lines <- trimws(as.character(current$output))
+    branch_lines <- branch_lines[nzchar(branch_lines)]
+    current_branch <- if (isTRUE(current$ok) && length(branch_lines)) {
+      tail(branch_lines, 1L)
+    } else {
+      ""
+    }
+    publish_worktree_branch <- current_branch
+    allowed_branches <- unique(c(publish_branch, nightly_branch))
+    if (!nzchar(current_branch) || !(current_branch %in% allowed_branches)) {
+      refusal <- paste0(
+        "publish guard: refusing to run from branch '",
+        if (nzchar(current_branch)) current_branch else "(detached HEAD)",
+        "'; expected '", publish_branch, "' or '", nightly_branch, "'")
+      cat("FATAL: ", refusal, "\n", sep = "")
+      if (isTRUE(lock_acquired)) {
+        try(release_lock(), silent = TRUE)
+        lock_acquired <- FALSE
+      }
+      quit(save = "no", status = 1L)
+    }
+    publish_guard_ok <- TRUE
+    cat("Publish guard: ", current_branch, " -> origin/",
+        publish_branch, "\n", sep = "")
+  }
+
   qc <- quick_check(db_path)
   if (!identical(qc, "ok")) {
     stages$preflight <- "failed"
@@ -509,15 +728,6 @@ tryCatch({
              paste0("PRAGMA quick_check failed before the run: ", qc))
   }
   cat("quick_check: ok\n")
-
-  ## a prior run that died mid 'pull --rebase' leaves the repo in rebase
-  ## state and every later git command fails -- clear it before anything else
-  if (dir.exists(file.path(".git", "rebase-merge")) ||
-      dir.exists(file.path(".git", "rebase-apply"))) {
-    cat("Leftover rebase state found -- running git rebase --abort\n")
-    try(git_run("rebase", "--abort"), silent = TRUE)
-    notes <- c(notes, "preflight: aborted a leftover rebase from a prior run")
-  }
 
   ## push preflight: a dead credential re-fails IDENTICALLY every night and
   ## would otherwise only surface after a full scrape. Probe the remote now
@@ -528,7 +738,8 @@ tryCatch({
   if (!no_push && Sys.which("git") != "") {
     Sys.setenv(GIT_TERMINAL_PROMPT = "0")  # fail fast, never prompt
     st <- suppressWarnings(system2(
-      "git", c("ls-remote", "--exit-code", "origin", "HEAD"),
+      "git", c("ls-remote", "--exit-code", "origin",
+               paste0("refs/heads/", publish_branch)),
       stdout = FALSE, stderr = FALSE))
     if (identical(st, 0L)) {
       cat("git ls-remote probe: ok\n")
@@ -914,7 +1125,11 @@ tryCatch({
     add_paths <- add_paths[file.exists(add_paths)]
     st <- git_run("add", "--", add_paths)
     where <- "add"
-    if (st == 0) { st <- git_run("commit", msg_args); where <- "commit" }
+    if (st == 0) {
+      st <- git_run("commit", msg_args)
+      where <- "commit"
+      if (st == 0) data_commit_created <- TRUE
+    }
     if (st == 0 && !push_probe_ok) {
       ## the S0 ls-remote probe already failed -- the local commit is the
       ## valuable part (a checkpoint that ships when a push next lands);
@@ -928,12 +1143,16 @@ tryCatch({
         "then"))
     } else {
       if (st == 0) {
-        st <- git_run("pull", "--rebase", "--autostash")
+        st <- git_run("pull", "--rebase", "--autostash",
+                      "origin", publish_branch)
         where <- "pull --rebase"
         ## never leave the repo mid-rebase -- abort immediately on failure
         if (st != 0) try(git_run("rebase", "--abort"), silent = TRUE)
       }
-      if (st == 0) { st <- git_run("push"); where <- "push" }
+      if (st == 0) {
+        st <- git_run("push", "origin", paste0("HEAD:", publish_branch))
+        where <- paste0("push origin HEAD:", publish_branch)
+      }
       if (st == 0) {
         stages$push <- "ok"
         cat("[push] committed and pushed:", msg, "\n")
