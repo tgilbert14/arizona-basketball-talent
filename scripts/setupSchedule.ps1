@@ -28,6 +28,8 @@ $TaskName = 'GirthIndex Nightly Refresh'
 $SourceRepoRoot = Split-Path -Parent $PSScriptRoot
 $PublishBranch = 'main'
 $NightlyBranch = 'automation/nightly-main'
+$env:GIT_TERMINAL_PROMPT = '0'
+$env:GCM_INTERACTIVE = 'Never'
 
 if ([string]::IsNullOrWhiteSpace($WorktreeRoot)) {
     $LocalDataRoot = [Environment]::GetFolderPath('LocalApplicationData')
@@ -47,6 +49,9 @@ if (-not $Git) {
 if ($LASTEXITCODE -ne 0) {
     throw ('Could not fetch origin/' + $PublishBranch + '.')
 }
+
+& git -C $SourceRepoRoot worktree prune
+if ($LASTEXITCODE -ne 0) { throw 'Could not prune stale Git worktree metadata.' }
 
 if (-not (Test-Path -LiteralPath $WorktreeRoot)) {
     $WorktreeParent = Split-Path -Parent $WorktreeRoot
@@ -71,6 +76,39 @@ if (-not (Test-Path -LiteralPath (Join-Path $WorktreeRoot '.git'))) {
     throw ($WorktreeRoot + ' exists but is not a Git worktree.')
 }
 
+$SourceCommonOutput = @(& git -C $SourceRepoRoot rev-parse --git-common-dir)
+if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the source Git directory.' }
+$SourceCommonPath = ($SourceCommonOutput -join '').Trim()
+if (-not [IO.Path]::IsPathRooted($SourceCommonPath)) {
+    $SourceCommonPath = Join-Path $SourceRepoRoot $SourceCommonPath
+}
+
+$WorktreeCommonOutput = @(& git -C $WorktreeRoot rev-parse --git-common-dir)
+if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the nightly Git directory.' }
+$WorktreeCommonPath = ($WorktreeCommonOutput -join '').Trim()
+if (-not [IO.Path]::IsPathRooted($WorktreeCommonPath)) {
+    $WorktreeCommonPath = Join-Path $WorktreeRoot $WorktreeCommonPath
+}
+if ([IO.Path]::GetFullPath($SourceCommonPath) -ne
+    [IO.Path]::GetFullPath($WorktreeCommonPath)) {
+    throw ($WorktreeRoot + ' belongs to a different Git repository.')
+}
+
+$RebaseStateFound = $false
+foreach ($StateName in @('rebase-merge', 'rebase-apply')) {
+    $StateOutput = @(& git -C $WorktreeRoot rev-parse --git-path $StateName)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect nightly rebase state.' }
+    $StatePath = ($StateOutput -join '').Trim()
+    if (-not [IO.Path]::IsPathRooted($StatePath)) {
+        $StatePath = Join-Path $WorktreeRoot $StatePath
+    }
+    if (Test-Path -LiteralPath $StatePath) { $RebaseStateFound = $true }
+}
+if ($RebaseStateFound) {
+    & git -C $WorktreeRoot rebase --abort
+    if ($LASTEXITCODE -ne 0) { throw 'Could not abort interrupted nightly rebase.' }
+}
+
 $BranchOutput = @(& git -C $WorktreeRoot branch --show-current)
 $CurrentBranch = ($BranchOutput -join '').Trim()
 if (($LASTEXITCODE -ne 0) -or ($CurrentBranch -ne $NightlyBranch)) {
@@ -78,9 +116,9 @@ if (($LASTEXITCODE -ne 0) -or ($CurrentBranch -ne $NightlyBranch)) {
            '''; found ''' + $CurrentBranch + '''.')
 }
 
-$TrackedChanges = @(& git -C $WorktreeRoot status --porcelain --untracked-files=no)
+$TrackedChanges = @(& git -C $WorktreeRoot status --porcelain --untracked-files=all)
 if (($LASTEXITCODE -ne 0) -or ($TrackedChanges.Count -gt 0)) {
-    throw 'Dedicated nightly worktree has tracked changes; resolve them before re-registering.'
+    throw 'Dedicated nightly worktree has changes; resolve them before re-registering.'
 }
 
 & git -C $WorktreeRoot rebase ('origin/' + $PublishBranch)
@@ -100,12 +138,8 @@ if (-not (Test-Path -LiteralPath $Runner)) {
     throw ($Runner + ' not found after preparing the nightly worktree.')
 }
 
-# Idempotent: drop any existing registration first
-$Existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-if ($Existing) {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Output ('Removed existing task ''' + $TaskName + ''' (re-registering).')
-}
+# Register-ScheduledTask -Force updates atomically; a bad replacement cannot
+# delete a previously working task before the new definition is validated.
 
 $Action = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -Argument ('-NoProfile -ExecutionPolicy Bypass -File "' + $Runner + '"') `
@@ -124,7 +158,7 @@ if ($WakeToRun) { $SettingsArgs['WakeToRun'] = $true }
 $Settings = New-ScheduledTaskSettingsSet @SettingsArgs
 
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger `
-    -Settings $Settings `
+    -Settings $Settings -Force `
     -Description 'Girth Index Power 4: isolated nightly scrape/validate/precompute/publish to main' `
     | Out-Null
 

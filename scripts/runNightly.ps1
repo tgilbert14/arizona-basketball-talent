@@ -29,6 +29,9 @@ Set-Location -LiteralPath $RepoRoot
 
 $env:GIRTH_PUBLISH_BRANCH = $PublishBranch
 $env:GIRTH_NIGHTLY_BRANCH = $NightlyBranch
+$env:GIRTH_NIGHTLY_RUNNER = '1'
+$env:GIT_TERMINAL_PROMPT = '0'
+$env:GCM_INTERACTIVE = 'Never'
 
 $LogDir = Join-Path $RepoRoot 'logs'
 if (-not (Test-Path -LiteralPath $LogDir)) {
@@ -77,6 +80,33 @@ try {
         $PublishReady = $false
     }
 
+    # Resolve interrupted-rebase state through Git because .git is a file in
+    # linked worktrees. Abort before branch inspection (a rebase detaches HEAD).
+    if ($PublishReady) {
+        $RebaseStateFound = $false
+        foreach ($StateName in @('rebase-merge', 'rebase-apply')) {
+            $StateOutput = @(& git -C $RepoRoot rev-parse --git-path $StateName)
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output 'FATAL: could not inspect Git rebase state.'
+                $PublishReady = $false
+                break
+            }
+            $StatePath = ($StateOutput -join '').Trim()
+            if (-not [IO.Path]::IsPathRooted($StatePath)) {
+                $StatePath = Join-Path $RepoRoot $StatePath
+            }
+            if (Test-Path -LiteralPath $StatePath) { $RebaseStateFound = $true }
+        }
+        if ($PublishReady -and $RebaseStateFound) {
+            Write-Output 'Interrupted rebase found; aborting before nightly sync.'
+            & git -C $RepoRoot rebase --abort 2>&1 | ForEach-Object { "$_" }
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output 'FATAL: could not abort the interrupted rebase.'
+                $PublishReady = $false
+            }
+        }
+    }
+
     if ($PublishReady) {
         $BranchOutput = @(& git -C $RepoRoot branch --show-current)
         $GitExit = $LASTEXITCODE
@@ -89,9 +119,9 @@ try {
     }
 
     if ($PublishReady) {
-        $TrackedChanges = @(& git -C $RepoRoot status --porcelain --untracked-files=no)
+        $TrackedChanges = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
         if (($LASTEXITCODE -ne 0) -or ($TrackedChanges.Count -gt 0)) {
-            Write-Output 'FATAL: dedicated nightly worktree has tracked changes; refusing to overwrite them.'
+            Write-Output 'FATAL: dedicated nightly worktree has changes; refusing to overwrite them.'
             if ($TrackedChanges.Count -gt 0) {
                 $TrackedChanges | ForEach-Object { Write-Output ('  ' + $_) }
             }
