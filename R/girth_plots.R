@@ -454,7 +454,7 @@ beef_board_data <- function(size_data, team_slug, sport,
         val_lab = paste0(
           m$fmt(Value), "  (n=", Players, ")",
           ifelse(.env$external,
-                 paste0(" · ", team_conference(School), " ref"), "")),
+                 paste0(" - ", team_conference(School), " ref"), "")),
         value = Value,
         n = Players
       )
@@ -998,7 +998,7 @@ retention_board_data <- function(size_commits, roster_data, team_slug,
              tip),
            lab = paste0(round(retention), "%  (n=", n, ")",
                         ifelse(external_reference,
-                               paste0(" · ", team_conference(School), " ref"),
+                               paste0(" - ", team_conference(School), " ref"),
                                "")),
            value = retention) %>%
     mutate(lab = ifelse(external_reference,
@@ -1264,7 +1264,7 @@ wr_board_data <- function(wr_data, team_slug, sport,
     }
     ext %>%
       left_join(external_tips, by = "School") %>%
-      mutate(lab = paste0(lab, " · ", team_conference(School), " ref"),
+      mutate(lab = paste0(lab, " - ", team_conference(School), " ref"),
              external_reference = TRUE, role = "external",
              value = AvgGain)
   } else {
@@ -1806,18 +1806,10 @@ plot_distance_lab <- function(size_data, team_slug, sport,
       color = role_cols["comparison"], shape = 17, alpha = 0.82, size = 3.7,
       position = position_jitter(width = 0.13, height = 0, seed = 11)) +
     scale_x_continuous(breaks = seq(plot_years[1], plot_years[2], 1)) +
-    labs(
-      title = glue("{t_lab} {str_to_title(sport)}: Miles from Listed Origin by Class ({yr_rng})"),
-      subtitle = glue(
-        "Each dot = distance from the player's listed origin to campus. ",
-        "Yellow band = 25th–75th percentile, orange = class average",
-        "{ifelse(removed_n > 0, glue('. {removed_n} outliers hidden (1.5×IQR)'), '')}."),
-      x = "Class Year", y = "Miles from Home",
-      caption = "Tap or hover any dot for the recruit card; click to open their 247 page. Portal transfers appear once a listed origin is known."
-    ) +
+    labs(x = "Class Year", y = "Miles from Home") +
     labs(
       title = display_title, subtitle = wrap_title(display_subtitle, 92),
-      caption = "Tap or hover a point for its recruit card. Role colors and shapes stay fixed across Program Reach; distances require a mapped listed origin."
+      caption = "Distances require a mapped listed origin."
     ) +
     theme_girth()
 }
@@ -2026,13 +2018,6 @@ build_pipeline_map <- function(size_data, team_slug, sport,
                                compare_slug = NULL) {
   ctx <- comparison_context(team_slug, compare_slug)
   role_cols <- reach_role_colors()
-  coverage <- reach_program_coverage(size_data, team_slug, compare_slug)
-  coverage_text <- paste(
-    glue("{coverage$ReachProgram} ({tolower(coverage$ReachRole)}): {coverage$mapped}/{coverage$total} mapped; {coverage$distance}/{coverage$total} with distance"),
-    collapse = " | "
-  )
-  mapped_gap <- reach_comparison_gap(
-    size_data, team_slug, compare_slug, metric = "mapped")
   compare_slug <- if (isTRUE(ctx$active)) ctx$compare_slug else NULL
   prep_team <- function(slug) {
     role_key <- if (identical(slug, ctx$team_slug)) "selected" else "comparison"
@@ -2155,15 +2140,9 @@ build_pipeline_map <- function(size_data, team_slug, sport,
       style = "background: rgba(255,255,255,.85); padding: 3px 8px;
                border-radius: 4px; font-size: 11px; max-width: 290px;",
       tags$small(
-        tags$b("Coverage: ", coverage_text), tags$br(),
-        if (nzchar(mapped_gap)) tags$span(mapped_gap) else NULL,
-        if (nzchar(mapped_gap)) tags$br() else NULL,
-        tags$span("Role colors and shapes are fixed across teams. "), tags$br(),
         "Data: ", tags$a(href = "https://247sports.com",
                          "247Sports", target = "_blank"),
-        " — players with mapped listed origins; transfers appear once an origin
-         is known.",
-        )),
+        " — mapped listed origins; transfers appear once an origin is known.")),
       position = "bottomleft")
 }
 
@@ -2765,7 +2744,7 @@ quadrant_data <- function(team_seasons, size_data, team_slug,
           TeamName = team_label(slug),
           role = "external",
           external_reference = TRUE,
-          plot_label = glue("{TeamName} · {ctx$compare_conference} ref"),
+          plot_label = glue("{TeamName} - {ctx$compare_conference} ref"),
           tip = glue(
             "<b>{TeamName} ({yr_rng2}) — {ctx$compare_conference} external reference</b><br/>",
             "Talent composite: {round(talent, 1)}<br/>",
@@ -2809,10 +2788,12 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
   med_t <- attr(agg, "talent_median")
   med_w <- attr(agg, "win_median")
   external_ref <- isTRUE(attr(agg, "external_reference"))
-  external_note <- attr(agg, "external_note") %||% ""
-  cmp_note <- if (nzchar(external_note)) external_note else
-    comparison_highlight_note(team_slug, compare_slug,
-                              "talent-vs-results panel")
+  cmp_note <- if (external_ref) {
+    glue("{team_label(compare_slug)} ({team_conference(compare_slug)}): ",
+         "outlined diamond; excluded from {team_conference(team_slug)} ",
+         "medians/ranks.")
+  } else comparison_highlight_note(team_slug, compare_slug,
+                                   "talent-vs-results panel")
   role_cols <- c(main = unname(hl["main"]),
                  compare = ifelse(cmp_safe == "", "grey55", hl["compare"]),
                  external = ifelse(external_ref, hl["compare"], "grey55"),
@@ -2858,10 +2839,9 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
       title = wrap_title(glue(
         "Talent vs Results, {yr_rng}: Who Outplays Their Recruiting?"), 52),
       subtitle = wrap_title(glue(
-        "Each dot = one program, seasons {yr_rng}. X = rolling 4-class talent ",
-        "composite (mean of the window's top-20 HS + portal ratings); ",
-        "Y = win percentage. Dashed lines = conference medians.{bc_note} ",
-        "{cmp_note}"), 84),
+        "Program averages for {yr_rng}: rolling four-class talent (top-20 HS ",
+        "+ portal ratings) vs win %. Dashed lines = ",
+        "{team_conference(team_slug)} medians.{bc_note} {cmp_note}"), 84),
       x = "Average Talent Composite (247 rating points)",
       y = "Win Percentage",
       caption = "Records: CollegeFootballData.com. Talent: 247Sports classes 2016-2026. Tap or hover dots for the receipts."
@@ -3028,7 +3008,7 @@ wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
 
   axis_name <- ifelse(
     board$external_reference,
-    paste0(board$TeamName, " · ", ctx$compare_conference, " ref (N/R)"),
+    paste0(board$TeamName, " - ", ctx$compare_conference, " ref (N/R)"),
     as.character(board$TeamName))
   board$PlotName <- factor(axis_name, levels = unique(axis_name))
 
@@ -3074,10 +3054,12 @@ plot_wat <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
   yr_rng <- attr(board, "yr_rng")
   model_note <- attr(board, "model_note")
   external_ref <- isTRUE(attr(board, "external_reference"))
-  external_note <- attr(board, "external_note") %||% ""
-  cmp_note <- if (nzchar(external_note)) external_note else
-    comparison_highlight_note(team_slug, compare_slug,
-                              "talent-to-wins model")
+  cmp_note <- if (external_ref) {
+    glue("{team_label(compare_slug)} ({team_conference(compare_slug)}): ",
+         "outlined diamond/dashed row, scored against but excluded from the ",
+         "{team_conference(team_slug)} fit.")
+  } else comparison_highlight_note(team_slug, compare_slug,
+                                   "talent-to-wins model")
   n_seasons <- length(unique(team_seasons$year))
   logos <- team_logo_labels(width = 30, prefix = "www/")
   ctx <- comparison_context(team_slug, compare_slug)
@@ -3090,7 +3072,7 @@ plot_wat <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
     axis_labels[external_axis] <- paste0(
       external_logo,
       " <span style='color:#46535E;font-size:9px;'>",
-      ctx$compare_name, " · ", ctx$compare_conference,
+      ctx$compare_name, " - ", ctx$compare_conference,
       " ref (N/R)</span>")
   }
   ## The external row uses the contrast-adjusted compare color plus an
@@ -3136,17 +3118,14 @@ plot_wat <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
     labs(
       title = wrap_title("Wins Above Talent: Who Beats Their Recruiting?", 44),
       subtitle = wrap_title(glue(
-        "Seasons {yr_rng}. Grey circle = expected win % from the ",
-        "{team_conference(team_slug)} talent-to-wins fit; colored mark = ",
-        "actual. Row label = wins per season above (+) or below (-) that ",
-        "expectation. An outlined diamond + dashed row denotes an external ",
-        "reference. {cmp_note}"), 60),
+        "Seasons {yr_rng}. Grey circle = {team_conference(team_slug)}-fit ",
+        "expected win %; colored mark = actual; label = wins/season above or ",
+        "below expectation. {cmp_note}"), 60),
       x = "Win Percentage", y = NULL,
       caption = wrap_title(glue(
         "Expected = a quasibinomial fit of season wins on the rolling ",
         "4-class talent composite ({model_note}), over {n_seasons} seasons ",
-        "in the window. Records: CollegeFootballData.com; talent: 247Sports. ",
-        "The season-by-season Scoreboard chart is unchanged."), 95)
+        "in the window. Records: CollegeFootballData.com; talent: 247Sports."), 95)
     ) +
     theme_girth_md()
 }

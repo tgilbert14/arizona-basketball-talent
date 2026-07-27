@@ -11,6 +11,24 @@ check <- function(ok, message) {
   if (!isTRUE(ok)) stop(message, call. = FALSE)
 }
 
+render_outcome_girafe <- function(p, label) {
+  clean <- girafe_sanitize_plot(p)
+  frames <- c(list(clean$data),
+              lapply(clean$layers, function(layer) layer$data))
+  has_glue <- vapply(
+    frames, function(data) {
+      is.data.frame(data) &&
+        any(vapply(data, inherits, logical(1), what = "glue"))
+    }, logical(1))
+  check(!any(has_glue),
+        paste(label, "still has a glue-class plot-data column"))
+  widget <- ggiraph::girafe(
+    ggobj = clean, width_svg = 10.5, height_svg = 4.7
+  )
+  check(inherits(widget, "girafe"), paste(label, "did not render"))
+  invisible(clean)
+}
+
 canonical_active <- function(frame, columns) {
   d <- frame[!frame$external_reference, columns, drop = FALSE]
   d <- as.data.frame(lapply(d, function(x) {
@@ -91,12 +109,14 @@ check(isTRUE(attr(quadrant_missing, "external_requested")) &&
               fixed = TRUE),
       "quadrant missing-rival receipt regressed")
 
-quadrant_plot <- ggplot_build(plot_talent_results(
-  team_seasons, size_data, "arizona", "georgia"))
+quadrant_gg <- plot_talent_results(
+  team_seasons, size_data, "arizona", "georgia")
+quadrant_plot <- ggplot_build(quadrant_gg)
 quadrant_shape <- quadrant_plot$plot$scales$get_scales("shape")
 check(identical(as.integer(quadrant_shape$map(c("main", "external"))),
                 c(16L, 23L)),
       "quadrant external reference lacks a distinct diamond shape")
+invisible(render_outcome_girafe(quadrant_gg, "talent-results quadrant"))
 
 wat_base <- wat_data(team_seasons, size_data, "arizona")
 wat_external <- wat_data(
@@ -147,14 +167,18 @@ check(isTRUE(attr(wat_missing, "external_requested")) &&
         grepl("no qualifying", attr(wat_missing, "external_note"), fixed = TRUE),
       "WAT missing-rival receipt regressed")
 
-wat_plot <- ggplot_build(plot_wat(
-  team_seasons, size_data, "arizona", "georgia"))
+wat_gg <- plot_wat(team_seasons, size_data, "arizona", "georgia")
+wat_plot <- ggplot_build(wat_gg)
 wat_shape <- wat_plot$plot$scales$get_scales("shape")
 wat_line <- wat_plot$plot$scales$get_scales("linetype")
 check(identical(as.integer(wat_shape$map(c("main", "external"))),
                 c(16L, 23L)) &&
         identical(as.character(wat_line$map("external")), "22"),
       "WAT external reference lacks shape/linetype redundancy")
+invisible(render_outcome_girafe(wat_gg, "wins-above-talent ladder"))
+scoreboard_gg <- plot_team_scoreboard(team_seasons, size_data, "arizona")
+invisible(render_outcome_girafe(scoreboard_gg, "season scoreboard"))
+
 
 app_source <- readLines("app.R", warn = FALSE)
 check(any(grepl('rank_display <- rep("N/R"', app_source, fixed = TRUE)),

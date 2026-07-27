@@ -705,11 +705,16 @@ tryCatch({
     publish_worktree_branch <- current_branch
     allowed_branches <- unique(c(publish_branch, nightly_branch))
     if (!nzchar(current_branch) || !(current_branch %in% allowed_branches)) {
-      stages$preflight <- "failed"
-      finalize("failed", 1L, paste0(
+      refusal <- paste0(
         "publish guard: refusing to run from branch '",
         if (nzchar(current_branch)) current_branch else "(detached HEAD)",
-        "'; expected '", publish_branch, "' or '", nightly_branch, "'"))
+        "'; expected '", publish_branch, "' or '", nightly_branch, "'")
+      cat("FATAL: ", refusal, "\n", sep = "")
+      if (isTRUE(lock_acquired)) {
+        try(release_lock(), silent = TRUE)
+        lock_acquired <- FALSE
+      }
+      quit(save = "no", status = 1L)
     }
     publish_guard_ok <- TRUE
     cat("Publish guard: ", current_branch, " -> origin/",

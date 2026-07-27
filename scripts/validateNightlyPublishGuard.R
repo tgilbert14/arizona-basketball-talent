@@ -60,6 +60,8 @@ quick_at <- regexpr("qc <- quick_check(db_path)", nightly, fixed = TRUE)[1]
 if (guard_at < 1L || quick_at < 1L || guard_at > quick_at) {
   stop("publish branch guard must run before the DB quick check")
 }
+need(nightly, 'quit(save = "no", status = 1L)',
+     "non-mutating invalid-branch exit")
 
 need(runner, "$env:GIRTH_NIGHTLY_RUNNER = '1'",
      "wrapper runner marker")

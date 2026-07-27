@@ -12,6 +12,37 @@ stop_if <- function(ok, message) {
   if (!isTRUE(ok)) stop(message, call. = FALSE)
 }
 
+render_girafe <- function(p, label) {
+  clean <- girafe_sanitize_plot(p)
+  frames <- c(
+    list(clean$data),
+    lapply(clean$layers, function(layer) layer$data)
+  )
+  glue_left <- vapply(
+    frames, function(data) {
+      is.data.frame(data) &&
+        any(vapply(data, inherits, logical(1), what = "glue"))
+    }, logical(1))
+  stop_if(!any(glue_left),
+          paste(label, "still has a glue-class plot-data column"))
+  widget <- ggiraph::girafe(
+    ggobj = clean, width_svg = 10.5, height_svg = 4.7
+  )
+  stop_if(inherits(widget, "girafe"),
+          paste(label, "did not render as a girafe widget"))
+  invisible(clean)
+}
+
+glue_fixture <- data.frame(x = 1:2, y = c(2, 1),
+                           id = as.character(1:2))
+glue_fixture$tip <- glue::glue("<b>Point {glue_fixture$x}</b>")
+glue_plot <- ggplot2::ggplot(glue_fixture, ggplot2::aes(x, y)) +
+  ggiraph::geom_point_interactive(
+    ggplot2::aes(tooltip = tip, data_id = id))
+stop_if(inherits(glue_plot$data$tip, "glue"),
+        "Synthetic tooltip lost glue class before the sanitizer test")
+invisible(render_girafe(glue_plot, "synthetic glue tooltip"))
+
 schools <- rep(c("arizona", "georgia", "arizona-state"), each = 6)
 years <- rep(c(2024L, 2025L, 2026L), times = 6)
 positions <- rep(c("QB", "WR", "OT", "DL", "LB", "CB"), times = 3)
@@ -85,6 +116,8 @@ box_cross <- plot_distance_box(
   fixture, "arizona", "football", compare_slug = "georgia")
 stop_if(inherits(box_cross, "ggplot"), "Cross-conference position distance did not build")
 invisible(ggplot2::ggplot_build(box_cross))
+invisible(render_girafe(lab_cross, "cross-conference distance lab"))
+invisible(render_girafe(box_cross, "cross-conference position distance"))
 
 lab_peer <- plot_distance_lab(
   fixture, "arizona", "football", compare_slug = "arizona-state")
@@ -133,7 +166,7 @@ if (file.exists(file.path("data", "recruiting.db"))) {
     paste(
       "SELECT * FROM recruit_class_football",
       "WHERE School IN ('arizona','georgia','arizona-state')",
-      "AND Year BETWEEN 2023 AND 2027"
+      "AND Year BETWEEN 2024 AND 2027"
     )
   )
   DBI::dbDisconnect(actual_conn)
@@ -154,6 +187,8 @@ if (file.exists(file.path("data", "recruiting.db"))) {
     actual, "arizona", "football", compare_slug = "arizona-state")
   invisible(ggplot2::ggplot_build(actual_lab))
   invisible(ggplot2::ggplot_build(actual_box))
+  invisible(render_girafe(actual_lab, "released DB distance lab"))
+  invisible(render_girafe(actual_box, "released DB position distance"))
   invisible(ggplot2::ggplot_build(actual_peer))
   cat(
     "Released DB coverage:",

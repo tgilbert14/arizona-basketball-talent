@@ -290,7 +290,7 @@ ctx_note <- function(...) {
 ## re-rendered and never display:none'd (the 0-width first-paint trap), and
 ## the table renders lazily via input$twin_<chart_id>.
 
-## the understated header toggle: "view the numbers" <-> "view the chart".
+## the understated header toggle: "Table" <-> "Chart".
 ## JS (see the twin-toggle script) flips the box class, the visible label,
 ## and aria-pressed, and reports the state as input$twin_<chart_id>.
 ## a11y contract: role="button" because aria-pressed promises button
@@ -301,7 +301,7 @@ ctx_note <- function(...) {
 twin_toggle <- function(chart_id) {
   actionLink(
     inputId = paste0("twin_link_", chart_id),
-    label = "view the numbers",
+    label = "Table",
     class = "twin-toggle",
     `data-chart` = chart_id,
     role = "button",
@@ -749,6 +749,15 @@ INFO_MODALS <- list(
       origin is reported instead of silently disappearing.</p>
       <p><strong>Verify anything:</strong> hover a dot for the recruit card;
       click to open their 247 page.</p>")
+)
+
+## One methods article can have multiple visible launch points, but every
+## actionLink still needs a unique DOM/input ID. Talent Origins has three
+## mutually exclusive chart panels, all routed to the canonical article.
+INFO_MODAL_ALIASES <- c(
+  info_origins_board = "info_origins",
+  info_origins_positions = "info_origins",
+  info_origins_trend = "info_origins"
 )
 
 ## era metric choices (Coach Eras)
@@ -1394,7 +1403,7 @@ ui <- dashboardPage(
           /* only the VISIBLE label swaps -- the accessible name is the
              constant aria-label ('table view') set in twin_toggle(), so
              aria-pressed alone announces the state */
-          t.textContent = on ? 'view the chart' : 'view the numbers';
+          t.textContent = on ? 'Chart' : 'Table';
           if (window.Shiny && Shiny.setInputValue) {
             Shiny.setInputValue('twin_' + t.getAttribute('data-chart'), on);
           }
@@ -2539,11 +2548,9 @@ ui <- dashboardPage(
                                   info_btn("info_results")),
                   width = 12, status = "danger", solidHeader = TRUE,
                   HTML("<p style='font-size:14px; color:#555; margin:0;'>
-                    Season records and SP+ from CollegeFootballData joined to
-                    each program's rolling 4-class talent composite (HS +
-                    portal ratings). Above the diagonal of expectations =
-                    coaching and development adding wins; below it = talent
-                    leaking value.</p>")
+                    Rolling four-class talent (HS + portal) meets records and
+                    SP+. Above expectation = development adding wins; below =
+                    talent left unused.</p>")
                 )
               ),
               fluidRow(
@@ -2657,7 +2664,7 @@ ui <- dashboardPage(
             box(
               title = tagList(
                 "State Talent Board",
-                info_btn("info_origins"),
+                info_btn("info_origins_board"),
                 twin_toggle("origin_board")
               ),
               status = "primary", solidHeader = TRUE, width = 12,
@@ -2676,7 +2683,7 @@ ui <- dashboardPage(
             box(
               title = tagList(
                 "Position Hotbeds",
-                info_btn("info_origins"),
+                info_btn("info_origins_positions"),
                 twin_toggle("origin_positions")
               ),
               status = "primary", solidHeader = TRUE, width = 12,
@@ -2695,7 +2702,7 @@ ui <- dashboardPage(
             box(
               title = tagList(
                 "How the pipeline is changing",
-                info_btn("info_origins"),
+                info_btn("info_origins_trend"),
                 twin_toggle("origin_trend")
               ),
               status = "primary", solidHeader = TRUE, width = 12,
@@ -2732,9 +2739,8 @@ ui <- dashboardPage(
                   title = tagList("Program Reach: mapped recruiting pipelines",
                                   info_btn("info_map")),
                   footer = HTML("<span style='color:#888;'>
-                    <em>Blue filled circles mark the selected program; orange
-                    star pins mark the comparison. Shaded shapes trace only
-                    the selected program's footprint.</em></span>"),
+                    <em>Shaded shape = the selected program's footprint; the
+                    comparison remains point-only.</em></span>"),
                   status = "primary",
                   solidHeader = TRUE, width = 12,
                   collapsible = TRUE, collapsed = FALSE,
@@ -3234,12 +3240,19 @@ server <- function(input, output, session) {
   ## a function(conf_lab, conf_n) -- the latter names the DATA universe, so it
   ## is resolved against the ACTIVE team's conference at open time (Phase 0:
   ## "Big 12" / 16, so the text is unchanged).
-  lapply(names(INFO_MODALS), function(id) {
+  info_modal_ids <- unique(c(
+    setdiff(names(INFO_MODALS), unname(INFO_MODAL_ALIASES)),
+    names(INFO_MODAL_ALIASES)
+  ))
+  lapply(info_modal_ids, function(id) {
+    modal_id <- if (id %in% names(INFO_MODAL_ALIASES)) {
+      unname(INFO_MODAL_ALIASES[[id]])
+    } else id
     observeEvent(input[[id]], {
-      body <- INFO_MODALS[[id]]$body
+      body <- INFO_MODALS[[modal_id]]$body
       if (is.function(body)) body <- body(active_conf_lab(), active_conf_n())
       showModal(modalDialog(
-        title = INFO_MODALS[[id]]$title,
+        title = INFO_MODALS[[modal_id]]$title,
         HTML(body),
         easyClose = TRUE, footer = modalButton("Got it")
       ))
@@ -3340,7 +3353,7 @@ server <- function(input, output, session) {
       if (!is.null(g_cmp())) team_label(g_cmp()),
       if (isTRUE(cmp_ctx$cross_conference)) tags$span(
         class = "cb-dim cb-compare-context",
-        glue("· {cmp_ctx$compare_conference} reference")),
+        glue("· {cmp_ctx$compare_conference} ref")),
       tags$span(
         class = "cb-dim",
         glue("· {str_to_title(g_sport())} · ",
@@ -5344,13 +5357,13 @@ server <- function(input, output, session) {
     if (isTRUE(ctx$active)) {
       cmp_row <- coverage %>% filter(ReachRoleKey == "comparison")
       receipt <- if (cmp_row$total[[1]] == 0) {
-        glue("{ctx$compare_name} has no player records in this filtered window.")
+        glue("{ctx$compare_name}: no records in this window.")
       } else {
-        glue("Both programs are included; {cmp_row$distance[[1]]}/{cmp_row$total[[1]]} {ctx$compare_name} records have a usable distance.")
+        glue("{ctx$compare_name} distance coverage: {cmp_row$distance[[1]]}/{cmp_row$total[[1]]} records.")
       }
       table_caption <- tags$caption(
         style = "caption-side: top; text-align: left;",
-        paste0("Selected vs comparison receipt: ", receipt))
+        receipt)
     }
 
     d <- filtered_data() %>%

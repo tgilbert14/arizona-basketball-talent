@@ -3893,42 +3893,6 @@
     }
   },
   "files": {
-    "app.R": {
-      "checksum": "b689c6f4db7a6b0fd7f99b964ee9ff79"
-    },
-    "data/recruiting.db": {
-      "checksum": "5efb001cbb9d15d3e66914ea587a2eef"
-    },
-    "data/team_config.csv": {
-      "checksum": "3a93224a97b08028d104cc093d1b1c42"
-    },
-    "precomputed/beef_board_desktop.rds": {
-      "checksum": "69cd3de31c5fd1a9c3997ed52893688a"
-    },
-    "precomputed/beef_board_phone.rds": {
-      "checksum": "281a59f58c60b1d1aa20ab3daab1de34"
-    },
-    "precomputed/body_map_desktop.rds": {
-      "checksum": "b915277dd3158901eb0d8c6b9be2cc37"
-    },
-    "precomputed/body_map_phone.rds": {
-      "checksum": "5c84a3b5659ec302b8fe6cc9afc3fa84"
-    },
-    "precomputed/dna_desktop.rds": {
-      "checksum": "7c1f1e6079ab39aab81f1fa64c7f2b4c"
-    },
-    "precomputed/dna_phone.rds": {
-      "checksum": "898900cd012d9a62de6e0d26e487a618"
-    },
-    "precomputed/era_timeline_desktop.rds": {
-      "checksum": "60fca34cef5fefe2c27c75faf42d02a7"
-    },
-    "precomputed/era_timeline_phone.rds": {
-      "checksum": "2351661891e8a47272f61d227cdc1606"
-    },
-    "precomputed/meta.rds": {
-      "checksum": "5973b948e5d099d8924375a1930a5bf5"
-    },
     "R/coach_eras.R": {
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
     },
@@ -3939,10 +3903,10 @@
       "checksum": "8fe6234237d81c9adb65c0a39488d08f"
     },
     "R/girth_functions.R": {
-      "checksum": "e83630a42e92b44834e22e2f5a25717f"
+      "checksum": "ff066a834ac4fb139236bba7def910ed"
     },
     "R/girth_plots.R": {
-      "checksum": "01096609eebe865062762093d8157d4e"
+      "checksum": "18ab36c9a01a81b2d81de1d2423c7f07"
     },
     "R/home_fingerprint.R": {
       "checksum": "f658c8e04f9f6919b1a5f6fa23ddb473"
@@ -3952,6 +3916,42 @@
     },
     "R/team_config.R": {
       "checksum": "64bf8285c6f06e224ea0fea5c74a59f7"
+    },
+    "app.R": {
+      "checksum": "a90fe02b6a7d4dd50ea6158b98a2a3e1"
+    },
+    "data/recruiting.db": {
+      "checksum": "c0026c1007ad3e1d4d90f7ed55d03b17"
+    },
+    "data/team_config.csv": {
+      "checksum": "3a93224a97b08028d104cc093d1b1c42"
+    },
+    "precomputed/beef_board_desktop.rds": {
+      "checksum": "39f88a7ef3bae2176136ec58a182158b"
+    },
+    "precomputed/beef_board_phone.rds": {
+      "checksum": "7d619375a174ed38fdcd626ea0a55740"
+    },
+    "precomputed/body_map_desktop.rds": {
+      "checksum": "7756bc3f74febb4b626778fca644c119"
+    },
+    "precomputed/body_map_phone.rds": {
+      "checksum": "796006949bda590ee588bfb23995042c"
+    },
+    "precomputed/dna_desktop.rds": {
+      "checksum": "69e7140543379e65d27c35898ea14371"
+    },
+    "precomputed/dna_phone.rds": {
+      "checksum": "d33323da7ca3d80ecd0380d35d4f49ff"
+    },
+    "precomputed/era_timeline_desktop.rds": {
+      "checksum": "367674df5427c2e90444b840fe9234e4"
+    },
+    "precomputed/era_timeline_phone.rds": {
+      "checksum": "58e636768dcc5bc259f06084956974bb"
+    },
+    "precomputed/meta.rds": {
+      "checksum": "6c38a0affe9b9603f5f3eaec1d757411"
     },
     "www/alabama.png": {
       "checksum": "9ad9c25b423114cadc425a6e6cb2e570"
@@ -4005,7 +4005,7 @@
       "checksum": "2cd7afb9b4269810ea72df0ac51805d5"
     },
     "www/girth-v9.css": {
-      "checksum": "3260e102bebccf91fd215d144d959600"
+      "checksum": "0621b00dfcb068cfb5673bd0eacbb47e"
     },
     "www/girth-v9.js": {
       "checksum": "83931aa291e2c443b4fffb59626ad561"
@@ -4095,7 +4095,7 @@
       "checksum": "513d353c0120c078cc0c24c870ce707c"
     },
     "www/pipeline-status.json": {
-      "checksum": "887350468c8343f3a9dc8e711c274241"
+      "checksum": "2469c34c3eab9de9e93a945edaf305a7"
     },
     "www/pittsburgh.png": {
       "checksum": "04f5199a5f4256e882e5e5a4a30ff425"

@@ -43,6 +43,8 @@ body,
     linear-gradient(180deg, #f6f8fb 0%, var(--gi-canvas) 34rem);
 }
 
+.gi-page-stage { overflow-x: clip; }
+
 .content {
   max-width: 1540px;
   margin-inline: auto;
@@ -254,6 +256,7 @@ select:focus-visible,
 .cb-body {
   padding: 8px 4px 4px;
   border-top: 1px solid var(--gi-line-soft);
+  overflow-x: hidden;
 }
 
 .control-bar .control-label,
@@ -693,6 +696,17 @@ select:focus-visible,
 }
 
 .box-header .box-tools .btn { color: var(--gi-muted); }
+.box-header .twin-toggle {
+  border-color: var(--gi-line);
+  background: #f7f9fc;
+  color: var(--gi-navy-950) !important;
+}
+.box-header .twin-toggle:hover,
+.box-header .twin-toggle:focus {
+  border-color: #FFD200;
+  background: #FFD200;
+  color: #0C234B !important;
+}
 .box-body { padding: 16px; }
 .box-footer { border-top: 1px solid var(--gi-line-soft); background: #fbfcfd; color: var(--gi-muted); }
 
@@ -1356,6 +1370,7 @@ select:focus-visible,
   .main-header .logo::after { display: none; }
   .control-bar { top: 50px; margin-bottom: 12px; padding-inline: 12px; border-radius: 10px; }
   .cb-head { min-height: 46px; gap: 7px; }
+  .cb-head > #cb_summary { flex: 1 1 auto; min-width: 0; overflow: hidden; }
   .cb-body { max-height: calc(100vh - 112px); overflow-y: auto; overscroll-behavior: contain; }
   .cb-summary-text { min-width: 0; overflow: hidden; flex-wrap: nowrap; font-size: 11px; }
   .cb-summary-text > * { flex: 0 0 auto; }

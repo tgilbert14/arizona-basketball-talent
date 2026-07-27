@@ -208,8 +208,37 @@ conf_whole_year <- function(team_slug) {
 ## scripts/precomputeDefaults.R, so precomputed objects can't drift from
 ## live-rendered ones. `phone` mirrors the app's <700px canvas shrink.
 ## ---------------------------------------------------------------------------
+## ggplot2 4.x groups unknown discrete aesthetics before ggiraph draws them.
+## A `glue` vector can then fall through xtfrm.default() and fail in rank().
+## Normalize only plot data frames; waiver/function sentinels stay untouched.
+girafe_plain_data <- function(data) {
+  if (!is.data.frame(data) || ncol(data) == 0L) return(data)
+  glue_columns <- vapply(data, inherits, logical(1), what = "glue")
+  if (!any(glue_columns)) return(data)
+  data[glue_columns] <- lapply(data[glue_columns], function(x) {
+    out <- enc2utf8(as.character(x))
+    names(out) <- names(x)
+    out
+  })
+  data
+}
+
+girafe_sanitize_plot <- function(p) {
+  if (!inherits(p, "ggplot")) return(p)
+  p$data <- girafe_plain_data(p$data)
+  if (length(p$layers) > 0L) {
+    for (i in seq_along(p$layers)) {
+      if (is.data.frame(p$layers[[i]]$data)) {
+        p$layers[[i]]$data <- girafe_plain_data(p$layers[[i]]$data)
+      }
+    }
+  }
+  p
+}
+
 girafe_build <- function(p, w = 11.5, h = 6.5, name = "big12-girth-index",
                          phone = FALSE) {
+  p <- girafe_sanitize_plot(p)
   if (isTRUE(phone)) {
     scale <- 7 / w
     h <- max(4, h * scale * 1.25)
