@@ -71,6 +71,102 @@ scope_note <- function(players_note) {
   paste0(" Showing: ", players_note, ".")
 }
 
+## Program Reach uses role colors instead of school colors whenever a second
+## program is present. Team palettes can be nearly identical (Arizona/Georgia
+## is the motivating case); the Okabe-Ito blue + vermillion pair stays distinct
+## for common color-vision deficiencies, while shape carries the same meaning.
+reach_role_colors <- function() {
+  c(selected = "#0072B2", comparison = "#D55E00")
+}
+
+## Attach explicit selected/comparison roles once, then reuse them across the
+## map, distance plots, and farthest-player table. A missing comparison never
+## removes the selected program from the surface.
+reach_program_data <- function(size_data, team_slug, compare_slug = NULL) {
+  ctx <- comparison_context(team_slug, compare_slug)
+  slugs <- ctx$team_slug
+  if (isTRUE(ctx$active)) slugs <- c(slugs, ctx$compare_slug)
+  slugs <- slugs[nzchar(slugs)]
+  if (!length(slugs)) return(size_data[0, , drop = FALSE])
+
+  size_data %>%
+    filter(School %in% slugs) %>%
+    mutate(
+      ReachRoleKey = ifelse(School == ctx$team_slug,
+                            "selected", "comparison"),
+      ReachRole = ifelse(ReachRoleKey == "selected",
+                         "Selected", "Comparison"),
+      ReachProgram = ifelse(
+        ReachRoleKey == "selected", ctx$team_name, ctx$compare_name),
+      ReachLegend = paste0(ReachProgram, " - ", tolower(ReachRole))
+    )
+}
+
+## Coverage receipt shared by the UI and map. mapped needs both coordinates;
+## distance needs a finite campus-distance value. Zero-row programs are kept
+## so a requested comparison can be described honestly instead of disappearing.
+reach_program_coverage <- function(size_data, team_slug, compare_slug = NULL) {
+  ctx <- comparison_context(team_slug, compare_slug)
+  keys <- data.frame(
+    School = ctx$team_slug,
+    ReachRoleKey = "selected",
+    ReachRole = "Selected",
+    ReachProgram = ctx$team_name,
+    stringsAsFactors = FALSE
+  )
+  if (isTRUE(ctx$active)) {
+    keys <- rbind(keys, data.frame(
+      School = ctx$compare_slug,
+      ReachRoleKey = "comparison",
+      ReachRole = "Comparison",
+      ReachProgram = ctx$compare_name,
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  d <- reach_program_data(size_data, team_slug, compare_slug)
+  if (nrow(d)) {
+    has_coords <- if (all(c("lat", "long") %in% names(d))) {
+      is.finite(suppressWarnings(as.numeric(d$lat))) &
+        is.finite(suppressWarnings(as.numeric(d$long)))
+    } else rep(FALSE, nrow(d))
+    has_distance <- if ("miles_away" %in% names(d)) {
+      is.finite(suppressWarnings(as.numeric(d$miles_away)))
+    } else rep(FALSE, nrow(d))
+    d$.reach_mapped <- has_coords
+    d$.reach_distance <- has_distance
+    counts <- d %>%
+      group_by(School) %>%
+      summarize(total = n(), mapped = sum(.reach_mapped),
+                distance = sum(.reach_distance), .groups = "drop")
+    keys <- keys %>% left_join(counts, by = "School")
+  } else {
+    keys$total <- keys$mapped <- keys$distance <- 0L
+  }
+  keys %>%
+    mutate(across(c(total, mapped, distance),
+                  ~tidyr::replace_na(as.integer(.x), 0L)))
+}
+
+reach_comparison_gap <- function(size_data, team_slug, compare_slug = NULL,
+                                 metric = c("distance", "mapped")) {
+  metric <- match.arg(metric)
+  ctx <- comparison_context(team_slug, compare_slug)
+  if (!isTRUE(ctx$active)) return("")
+  row <- reach_program_coverage(size_data, team_slug, compare_slug) %>%
+    filter(ReachRoleKey == "comparison")
+  if (!nrow(row) || row$total[1] == 0) {
+    return(glue("{ctx$compare_name} has no player records in this filtered window."))
+  }
+  available <- row[[metric]][1]
+  if (available > 0) return("")
+  if (metric == "mapped") {
+    glue("{ctx$compare_name} has {row$total[1]} player records, but none has a mapped listed origin in this window.")
+  } else {
+    glue("{ctx$compare_name} has {row$total[1]} player records, but none has a usable campus-distance value in this window.")
+  }
+}
+
 ## The global comparison picker spans every onboarded Power-4 program, while
 ## several boards deliberately calculate a single conference's benchmark. Keep
 ## that statistical boundary honest in the copy: an out-of-league selection is
@@ -1426,17 +1522,39 @@ plot_era_timeline <- function(size_data, team_slug, sport,
 ## DISTANCE LAB -- interactive miles-from-home scatter (click any recruit)
 ## ---------------------------------------------------------------------------
 plot_distance_lab <- function(size_data, team_slug, sport,
-                              show_outliers = "show") {
-  d <- size_data %>%
-    filter(School == team_slug, !is.na(miles_away))
-  removed_n <- 0
-  if (show_outliers == "hide" && nrow(d) > 4) {
-    removed_n <- nrow(get_Outliers(d))
-    d <- remove_Outliers(d)
-  }
+                              show_outliers = "show",
+                              compare_slug = NULL) {
+  ctx <- comparison_context(team_slug, compare_slug)
+  all_d <- reach_program_data(size_data, team_slug, compare_slug) %>%
+    filter(is.finite(suppressWarnings(as.numeric(miles_away))))
+  d <- all_d %>% filter(ReachRoleKey == "selected")
+  cmp_d <- all_d %>% filter(ReachRoleKey == "comparison")
 
+  trim_distance <- function(x) {
+    removed <- 0L
+    if (show_outliers == "hide" && nrow(x) > 4) {
+      removed <- nrow(get_Outliers(x))
+      x <- remove_Outliers(x)
+    }
+    list(data = x, removed = removed)
+  }
+  main_trim <- trim_distance(d)
+  d <- main_trim$data
+  removed_n <- main_trim$removed
+  cmp_trim <- trim_distance(cmp_d)
+  cmp_d <- cmp_trim$data
+  cmp_removed_n <- cmp_trim$removed
+
+  has_cmp <- nrow(cmp_d) > 0
+  comparison_requested <- isTRUE(ctx$active)
+  role_cols <- reach_role_colors()
   hl <- highlight_colors(team_slug)
+  if (comparison_requested) hl["main"] <- unname(role_cols["selected"])
+  avg_col <- if (comparison_requested) role_cols["selected"] else "#D55E00"
   t_lab <- team_label(team_slug)
+  plot_years <- range(c(d$Year, cmp_d$Year), na.rm = TRUE)
+  display_yr_rng <- paste0(plot_years[1], "-", plot_years[2])
+  cmp_lab <- if (comparison_requested) ctx$compare_name else ""
   yr_rng <- paste0(min(d$Year), "–", max(d$Year))
 
   band <- d %>%
@@ -1445,11 +1563,19 @@ plot_distance_lab <- function(size_data, team_slug, sport,
               p75 = quantile(miles_away, 0.75, na.rm = TRUE),
               avg = mean(miles_away, na.rm = TRUE), .groups = "drop")
   med_all <- median(d$miles_away, na.rm = TRUE)
+  median_label <- if (comparison_requested) {
+    glue("{t_lab} median ({round(med_all, 0)} mi)")
+  } else glue("Median ({round(med_all, 0)} mi)")
+  cmp_band <- cmp_d %>%
+    group_by(Year) %>%
+    summarize(avg = mean(miles_away, na.rm = TRUE), .groups = "drop")
 
   d$.p247 <- p247_url(d$Name, d$Year, sport, d$Type, profile_col(d))
+  d$.reach_id <- paste(d$School, d$Name, d$Year, sep = "::")
   d <- d %>%
     mutate(
       tip = glue(
+        "<strong>Selected - {ReachProgram}</strong><br/>",
         "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
         "{miles_away} miles from campus<br/>From: {loc_dash(Location)}<br/>",
         "{HeightLabel} • {Weight} lbs • 247 Rating: {round(Ranking, 0)}<br/>",
@@ -1457,6 +1583,39 @@ plot_distance_lab <- function(size_data, team_slug, sport,
         'target="_blank">Open on 247Sports →</a><br/>',
         "<em>Tap the dot to pin this card</em>")
     )
+  cmp_d$.reach_id <- rep("", nrow(cmp_d))
+  cmp_d$tip <- rep("", nrow(cmp_d))
+  if (has_cmp) {
+    cmp_d$.p247 <- p247_url(cmp_d$Name, cmp_d$Year, sport, cmp_d$Type,
+                            profile_col(cmp_d))
+    cmp_d$.reach_id <- paste(cmp_d$School, cmp_d$Name, cmp_d$Year, sep = "::")
+    cmp_d <- cmp_d %>%
+      mutate(
+        tip = glue(
+          "<strong>Comparison - {ReachProgram}</strong><br/>",
+          "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
+          "{miles_away} miles from campus<br/>From: {loc_dash(Location)}<br/>",
+          "{HeightLabel} - {Weight} lbs - 247 Rating: {round(Ranking, 0)}<br/>",
+          '<a href="{.p247}" target="_blank">Open on 247Sports</a><br/>',
+          "<em>Tap the triangle to pin this card</em>")
+      )
+  }
+
+  gap_note <- reach_comparison_gap(size_data, team_slug, compare_slug,
+                                   metric = "distance")
+  hidden_total <- removed_n + cmp_removed_n
+  display_title <- if (comparison_requested) {
+    glue("{t_lab} vs {cmp_lab}: Miles from Listed Origin by Class ({display_yr_rng})")
+  } else {
+    glue("{t_lab} {str_to_title(sport)}: Miles from Listed Origin by Class ({yr_rng})")
+  }
+  display_subtitle <- if (has_cmp) {
+    glue("Blue circles = {t_lab} (selected); orange triangles = {cmp_lab} (comparison). Pale band = {t_lab}'s 25th-75th percentile; solid/dashed lines = class averages{ifelse(hidden_total > 0, glue('. {hidden_total} outliers hidden by program (1.5 x IQR)'), '')}.")
+  } else if (comparison_requested) {
+    glue("Showing {t_lab}. {gap_note}")
+  } else {
+    glue("Each dot = distance from the player's listed origin to campus. Yellow band = 25th-75th percentile, orange = class average{ifelse(removed_n > 0, glue('. {removed_n} outliers hidden (1.5 x IQR)'), '')}.")
+  }
 
   ggplot() +
     geom_ribbon(data = band, aes(x = Year, ymin = p25, ymax = p75),
@@ -1464,18 +1623,28 @@ plot_distance_lab <- function(size_data, team_slug, sport,
     geom_hline(yintercept = med_all, linetype = "dotted",
                color = "#009E73") +
     annotate("text", x = min(d$Year), y = med_all,
-             label = glue("Median ({round(med_all, 0)} mi)"),
+             label = median_label,
              hjust = 0, vjust = -0.6, color = "#009E73", size = 3.6) +
     geom_line(data = band, aes(x = Year, y = avg),
-              color = "#D55E00", linewidth = 1.3, alpha = 0.5) +
+              color = avg_col, linewidth = 1.3, alpha = 0.5) +
     geom_point(data = band, aes(x = Year, y = avg),
-               color = "#D55E00", size = 3, alpha = 0.5) +
+               color = avg_col, size = 3, alpha = 0.5) +
     geom_point_interactive(
       data = d,
-      aes(x = Year, y = miles_away, tooltip = tip, data_id = Name),
+      aes(x = Year, y = miles_away, tooltip = tip, data_id = .reach_id),
       color = hl["main"], alpha = 0.7, size = 3.4,
       position = position_jitter(width = 0.13, height = 0, seed = 7)) +
-    scale_x_continuous(breaks = seq(min(d$Year), max(d$Year), 1)) +
+    geom_line(data = cmp_band, aes(x = Year, y = avg),
+              color = role_cols["comparison"], linewidth = 1.3,
+              linetype = "22", alpha = 0.8) +
+    geom_point(data = cmp_band, aes(x = Year, y = avg),
+               color = role_cols["comparison"], shape = 17, size = 3) +
+    geom_point_interactive(
+      data = cmp_d,
+      aes(x = Year, y = miles_away, tooltip = tip, data_id = .reach_id),
+      color = role_cols["comparison"], shape = 17, alpha = 0.82, size = 3.7,
+      position = position_jitter(width = 0.13, height = 0, seed = 11)) +
+    scale_x_continuous(breaks = seq(plot_years[1], plot_years[2], 1)) +
     labs(
       title = glue("{t_lab} {str_to_title(sport)}: Miles from Listed Origin by Class ({yr_rng})"),
       subtitle = glue(
@@ -1485,6 +1654,10 @@ plot_distance_lab <- function(size_data, team_slug, sport,
       x = "Class Year", y = "Miles from Home",
       caption = "Tap or hover any dot for the recruit card; click to open their 247 page. Portal transfers appear once a listed origin is known."
     ) +
+    labs(
+      title = display_title, subtitle = wrap_title(display_subtitle, 92),
+      caption = "Tap or hover a point for its recruit card. Role colors and shapes stay fixed across Program Reach; distances require a mapped listed origin."
+    ) +
     theme_girth()
 }
 
@@ -1492,13 +1665,93 @@ plot_distance_lab <- function(size_data, team_slug, sport,
 ## DISTANCE BOX -- miles from home by position group, historic vs newest
 ## class (replaces the legacy sourced scripts/box_plot.R)
 ## ---------------------------------------------------------------------------
-plot_distance_box <- function(size_data, team_slug, sport) {
+plot_distance_box <- function(size_data, team_slug, sport,
+                              compare_slug = NULL) {
   hl <- highlight_colors(team_slug)
   t_lab <- team_label(team_slug)
+  ctx <- comparison_context(team_slug, compare_slug)
+  role_cols <- reach_role_colors()
+  reach_all <- reach_program_data(size_data, team_slug, compare_slug) %>%
+    filter(is.finite(suppressWarnings(as.numeric(miles_away))),
+           as.character(PosGroup) != "Other")
+  cmp_d <- reach_all %>% filter(ReachRoleKey == "comparison")
+  has_cmp <- isTRUE(ctx$active) && nrow(cmp_d) > 0
+  box_gap_note <- reach_comparison_gap(
+    size_data, team_slug, compare_slug, metric = "distance")
   d <- size_data %>%
     filter(School == team_slug, !is.na(miles_away),
            as.character(PosGroup) != "Other")
   if (nrow(d) == 0) return(NULL)
+  if (has_cmp) {
+    program_levels <- c(
+      paste0(t_lab, " - selected"),
+      paste0(ctx$compare_name, " - comparison")
+    )
+    role_values <- stats::setNames(
+      unname(role_cols[c("selected", "comparison")]), program_levels)
+    shape_values <- stats::setNames(c(16, 17), program_levels)
+    d_pair <- reach_all %>%
+      mutate(
+        ReachLegend = factor(ReachLegend, levels = program_levels),
+        .reach_id = paste(School, Name, Year, sep = "::")
+      )
+    d_pair$.p247 <- p247_url(d_pair$Name, d_pair$Year, sport, d_pair$Type,
+                             profile_col(d_pair))
+    d_pair <- d_pair %>%
+      mutate(
+        tip = glue(
+          "<strong>{ReachRole} - {ReachProgram}</strong><br/>",
+          "<b>{pc_link(Name, School)}</b> ({Position}, {Year})<br/>",
+          "{miles_away} miles from campus<br/>From: {loc_dash(Location)}<br/>",
+          "247 Rating: {round(Ranking, 0)}<br/>",
+          '<a href="{.p247}" target="_blank">Open on 247Sports</a><br/>',
+          "<em>Tap the point to pin this card</em>")
+      )
+
+    x_cap_pair <- min(max(d_pair$miles_away), 3100)
+    hidden_pair <- sum(d_pair$miles_away > x_cap_pair)
+    hidden_note <- if (hidden_pair > 0) {
+      glue(" {hidden_pair} player{ifelse(hidden_pair == 1, '', 's')} beyond {x_cap_pair} mi not shown.")
+    } else ""
+
+    return(
+      ggplot(
+        d_pair,
+        aes(x = miles_away, y = forcats::fct_rev(PosGroup),
+            color = ReachLegend, fill = ReachLegend)
+      ) +
+        geom_boxplot(
+          aes(group = interaction(PosGroup, ReachLegend)),
+          position = position_dodge(width = 0.70),
+          outliers = FALSE, width = 0.56, alpha = 0.12, linewidth = 0.8
+        ) +
+        geom_point_interactive(
+          data = d_pair %>% filter(miles_away <= x_cap_pair),
+          aes(shape = ReachLegend, tooltip = tip, data_id = .reach_id),
+          size = 2.8, alpha = 0.82, stroke = 0.8,
+          position = position_jitterdodge(
+            dodge.width = 0.70, jitter.width = 0,
+            jitter.height = 0.06, seed = 7)
+        ) +
+        scale_color_manual(values = role_values, name = "Program role") +
+        scale_fill_manual(values = role_values, guide = "none") +
+        scale_shape_manual(values = shape_values, name = "Program role") +
+        coord_cartesian(xlim = c(0, x_cap_pair)) +
+        labs(
+          title = wrap_title(
+            glue("{t_lab} vs {ctx$compare_name}: Miles from Listed Origin by Position Group"),
+            58),
+          subtitle = wrap_title(
+            glue("Blue circles = {t_lab} (selected); orange triangles = {ctx$compare_name} (comparison). Boxes use each program's full selected-window distribution.{hidden_note}"),
+            92),
+          x = "Miles from listed origin", y = NULL,
+          caption = paste(
+            "Tap or hover any point for its recruit card. Distances require a",
+            "mapped listed origin; each box uses only the named program's players.")
+        ) +
+        theme_girth()
+    )
+  }
 
   yr_max <- max(d$Year)
   his_rng <- if (min(d$Year) < yr_max) {
@@ -1516,6 +1769,13 @@ plot_distance_box <- function(size_data, team_slug, sport) {
   ## keep Hawaii/international from squashing the whole axis
   x_cap <- min(max(d$miles_away), 3100)
   hidden_n <- sum(d$miles_away > x_cap)
+  single_caption <- paste(
+    "Tap or hover any dot for the recruit card. Distances need a listed origin,",
+    "so transfers appear only once one is known.",
+    if (isTRUE(ctx$active) && !has_cmp) {
+      paste("Comparison not plotted:", box_gap_note)
+    } else ""
+  )
 
   ggplot(d, aes(x = miles_away, y = forcats::fct_rev(PosGroup))) +
     geom_boxplot(fill = hl["main"], alpha = 0.14, color = "grey45",
@@ -1542,6 +1802,7 @@ plot_distance_box <- function(size_data, team_slug, sport) {
       caption = paste("Tap or hover any dot for the recruit card. Distances need a",
                       "listed origin, so transfers appear only once one is known.")
     ) +
+    labs(caption = single_caption) +
     theme_girth()
 }
 
@@ -1601,8 +1862,21 @@ plot_era_position_mix <- function(size_data, team_slug, sport, players_note = NU
 ##    footprints, replacing the old single-team sourced map.R
 ## ---------------------------------------------------------------------------
 build_pipeline_map <- function(size_data, team_slug, sport,
-                               compare_slug = NULL, n_unmapped = 0) {
+                               compare_slug = NULL) {
+  ctx <- comparison_context(team_slug, compare_slug)
+  role_cols <- reach_role_colors()
+  coverage <- reach_program_coverage(size_data, team_slug, compare_slug)
+  coverage_text <- paste(
+    glue("{coverage$ReachProgram} ({tolower(coverage$ReachRole)}): {coverage$mapped}/{coverage$total} mapped; {coverage$distance}/{coverage$total} with distance"),
+    collapse = " | "
+  )
+  mapped_gap <- reach_comparison_gap(
+    size_data, team_slug, compare_slug, metric = "mapped")
+  compare_slug <- if (isTRUE(ctx$active)) ctx$compare_slug else NULL
   prep_team <- function(slug) {
+    role_key <- if (identical(slug, ctx$team_slug)) "selected" else "comparison"
+    role_name <- if (role_key == "selected") "Selected" else "Comparison"
+    program_name <- team_label(slug)
     d <- size_data %>%
       filter(School == slug,
              !is.na(suppressWarnings(as.numeric(lat))),
@@ -1626,9 +1900,13 @@ build_pipeline_map <- function(size_data, team_slug, sport,
                TRUE ~ "Body measurements not listed"
              ),
              URL = p247_url(Name, Year, sport, Type, .purl),
+             ReachRole = role_name,
+             ReachProgram = program_name,
+             map_label = paste0(role_name, " - ", program_name, ": ", Name),
              ## pc_link works in leaflet popups too -- the app's .pc-open
              ## listener is document-level, so map names open player cards
              popup = paste0(
+               "<strong>", role_name, " - ", program_name, "</strong><br/>",
                "<strong>", pc_link(Name, School), "</strong> (", Position,
                ", ", Year, ")<br/>",
                body_line, " • 247 Rating: ",
@@ -1640,8 +1918,8 @@ build_pipeline_map <- function(size_data, team_slug, sport,
 
   main <- prep_team(team_slug)
   cmp <- if (!is.null(compare_slug)) prep_team(compare_slug) else main[0, ]
-  c_main <- team_color(team_slug)
-  c_cmp <- if (!is.null(compare_slug)) team_color(compare_slug) else "grey"
+  c_main <- unname(role_cols["selected"])
+  c_cmp <- unname(role_cols["comparison"])
 
   map <- leaflet() %>%
     addProviderTiles(providers$CartoDB.Positron)
@@ -1666,17 +1944,23 @@ build_pipeline_map <- function(size_data, team_slug, sport,
 
   ## compare team first so the main team draws on top
   if (nrow(cmp) > 0) {
+    cmp_icons <- awesomeIcons(
+      icon = "star", library = "fa", markerColor = "orange",
+      iconColor = "white"
+    )
     map <- map %>%
-      addCircleMarkers(data = cmp, lng = ~long, lat = ~lat, radius = 5,
-                       color = c_cmp, stroke = TRUE, weight = 1.5,
-                       fillColor = c_cmp, fillOpacity = 0.55,
-                       popup = ~popup, group = team_label(compare_slug))
+      addAwesomeMarkers(
+        data = cmp, lng = ~long, lat = ~lat, icon = cmp_icons,
+        popup = ~popup, label = ~map_label,
+        group = team_label(compare_slug)
+      )
   }
   map <- map %>%
-    addCircleMarkers(data = main, lng = ~long, lat = ~lat, radius = 6,
-                     color = "white", stroke = TRUE, weight = 1.2,
-                     fillColor = c_main, fillOpacity = 0.92,
-                     popup = ~popup, group = team_label(team_slug))
+    addCircleMarkers(
+      data = main, lng = ~long, lat = ~lat, radius = 6,
+      color = "white", stroke = TRUE, weight = 1.4,
+      fillColor = c_main, fillOpacity = 0.94, popup = ~popup,
+      label = ~map_label, group = team_label(team_slug))
 
   ## campus marker (the team's logo) + legend + attribution
   campus <- main %>% filter(!is.na(college_lat)) %>% slice(1)
@@ -1696,9 +1980,12 @@ build_pipeline_map <- function(size_data, team_slug, sport,
                  label = paste(team_label(team_slug), "campus")) %>%
       setView(lng = campus$college_long, lat = campus$college_lat, zoom = 4.5)
   }
-  legend_labels <- c(team_label(team_slug),
-                     if (nrow(cmp) > 0) team_label(compare_slug))
-  legend_colors <- c(c_main, if (nrow(cmp) > 0) c_cmp)
+  legend_labels <- c(
+    paste0("Circle - ", team_label(team_slug), " - selected"),
+    if (isTRUE(ctx$active)) paste0(
+      "Star pin - ", ctx$compare_name, " - comparison",
+      ifelse(nrow(cmp) > 0, "", " (none mapped)")))
+  legend_colors <- c(c_main, if (isTRUE(ctx$active)) c_cmp)
   map %>%
     addLegend(position = "topright", colors = legend_colors,
               labels = legend_labels, opacity = 0.9,
@@ -1707,16 +1994,15 @@ build_pipeline_map <- function(size_data, team_slug, sport,
       style = "background: rgba(255,255,255,.85); padding: 3px 8px;
                border-radius: 4px; font-size: 11px; max-width: 290px;",
       tags$small(
+        tags$b("Coverage: ", coverage_text), tags$br(),
+        if (nzchar(mapped_gap)) tags$span(mapped_gap) else NULL,
+        if (nzchar(mapped_gap)) tags$br() else NULL,
+        tags$span("Role colors and shapes are fixed across teams. "), tags$br(),
         "Data: ", tags$a(href = "https://247sports.com",
                          "247Sports", target = "_blank"),
         " — players with mapped listed origins; transfers appear once an origin
          is known.",
-        if (n_unmapped > 0) {
-          tags$b(glue(" {n_unmapped} player{ifelse(n_unmapped == 1, '', 's')}
-                       in this window can't be mapped yet (no listed origin on
-                       file, which covers most portal transfers, or awaiting
-                       geocoding)."))
-        })),
+        )),
       position = "bottomleft")
 }
 

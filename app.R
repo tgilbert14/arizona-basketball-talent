@@ -729,6 +729,10 @@ INFO_MODALS <- list(
       247Sports recruiting profile. For non-portal recruits this is usually
       the last listed high school or prep program, not birthplace. Shaded
       shapes are smoothed convex hulls of the selected program's footprint.</p>
+      <p><strong>Comparison roles:</strong> blue filled circles always mean
+      the selected program. Orange star pins always mean the comparison,
+      regardless of school colors. Hover labels and popups repeat both the
+      role and program name.</p>
       <p><strong>Gaps:</strong> transfers join only when a listed origin is
       present. Earlier transfer classes are often unmapped; new records reach
       the map after the nightly geocoding pass.</p>"),
@@ -739,6 +743,10 @@ INFO_MODALS <- list(
       recruit's listed origin to campus, from geocoded 247 locations.</p>
       <p><strong>Outliers:</strong> the toggle hides points beyond 1.5×IQR
       from the middle 50% (standard boxplot rule) and recomputes the bands.</p>
+      <p><strong>Comparisons:</strong> selected-program circles and
+      comparison-program triangles stay separate. Bands and boxes are
+      calculated within the named program; a requested program with no usable
+      origin is reported instead of silently disappearing.</p>
       <p><strong>Verify anything:</strong> hover a dot for the recruit card;
       click to open their 247 page.</p>")
 )
@@ -2719,13 +2727,14 @@ ui <- dashboardPage(
       ## PROGRAM REACH ---------------------------------------------------------------
       tabItem(tabName = "summary",
               fluidRow(
+                column(width = 12, uiOutput("reach_compare_receipt")),
                 box(
                   title = tagList("Program Reach: mapped recruiting pipelines",
                                   info_btn("info_map")),
                   footer = HTML("<span style='color:#888;'>
-                    <em>Dots show mapped listed origins. Shaded shapes trace
-                    your selected program; the comparison pipeline keeps its
-                    own team color.</em></span>"),
+                    <em>Blue filled circles mark the selected program; orange
+                    star pins mark the comparison. Shaded shapes trace only
+                    the selected program's footprint.</em></span>"),
                   status = "primary",
                   solidHeader = TRUE, width = 12,
                   collapsible = TRUE, collapsed = FALSE,
@@ -2752,8 +2761,8 @@ ui <- dashboardPage(
                   title = tagList("Travel by signing class",
                                   info_btn("info_distance")),
                   footer = HTML("<span style='color:#888;'>
-                    Tap or hover any dot for the recruit card; pin it to open their
-                    247Sports page.</span>"),
+                    Tap or hover any point for the recruit card; pin it to open
+                    the player's 247Sports page.</span>"),
                   status = "primary",
                   solidHeader = TRUE, width = 12,
                   collapsible = TRUE, collapsed = TRUE,
@@ -5212,11 +5221,52 @@ server <- function(input, output, session) {
     )
   })
   ## ---- Program Reach: selected-window table + map + distance plots ---------
+  output$reach_compare_receipt <- renderUI({
+    req(input$g_team, input$g_years)
+    ctx <- comparison_context(input$g_team, g_cmp())
+    if (!isTRUE(ctx$active)) return(NULL)
+
+    coverage <- reach_program_coverage(
+      reach_window(), input$g_team, ctx$compare_slug)
+    role_item <- function(row) {
+      role_key <- row$ReachRoleKey[[1]]
+      div(
+        class = paste("gi-reach-receipt__program",
+                      paste0("gi-reach-receipt__program--", role_key)),
+        icon(if (role_key == "selected") "circle" else "star"),
+        shiny::span(
+          strong(paste0(row$ReachProgram[[1]], " - ",
+                        tolower(row$ReachRole[[1]]))),
+          shiny::span(glue(
+            "{row$mapped[[1]]}/{row$total[[1]]} mapped | ",
+            "{row$distance[[1]]}/{row$total[[1]]} distance-ready"))
+        )
+      )
+    }
+    mapped_gap <- reach_comparison_gap(
+      reach_window(), input$g_team, ctx$compare_slug, metric = "mapped")
+    distance_gap <- reach_comparison_gap(
+      reach_window(), input$g_team, ctx$compare_slug, metric = "distance")
+    gap_note <- if (nzchar(mapped_gap)) mapped_gap else distance_gap
+
+    div(
+      class = "gi-reach-receipt", role = "status",
+      "aria-live" = "polite",
+      div(class = "gi-reach-receipt__roles",
+          lapply(seq_len(nrow(coverage)),
+                 function(i) role_item(coverage[i, , drop = FALSE]))),
+      if (nzchar(gap_note))
+        div(class = "gi-reach-receipt__gap",
+            icon("circle-info"), gap_note)
+    )
+  })
   filtered_data <- reactive({
     req(input$g_team, input$g_years)
     validate(need(input$g_team %in% TEAM_CONFIG$slug, "Unknown team."))
-    d <- reach_window() %>% filter(School == input$g_team)
-    validate(need(nrow(d) > 0, "No players in this window."))
+    d <- reach_program_data(reach_window(), input$g_team, g_cmp())
+    validate(need(
+      nrow(d %>% filter(ReachRoleKey == "selected")) > 0,
+      "No players in this window."))
     d %>% mutate(
       Ranking = suppressWarnings(as.numeric(Ranking)),
       NationalRank = suppressWarnings(as.numeric(NationalRank)),
@@ -5224,8 +5274,8 @@ server <- function(input, output, session) {
       University = TeamName)
   })
 
-  ## Pipeline map built from the raw-origin frame (main + compare footprints
-  ## in team colors); unlike body charts, geography does not require size data.
+  ## Pipeline map uses fixed role colors/shapes for selected + comparison
+  ## footprints; unlike body charts, geography does not require size data.
   output$gridPlot <- renderLeaflet({
     req(input$g_team, input$g_years)
     team_w <- reach_window() %>% filter(School == input$g_team)
@@ -5234,12 +5284,8 @@ server <- function(input, output, session) {
       is.finite(suppressWarnings(as.numeric(team_w$long)))
     validate(need(sum(mapped) > 0,
                   "No recruits with mapped listed origins in this window."))
-    ## say on the map itself how many window players CAN'T be mapped yet
-    ## (transfers appear once the nightly profile backfill captures a listed
-    ## origin; a few non-portal recruits still lack geocodes)
-    n_unmapped <- sum(!mapped)
     build_pipeline_map(reach_window(), input$g_team, g_sport(),
-                       compare_slug = g_cmp(), n_unmapped = n_unmapped)
+                       compare_slug = g_cmp())
   })
 
   ## v4.4: themed interactive rebuild (the sourced scripts/box_plot.R is
@@ -5251,7 +5297,8 @@ server <- function(input, output, session) {
       filter(School == input$g_team, !is.na(miles_away))
     validate(need(nrow(d) > 0,
                   "No recruits with mapped listed origins in this window."))
-    girafe_try(girafe_wrap(plot_distance_box(reach_window(), input$g_team, g_sport()),
+    girafe_try(girafe_wrap(plot_distance_box(
+                  reach_window(), input$g_team, g_sport(), compare_slug = g_cmp()),
                 w = 10.5, h = 4.2, name = png_name("distance-box")), "distance box")
   })
 
@@ -5263,7 +5310,8 @@ server <- function(input, output, session) {
       filter(School == input$g_team, !is.na(miles_away))
     validate(need(nrow(d) > 0, "No recruits with mapped listed origins in this window."))
     girafe_try(girafe_wrap(plot_distance_lab(reach_window(), input$g_team, g_sport(),
-                                  show_outliers = input$show_outliers),
+                                  show_outliers = input$show_outliers,
+                                  compare_slug = g_cmp()),
                 name = png_name("distance-lab")), "distance lab")
   })
 
@@ -5273,18 +5321,41 @@ server <- function(input, output, session) {
       return(data.frame(Message =
         "No recruits found for the selected filters. Please adjust your selections."))
     }
+    ctx <- comparison_context(input$g_team, g_cmp())
+    coverage <- reach_program_coverage(
+      reach_window(), input$g_team, g_cmp())
+    table_caption <- NULL
+    if (isTRUE(ctx$active)) {
+      cmp_row <- coverage %>% filter(ReachRoleKey == "comparison")
+      receipt <- if (cmp_row$total[[1]] == 0) {
+        glue("{ctx$compare_name} has no player records in this filtered window.")
+      } else {
+        glue("Both programs are included; {cmp_row$distance[[1]]}/{cmp_row$total[[1]]} {ctx$compare_name} records have a usable distance.")
+      }
+      table_caption <- tags$caption(
+        style = "caption-side: top; text-align: left;",
+        paste0("Selected vs comparison receipt: ", receipt))
+    }
+
     d <- filtered_data() %>%
-      select(Name, miles_away, Location, University, Ranking,
+      select(Role = ReachRole, Name, miles_away, Location, University, Ranking,
              NationalRank, Position, Height, Weight, Year) %>%
       arrange(desc(miles_away))
 
-    datatable(
+    table <- datatable(
       as.data.frame(d),
-      colnames = c("Recruit", "Distance from Listed Origin (miles)",
+      caption = table_caption,
+      colnames = c("Role", "Recruit", "Distance from Listed Origin (miles)",
                    "Listed Origin", "Destination Program", "247Sports Rating",
                    "National Ranking", "Position", "Height", "Weight", "Year"),
       options = list(pageLength = 10, lengthChange = FALSE),
       rownames = FALSE)
+    formatStyle(
+      table, "Role",
+      color = styleEqual(c("Selected", "Comparison"),
+                         unname(reach_role_colors())),
+      fontWeight = "700"
+    )
   })
 
 }
