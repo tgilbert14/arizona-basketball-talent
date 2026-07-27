@@ -2525,7 +2525,15 @@ talent_composites <- function(size_data, seasons) {
 ## value_fmt (for the talent axis), yr_rng.
 quadrant_data <- function(team_seasons, size_data, team_slug,
                           compare_slug = NULL) {
-  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## Preserve the full Power-4 inputs long enough to derive an outside-league
+  ## comparison AFTER the active conference field has been calculated. That
+  ## ordering is the guardrail: an SEC reference can be drawn beside Arizona,
+  ## but it can never move a Big 12 row or median.
+  all_team_seasons <- team_seasons
+  all_size_data <- size_data
+  ctx <- comparison_context(team_slug, compare_slug)
+  cmp_safe <- ctx$compare_slug
+  external_requested <- isTRUE(ctx$cross_conference)
   ## pool only the active team's conference members (all 16 at Phase 0): the
   ## quadrant medians + talent panel stay within-conference (team_seasons keys
   ## on slug, recruits on School)
@@ -2555,6 +2563,8 @@ quadrant_data <- function(team_seasons, size_data, team_slug,
       role = case_when(slug == team_slug ~ "main",
                        slug == cmp_safe ~ "compare",
                        TRUE ~ "other"),
+      external_reference = FALSE,
+      plot_label = TeamName,
       tip = glue(
         "<b>{TeamName} ({yr_rng2})</b><br/>",
         "Talent composite: {round(talent, 1)}<br/>",
@@ -2562,11 +2572,67 @@ quadrant_data <- function(team_seasons, size_data, team_slug,
         "Avg SP+: {round(sp, 1)} • Best season: {best}<br/>",
         "<em>Tap the dot to pin this card</em>"))
 
+  ## Freeze the active-field medians before the external row exists. Every
+  ## consumer reads these stored values instead of accidentally re-pooling.
+  talent_median <- median(agg$talent, na.rm = TRUE)
+  win_median <- median(agg$win_pct, na.rm = TRUE)
+
+  has_external <- FALSE
+  if (external_requested) {
+    active_years <- sort(unique(team_seasons$year))
+    external_seasons <- all_team_seasons %>%
+      filter(slug == ctx$compare_slug, year %in% active_years)
+    external_recruits <- all_size_data %>%
+      filter(School == ctx$compare_slug)
+
+    if (nrow(external_seasons) > 0 && nrow(external_recruits) > 0) {
+      external_comp <- talent_composites(external_recruits, active_years)
+      external <- external_seasons %>%
+        left_join(external_comp, by = c("slug" = "School", "year")) %>%
+        group_by(slug) %>%
+        summarize(
+          talent = mean(composite, na.rm = TRUE),
+          win_pct = 100 * sum(wins) / sum(wins + losses),
+          sp = mean(sp_rating, na.rm = TRUE),
+          W = sum(wins), L = sum(losses),
+          seasons_n = dplyr::n(),
+          best = paste0(year[which.max(wins)], " (", max(wins), " wins)"),
+          .groups = "drop") %>%
+        filter(is.finite(talent), is.finite(win_pct)) %>%
+        mutate(
+          School = slug,
+          TeamName = team_label(slug),
+          role = "external",
+          external_reference = TRUE,
+          plot_label = glue("{TeamName} · {ctx$compare_conference} ref"),
+          tip = glue(
+            "<b>{TeamName} ({yr_rng2}) — {ctx$compare_conference} external reference</b><br/>",
+            "Talent composite: {round(talent, 1)}<br/>",
+            "Record {W}–{L} ({round(win_pct)}% wins)<br/>",
+            "Avg SP+: {round(sp, 1)} • Best season: {best}<br/>",
+            "<em>Not ranked in {ctx$team_conference}; does not affect its medians</em>"))
+
+      if (nrow(external) > 0) {
+        agg <- bind_rows(agg, external)
+        has_external <- TRUE
+      }
+    }
+  }
+
   attr(agg, "value_label") <- "Talent composite (247 rating points)"
   attr(agg, "value_fmt") <- "%.1f"
   ## the chart's formatter closure (matches the hover card's rounding)
   attr(agg, "value_fmt_fn") <- function(v) sprintf("%.1f", v)
   attr(agg, "yr_rng") <- yr_rng2
+  attr(agg, "talent_median") <- talent_median
+  attr(agg, "win_median") <- win_median
+  attr(agg, "external_reference") <- has_external
+  attr(agg, "external_requested") <- external_requested
+  attr(agg, "external_note") <- if (has_external) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) is an external Power-4 reference; it does not affect the {ctx$team_conference} medians or ranking field.")
+  } else if (external_requested) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) has no qualifying outcome-and-talent record in this window; it is not plotted and the {ctx$team_conference} medians are unchanged.")
+  } else ""
   agg
 }
 
@@ -2575,19 +2641,29 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
                                 compare_slug = NULL) {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
-  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
-                                        "talent-vs-results panel")
   ## single source of truth: the chart draws exactly the table twin's frame
   agg <- quadrant_data(team_seasons, size_data, team_slug,
                        compare_slug = compare_slug)
 
-  med_t <- median(agg$talent, na.rm = TRUE)
-  med_w <- median(agg$win_pct, na.rm = TRUE)
+  med_t <- attr(agg, "talent_median")
+  med_w <- attr(agg, "win_median")
+  external_ref <- isTRUE(attr(agg, "external_reference"))
+  external_note <- attr(agg, "external_note") %||% ""
+  cmp_note <- if (nzchar(external_note)) external_note else
+    comparison_highlight_note(team_slug, compare_slug,
+                              "talent-vs-results panel")
   role_cols <- c(main = unname(hl["main"]),
-                 compare = ifelse(cmp_safe == "", "grey55",
-                                  team_color(cmp_safe)),
+                 compare = ifelse(cmp_safe == "", "grey55", hl["compare"]),
+                 external = ifelse(external_ref, hl["compare"], "grey55"),
                  other = "grey55")
-  yr_rng <- paste0(min(team_seasons$year), "–", max(team_seasons$year))
+  ## An outlined diamond makes an external comparator readable in grayscale
+  ## even when its school color is close to the selected team's primary.
+  role_shapes <- c(main = 16, compare = 17, external = 23, other = 16)
+  role_fills <- c(main = unname(hl["main"]),
+                  compare = ifelse(cmp_safe == "", "grey55", hl["compare"]),
+                  external = "white", other = "grey55")
+  yr_rng <- attr(agg, "yr_rng")
+  active_agg <- dplyr::filter(agg, !external_reference)
   ## realignment honesty: the median lines pool the conference's CURRENT
   ## membership, so a window reaching before it was whole backcasts programs
   ## onto seasons predating their membership (count + seam year from config)
@@ -2602,18 +2678,21 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
     geom_hline(yintercept = med_w, linetype = "dashed", color = "grey55") +
     ## Okabe-Ito blue/vermillion: color-blind-safe, and neither collides
     ## with a team's highlight color (the old red matched Arizona's)
-    annotate("text", x = min(agg$talent), y = max(agg$win_pct),
+    annotate("text", x = min(active_agg$talent), y = max(active_agg$win_pct),
              label = "OVERACHIEVERS", hjust = 0, vjust = 0, size = 3.6,
              fontface = "bold", color = "#0072B2") +
-    annotate("text", x = max(agg$talent), y = min(agg$win_pct),
+    annotate("text", x = max(active_agg$talent), y = min(active_agg$win_pct),
              label = "UNDERACHIEVERS", hjust = 1, vjust = 1, size = 3.6,
              fontface = "bold", color = "#D55E00") +
-    geom_point_interactive(aes(color = role, tooltip = tip, data_id = slug),
-                           size = 5, show.legend = FALSE) +
-    geom_text_repel(aes(label = TeamName, color = role), size = 3.4,
+    geom_point_interactive(aes(color = role, fill = role, shape = role,
+                               tooltip = tip, data_id = slug),
+                           size = 5, stroke = 1.2, show.legend = FALSE) +
+    geom_text_repel(aes(label = plot_label, color = role), size = 3.4,
                     fontface = "bold", show.legend = FALSE, seed = 7,
                     box.padding = 0.35) +
     scale_color_manual(values = role_cols) +
+    scale_fill_manual(values = role_fills) +
+    scale_shape_manual(values = role_shapes) +
     labs(
       title = wrap_title(glue(
         "Talent vs Results, {yr_rng}: Who Outplays Their Recruiting?"), 52),
@@ -2639,7 +2718,13 @@ plot_talent_results <- function(team_seasons, size_data, team_slug,
 ## n (= seasons_n), plus actual/expected win pct and the chart's extras.
 ## attrs: value_label, value_fmt, value_fmt_fn, yr_rng, model_note.
 wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
-  cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
+  ## Keep the complete inputs for a separately scored external row. The active
+  ## conference panel and fit below execute first and remain the sole model.
+  all_team_seasons <- team_seasons
+  all_size_data <- size_data
+  ctx <- comparison_context(team_slug, compare_slug)
+  cmp_safe <- ctx$compare_slug
+  external_requested <- isTRUE(ctx$cross_conference)
   ## pool only the active team's conference members (all 16 at Phase 0): the
   ## WAT fit stays a within-conference residual (team_seasons keys on slug,
   ## recruits on School)
@@ -2689,6 +2774,7 @@ wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
       role = case_when(slug == team_slug ~ "main",
                        slug == cmp_safe ~ "compare",
                        TRUE ~ "other"),
+      external_reference = FALSE,
       value = wat,
       n = seasons_n,
       wat_abs = round(abs(wat), 1),
@@ -2708,8 +2794,82 @@ wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
         "<em>{W}-{L} over {seasons_n} seasons</em>"),
       lab = ifelse(near_even, "~even",
                    paste0(ifelse(wat >= 0, "+", "-"), wat_abs, " W/yr"))) %>%
-    arrange(wat) %>%
-    mutate(TeamName = factor(TeamName, levels = TeamName))
+    arrange(wat)
+
+  active_team_names <- as.character(board$TeamName)
+  active_years <- sort(unique(team_seasons$year))
+  has_external <- FALSE
+  external_outside_range <- FALSE
+
+  if (external_requested) {
+    external_seasons <- all_team_seasons %>%
+      filter(slug == ctx$compare_slug, year %in% active_years)
+    external_recruits <- all_size_data %>%
+      filter(School == ctx$compare_slug)
+
+    if (nrow(external_seasons) > 0 && nrow(external_recruits) > 0) {
+      external_comp <- talent_composites(external_recruits, active_years)
+      external_panel <- external_seasons %>%
+        left_join(external_comp, by = c("slug" = "School", "year")) %>%
+        mutate(games = wins + losses) %>%
+        filter(!is.na(composite), games > 0)
+
+      if (nrow(external_panel) > 0) {
+        active_range <- range(panel$composite, na.rm = TRUE)
+        external_outside_range <- any(
+          external_panel$composite < active_range[1] |
+            external_panel$composite > active_range[2])
+        external_panel$exp_p <- as.numeric(
+          stats::predict(fit, newdata = external_panel, type = "response"))
+        external_panel$exp_wins <- external_panel$exp_p * external_panel$games
+
+        external <- external_panel %>%
+          group_by(slug) %>%
+          summarize(
+            seasons_n = dplyr::n(),
+            W = sum(wins), L = sum(losses),
+            games = sum(games),
+            exp_wins = sum(exp_wins),
+            talent = mean(composite, na.rm = TRUE),
+            .groups = "drop")
+
+        external <- external %>%
+          mutate(
+            actual = 100 * W / games,
+            expected = 100 * exp_wins / games,
+            mean_games = games / seasons_n,
+            wat = (actual - expected) / 100 * mean_games,
+            School = slug,
+            TeamName = team_label(slug),
+            role = "external",
+            external_reference = TRUE,
+            value = wat,
+            n = seasons_n,
+            wat_abs = round(abs(wat), 1),
+            near_even = wat_abs < 0.05,
+            tip = glue(
+              "<b>{TeamName} ({yr_rng2}) — {ctx$compare_conference} external reference</b><br/>",
+              "Actual {round(actual)}% wins vs expected {round(expected)}% ",
+              "against the unchanged {ctx$team_conference} fit<br/>",
+              "Wins above that fit: {ifelse(wat >= 0, '+', '')}{round(wat, 1)} per season<br/>",
+              "<em>{W}-{L} over {seasons_n} seasons · external, not ranked</em>"),
+            lab = ifelse(near_even, "~even",
+                         paste0(ifelse(wat >= 0, "+", "-"), wat_abs,
+                                " W/yr")))
+
+        if (nrow(external) > 0) {
+          board <- bind_rows(external, board)
+          has_external <- TRUE
+        }
+      }
+    }
+  }
+
+  axis_name <- ifelse(
+    board$external_reference,
+    paste0(board$TeamName, " · ", ctx$compare_conference, " ref (N/R)"),
+    as.character(board$TeamName))
+  board$PlotName <- factor(axis_name, levels = unique(axis_name))
 
   attr(board, "value_label") <- "Wins above talent (per season)"
   attr(board, "value_fmt") <- "%+.1f"
@@ -2718,7 +2878,27 @@ wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
     paste0(ifelse(v >= 0, "+", "-"), round(abs(v), 1))
   }
   attr(board, "yr_rng") <- yr_rng2
-  attr(board, "model_note") <- glue("{nrow(panel)} program-seasons")
+  attr(board, "model_note") <- glue(
+    "{nrow(panel)} {ctx$team_conference} program-seasons")
+  attr(board, "model_coefficients") <- unname(stats::coef(fit))
+  attr(board, "active_team_names") <- active_team_names
+  attr(board, "external_reference") <- has_external
+  attr(board, "external_requested") <- external_requested
+  attr(board, "external_model_reference") <- if (has_external) {
+    "active_conference_fit"
+  } else ""
+  attr(board, "external_note") <- if (has_external) {
+    paste0(
+      ctx$compare_name, " (", ctx$compare_conference,
+      ") is scored against the unchanged ", ctx$team_conference,
+      " talent-to-wins fit as an external, unranked reference. It does not ",
+      "affect model coefficients, conference WAT values, or ranks.",
+      if (external_outside_range) {
+        " Some seasons fall outside the active league's talent range, so that score includes extrapolation."
+      } else "")
+  } else if (external_requested) {
+    glue("{ctx$compare_name} ({ctx$compare_conference}) has no qualifying outcome-and-talent seasons in this window; no external WAT row is plotted and the {ctx$team_conference} fit is unchanged.")
+  } else ""
   board
 }
 
@@ -2727,45 +2907,79 @@ wat_data <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
 plot_wat <- function(team_seasons, size_data, team_slug, compare_slug = NULL) {
   hl <- highlight_colors(team_slug, compare_slug)
   cmp_safe <- if (is.null(compare_slug)) "" else compare_slug
-  cmp_note <- comparison_highlight_note(team_slug, compare_slug,
-                                        "talent-to-wins model")
   ## single source of truth: the ladder draws exactly the table twin's frame
   board <- wat_data(team_seasons, size_data, team_slug,
                     compare_slug = compare_slug)
   yr_rng <- attr(board, "yr_rng")
   model_note <- attr(board, "model_note")
+  external_ref <- isTRUE(attr(board, "external_reference"))
+  external_note <- attr(board, "external_note") %||% ""
+  cmp_note <- if (nzchar(external_note)) external_note else
+    comparison_highlight_note(team_slug, compare_slug,
+                              "talent-to-wins model")
   n_seasons <- length(unique(team_seasons$year))
   logos <- team_logo_labels(width = 30, prefix = "www/")
-  ## boards keep the compare team's true primary color (rows don't overlap)
+  ctx <- comparison_context(team_slug, compare_slug)
+  axis_labels <- logos
+  if (external_ref) {
+    external_axis <- as.character(
+      board$PlotName[board$external_reference][1])
+    external_logo <- unname(logos[ctx$compare_name])
+    if (is.na(external_logo)) external_logo <- ""
+    axis_labels[external_axis] <- paste0(
+      external_logo,
+      " <span style='color:#46535E;font-size:9px;'>",
+      ctx$compare_name, " · ", ctx$compare_conference,
+      " ref (N/R)</span>")
+  }
+  ## The external row uses the contrast-adjusted compare color plus an
+  ## outlined diamond and dashed connector, so color is never its only cue.
   role_cols <- c(main = unname(hl["main"]),
-                 compare = ifelse(cmp_safe == "", "grey55",
-                                  team_color(cmp_safe)),
+                 compare = ifelse(cmp_safe == "", "grey55", hl["compare"]),
+                 external = ifelse(external_ref, hl["compare"], "grey55"),
                  other = "grey60")
+  role_shapes <- c(main = 16, compare = 17, external = 23, other = 16)
+  role_fills <- c(main = unname(hl["main"]),
+                  compare = ifelse(cmp_safe == "", "grey55", hl["compare"]),
+                  external = "white", other = "grey60")
+  role_linetypes <- c(main = "solid", compare = "solid",
+                      external = "22", other = "solid")
   ## the WAT label rides the far end of each dumbbell
   board$lab_x <- pmax(board$actual, board$expected)
 
-  ggplot(board, aes(y = TeamName)) +
+  ggplot(board, aes(y = PlotName)) +
+    geom_hline(
+      data = if (external_ref) data.frame(sep = 1.5) else
+        data.frame(sep = numeric()),
+      aes(yintercept = sep), inherit.aes = FALSE,
+      color = "grey78", linetype = "dotted", linewidth = 0.7) +
     ## the gap from expected (grey) to actual (role color) IS the story;
-    ## color the connector by role so main/compare pop
-    geom_segment(aes(x = expected, xend = actual, yend = TeamName,
-                     color = role), linewidth = 1.4, show.legend = FALSE) +
+    ## color + linetype make the external connector independently readable
+    geom_segment(aes(x = expected, xend = actual, yend = PlotName,
+                     color = role, linetype = role),
+                 linewidth = 1.4, show.legend = FALSE) +
     geom_point(aes(x = expected), color = "grey65", size = 3.6) +
-    geom_point_interactive(aes(x = actual, color = role, tooltip = tip,
+    geom_point_interactive(aes(x = actual, color = role, fill = role,
+                               shape = role, tooltip = tip,
                                data_id = School),
-                           size = 5, show.legend = FALSE) +
+                           size = 5, stroke = 1.2, show.legend = FALSE) +
     geom_text(aes(x = lab_x, label = lab, color = role), hjust = -0.2,
               size = 3.5, fontface = "bold", show.legend = FALSE) +
     scale_color_manual(values = role_cols) +
-    scale_y_discrete(labels = logos) +
+    scale_fill_manual(values = role_fills) +
+    scale_shape_manual(values = role_shapes) +
+    scale_linetype_manual(values = role_linetypes) +
+    scale_y_discrete(labels = axis_labels) +
     scale_x_continuous(expand = expansion(mult = c(0.03, 0.2)),
                        labels = function(x) paste0(round(x), "%")) +
     labs(
       title = wrap_title("Wins Above Talent: Who Beats Their Recruiting?", 44),
       subtitle = wrap_title(glue(
-        "Seasons {yr_rng}. Grey dot = expected win % from the league ",
-        "talent-to-wins fit; colored dot = actual. Row label = wins per ",
-        "season above (+) or below (-) that expectation. ",
-        "{cmp_note}"), 60),
+        "Seasons {yr_rng}. Grey circle = expected win % from the ",
+        "{team_conference(team_slug)} talent-to-wins fit; colored mark = ",
+        "actual. Row label = wins per season above (+) or below (-) that ",
+        "expectation. An outlined diamond + dashed row denotes an external ",
+        "reference. {cmp_note}"), 60),
       x = "Win Percentage", y = NULL,
       caption = wrap_title(glue(
         "Expected = a quasibinomial fit of season wins on the rolling ",

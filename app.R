@@ -4867,12 +4867,14 @@ server <- function(input, output, session) {
         ifelse(is.finite(d$sp), sprintf("%.1f", d$sp), "n/a")
       }
     }
+    quadrant_note <- attr(b, "external_note") %||% ""
     HTML(twin_table_html(
       b, caption = glue("The Over/Underachiever Quadrant ",
                         "({attr(b, 'yr_rng')}) - table view"),
       value_col = "talent", n_col = "seasons_n",
       n_chip = function(n) paste0(n, ifelse(n == 1, " season", " seasons")),
       extras = extras,
+      caption_note = quadrant_note,
       ## neutral navy: the quadrant chart reserves Okabe-Ito blue and
       ## vermillion for over/underachiever, so a blue->red bar ramp here
       ## would collide with that vocabulary
@@ -4900,6 +4902,12 @@ server <- function(input, output, session) {
     ## value is SIGNED WAT, so the twin ranks overachievers (+) to
     ## underachievers (-) top-to-bottom; value_fmt_fn on the frame renders
     ## "+2.1" / "-1.4" to match the ladder's row labels
+    wat_note <- glue(
+      "Seasons {yrs[1]}-{yrs[2]}; wins per season above (+) or below (-) ",
+      "the {team_conference(input$g_team)} talent-to-wins fit ",
+      "({attr(b, 'model_note')}).")
+    external_note <- attr(b, "external_note") %||% ""
+    if (nzchar(external_note)) wat_note <- paste(wat_note, external_note)
     HTML(twin_table_html(
       b, caption = glue("Wins Above Talent ",
                         "({attr(b, 'yr_rng')}) - table view"),
@@ -4908,9 +4916,7 @@ server <- function(input, output, session) {
       extras = list(
         "Actual %" = function(d) sprintf("%.0f%%", d$actual),
         "Expected %" = function(d) sprintf("%.0f%%", d$expected)),
-      caption_note = glue("Seasons {yrs[1]}-{yrs[2]}; wins per season above ",
-                          "(+) or below (-) the league talent-to-wins fit ",
-                          "({attr(b, 'model_note')})."),
+      caption_note = wat_note,
       ## navy neutral ramp: the ladder's colored dots already spend the
       ## over/under-achiever vocabulary, so the twin's percentile bars stay
       ## neutral (same choice as the quadrant twin)
