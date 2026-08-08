@@ -1,17 +1,17 @@
 {
-  "run_id": "20260806_233010",
-  "started_at": "2026-08-06 23:30:10",
-  "finished_at": "2026-08-07 00:52:05",
-  "status": "degraded",
+  "run_id": "20260808_070208",
+  "started_at": "2026-08-08 07:02:08",
+  "finished_at": "2026-08-08 07:21:43",
+  "status": "ok",
   "changed": true,
   "row_counts": {
     "recruit_class_football": 22846,
-    "recruit_class_basketball": 3659,
-    "roster_football": 7567,
+    "recruit_class_basketball": 3660,
+    "roster_football": 7608,
     "roster_basketball": 968,
     "team_seasons_football": 670
   },
-  "failed_schools": ["arizona", "arizona-state", "byu", "central-florida", "colorado", "tcu", "texas-tech", "utah", "west-virginia", "maryland", "michigan", "michigan-state", "northwestern", "ohio-state", "oregon", "penn-state", "rutgers", "ucla", "usc", "washington", "alabama", "arkansas", "auburn", "florida", "georgia", "lsu", "mississippi-state", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "boston-college", "california", "clemson", "florida-state", "miami", "north-carolina-state", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech", "wake-forest"],
+  "failed_schools": ["arizona", "arizona-state", "byu", "central-florida", "colorado", "tcu", "texas-tech", "utah", "west-virginia", "maryland", "michigan", "michigan-state", "northwestern", "ohio-state", "oregon", "penn-state", "rutgers", "ucla", "usc", "washington", "alabama", "arkansas", "auburn", "florida", "lsu", "mississippi-state", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "boston-college", "california", "clemson", "florida-state", "miami", "north-carolina-state", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech", "wake-forest"],
   "stages": {
     "preflight": "ok",
     "snapshot": "ok",
@@ -29,8 +29,8 @@
     "validate": "ok",
     "precompute": "ok",
     "brief": "ok",
-    "push": "ok",
-    "deploy": "ok",
-    "verify": "warn"
+    "push": "pending",
+    "deploy": "pending",
+    "verify": "pending"
   }
 }
