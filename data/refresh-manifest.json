@@ -1,8 +1,8 @@
 {
   "run_id": "20260816_081010",
   "started_at": "2026-08-16 08:10:10",
-  "finished_at": "2026-08-16 08:29:31",
-  "status": "ok",
+  "finished_at": "2026-08-16 08:34:59",
+  "status": "degraded",
   "changed": true,
   "row_counts": {
     "recruit_class_football": 22847,
@@ -29,8 +29,8 @@
     "validate": "ok",
     "precompute": "ok",
     "brief": "ok",
-    "push": "pending",
-    "deploy": "pending",
-    "verify": "pending"
+    "push": "ok",
+    "deploy": "ok",
+    "verify": "warn"
   }
 }
