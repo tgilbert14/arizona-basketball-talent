@@ -1,13 +1,13 @@
 {
-  "run_id": "20260816_081010",
-  "started_at": "2026-08-16 08:10:10",
-  "finished_at": "2026-08-16 08:34:59",
-  "status": "degraded",
+  "run_id": "20260816_233005",
+  "started_at": "2026-08-16 23:30:05",
+  "finished_at": "2026-08-16 23:50:43",
+  "status": "ok",
   "changed": true,
   "row_counts": {
     "recruit_class_football": 22847,
     "recruit_class_basketball": 3661,
-    "roster_football": 7564,
+    "roster_football": 7643,
     "roster_basketball": 968,
     "team_seasons_football": 670
   },
@@ -29,8 +29,8 @@
     "validate": "ok",
     "precompute": "ok",
     "brief": "ok",
-    "push": "ok",
-    "deploy": "ok",
-    "verify": "warn"
+    "push": "pending",
+    "deploy": "pending",
+    "verify": "pending"
   }
 }
