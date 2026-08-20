@@ -1,10 +1,10 @@
 {
-  "updated": "2026-08-18",
-  "source_capture": "2026-08-18",
-  "pipeline_status": "degraded",
+  "updated": "2026-08-19",
+  "source_capture": "2026-08-19",
+  "pipeline_status": "ok",
   "pipeline_checked": "2026-08-19",
-  "pipeline_message": "Latest refresh completed with warnings; review the pipeline status before treating it as a new snapshot.",
-  "football_rows": 22847,
+  "pipeline_message": "Latest refresh completed.",
+  "football_rows": 22846,
   "basketball_rows": 3661,
   "newest_class": 2027,
   "brief": "brief/"
