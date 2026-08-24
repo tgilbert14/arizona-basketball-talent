@@ -1,17 +1,17 @@
 {
-  "run_id": "20260822_233005",
-  "started_at": "2026-08-22 23:30:05",
-  "finished_at": "2026-08-22 23:55:45",
-  "status": "degraded",
+  "run_id": "20260823_233005",
+  "started_at": "2026-08-23 23:30:05",
+  "finished_at": "2026-08-23 23:51:02",
+  "status": "ok",
   "changed": true,
   "row_counts": {
     "recruit_class_football": 22847,
-    "recruit_class_basketball": 3662,
-    "roster_football": 7650,
+    "recruit_class_basketball": 3663,
+    "roster_football": 7569,
     "roster_basketball": 968,
     "team_seasons_football": 670
   },
-  "failed_schools": ["arizona", "arizona-state", "byu", "central-florida", "colorado", "kansas", "tcu", "texas-tech", "utah", "west-virginia", "maryland", "michigan", "michigan-state", "northwestern", "ohio-state", "oregon", "penn-state", "rutgers", "ucla", "usc", "washington", "alabama", "arkansas", "auburn", "florida", "lsu", "mississippi-state", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "boston-college", "california", "clemson", "florida-state", "miami", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech", "wake-forest"],
+  "failed_schools": ["arizona", "arizona-state", "byu", "central-florida", "colorado", "kansas", "tcu", "texas-tech", "utah", "west-virginia", "maryland", "michigan", "michigan-state", "northwestern", "ohio-state", "oregon", "penn-state", "rutgers", "ucla", "usc", "washington", "alabama", "arkansas", "auburn", "florida", "lsu", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "boston-college", "california", "clemson", "florida-state", "miami", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech", "wake-forest"],
   "stages": {
     "preflight": "ok",
     "snapshot": "ok",
@@ -24,13 +24,13 @@
     "records": "ok",
     "profiles": "ok",
     "geocode": "ok",
-    "qc": "flags",
+    "qc": "ok",
     "audit": "ok",
     "validate": "ok",
     "precompute": "ok",
     "brief": "ok",
-    "push": "ok",
-    "deploy": "ok",
-    "verify": "warn"
+    "push": "pending",
+    "deploy": "pending",
+    "verify": "pending"
   }
 }
