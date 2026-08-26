@@ -233,7 +233,8 @@ find_connect_url <- function() {
 }
 
 ## GET with retries -- the Connect Cloud free tier idle-sleeps, and the wake
-## race means the first hit can catch the worker mid-restart
+## race means the first hit can catch the worker mid-restart. Some hosting
+## failure pages return HTTP 200, so status alone is not a health signal.
 ## marker: optional literal string that must appear in the 200 response body
 ## (e.g. the app's freshness badge "data updated Jul 12, 2026") -- proves the
 ## NEW bundle is being served, not just that A server answered. Only usable on
@@ -241,13 +242,27 @@ find_connect_url <- function() {
 ## share URL serves an iframe wrapper, so it gets a plain 200 check with a
 ## longer cold-start budget instead).
 verify_url <- function(url, attempts = 3, wait_s = 30, marker = NULL) {
+  error_markers <- c(
+    "<h1>Startup Error</h1>",
+    "There was an error setting up this content."
+  )
   for (i in seq_len(attempts)) {
     resp <- tryCatch(GET(url, timeout(60)), error = function(e) NULL)
     code <- if (is.null(resp)) -1L else status_code(resp)
     ok <- identical(code, 200L)
-    if (ok && !is.null(marker)) {
-      body <- tryCatch(content(resp, as = "text", encoding = "UTF-8"),
-                       error = function(e) "")
+    body <- if (ok) {
+      tryCatch(content(resp, as = "text", encoding = "UTF-8"),
+               error = function(e) "")
+    } else {
+      ""
+    }
+    startup_error <- ok && any(vapply(
+      error_markers, grepl, logical(1), x = body, fixed = TRUE))
+    if (startup_error) {
+      ok <- FALSE
+      cat("  attempt ", i, ": ", code,
+          " but host returned its startup-error page\n", sep = "")
+    } else if (ok && !is.null(marker)) {
       ok <- grepl(marker, body, fixed = TRUE)
       cat("  attempt ", i, ": ", code,
           if (ok) " + freshness marker found" else
@@ -1237,7 +1252,7 @@ tryCatch({
         notes <- c(notes, paste0(
           nm, " live check FAILED (", urls[[nm]], ") -- ",
           if (nm == "shinyapps") "no 200 with today's freshness badge"
-          else "no 200 within the cold-start budget",
+          else "no healthy response within the cold-start budget",
           "; the host may be serving the old bundle"))
       }
     }
