@@ -1,17 +1,17 @@
 {
-  "run_id": "20260828_233005",
-  "started_at": "2026-08-28 23:30:05",
-  "finished_at": "2026-08-28 23:55:58",
-  "status": "degraded",
+  "run_id": "20260901_072846",
+  "started_at": "2026-09-01 07:28:46",
+  "finished_at": "2026-09-01 07:49:28",
+  "status": "ok",
   "changed": true,
   "row_counts": {
     "recruit_class_football": 22848,
-    "recruit_class_basketball": 3664,
-    "roster_football": 7630,
+    "recruit_class_basketball": 3665,
+    "roster_football": 7657,
     "roster_basketball": 968,
-    "team_seasons_football": 670
+    "team_seasons_football": 737
   },
-  "failed_schools": ["arizona", "arizona-state", "byu", "central-florida", "colorado", "kansas", "tcu", "texas-tech", "utah", "west-virginia", "maryland", "michigan", "michigan-state", "northwestern", "ohio-state", "oregon", "penn-state", "rutgers", "ucla", "usc", "washington", "alabama", "arkansas", "auburn", "florida", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "boston-college", "california", "clemson", "florida-state", "miami", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech", "wake-forest"],
+  "failed_schools": ["arizona", "arizona-state", "byu", "central-florida", "colorado", "kansas", "tcu", "texas-tech", "utah", "west-virginia", "maryland", "michigan", "michigan-state", "northwestern", "ohio-state", "oregon", "penn-state", "rutgers", "ucla", "usc", "washington", "alabama", "arkansas", "auburn", "florida", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "boston-college", "california", "clemson", "florida-state", "miami", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech"],
   "stages": {
     "preflight": "ok",
     "snapshot": "ok",
@@ -29,8 +29,8 @@
     "validate": "ok",
     "precompute": "ok",
     "brief": "ok",
-    "push": "ok",
-    "deploy": "ok",
-    "verify": "warn"
+    "push": "pending",
+    "deploy": "pending",
+    "verify": "pending"
   }
 }
