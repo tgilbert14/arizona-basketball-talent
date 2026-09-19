@@ -3897,7 +3897,7 @@
       "checksum": "a90fe02b6a7d4dd50ea6158b98a2a3e1"
     },
     "data/recruiting.db": {
-      "checksum": "e4b74f99bc460b20fea0be821362fbb1"
+      "checksum": "79febf4d605a6918bf9fe2ef80f1a83b"
     },
     "data/team_config.csv": {
       "checksum": "3a93224a97b08028d104cc093d1b1c42"
@@ -3927,7 +3927,7 @@
       "checksum": "38fcfe09536f2de682d7ac7c66d779bd"
     },
     "precomputed/meta.rds": {
-      "checksum": "fc0b3c3e6ed93ce4f4fc26a9ab42f3eb"
+      "checksum": "f7d15ecc1c88982c03eff141b2d80c64"
     },
     "R/coach_eras.R": {
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
@@ -4095,7 +4095,7 @@
       "checksum": "513d353c0120c078cc0c24c870ce707c"
     },
     "www/pipeline-status.json": {
-      "checksum": "0755b725186d2d9ff103f66209504e92"
+      "checksum": "c96a4291e0cc9a28a1fc1487778a1a3d"
     },
     "www/pittsburgh.png": {
       "checksum": "04f5199a5f4256e882e5e5a4a30ff425"
