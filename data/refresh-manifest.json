@@ -1,17 +1,17 @@
 {
-  "run_id": "20260919_233005",
-  "started_at": "2026-09-19 23:30:05",
-  "finished_at": "2026-09-19 23:55:13",
-  "status": "degraded",
+  "run_id": "20260921_073548",
+  "started_at": "2026-09-21 07:35:48",
+  "finished_at": "2026-09-21 07:57:19",
+  "status": "ok",
   "changed": true,
   "row_counts": {
-    "recruit_class_football": 22852,
-    "recruit_class_basketball": 3678,
-    "roster_football": 7681,
+    "recruit_class_football": 22853,
+    "recruit_class_basketball": 3679,
+    "roster_football": 7682,
     "roster_basketball": 966,
     "team_seasons_football": 737
   },
-  "failed_schools": ["arizona", "byu", "central-florida", "colorado", "kansas", "tcu", "texas-tech", "utah", "west-virginia", "michigan", "northwestern", "oregon", "penn-state", "ucla", "usc", "washington", "arkansas", "auburn", "florida", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "california", "clemson", "florida-state", "miami", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech"],
+  "failed_schools": ["tcu", "texas-tech", "utah", "arizona", "byu", "central-florida", "colorado", "kansas", "west-virginia", "michigan", "northwestern", "oregon", "penn-state", "ucla", "usc", "washington", "arkansas", "auburn", "florida", "oklahoma", "ole-miss", "south-carolina", "tennessee", "texas", "vanderbilt", "california", "clemson", "florida-state", "miami", "north-carolina", "pittsburgh", "smu", "stanford", "virginia", "virginia-tech"],
   "stages": {
     "preflight": "ok",
     "snapshot": "ok",
@@ -29,8 +29,8 @@
     "validate": "ok",
     "precompute": "ok",
     "brief": "ok",
-    "push": "ok",
-    "deploy": "ok",
-    "verify": "warn"
+    "push": "pending",
+    "deploy": "pending",
+    "verify": "pending"
   }
 }

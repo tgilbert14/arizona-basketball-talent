@@ -3897,7 +3897,7 @@
       "checksum": "a90fe02b6a7d4dd50ea6158b98a2a3e1"
     },
     "data/recruiting.db": {
-      "checksum": "4cedc8c76d78d3344422ac194578a05e"
+      "checksum": "76ec167294513076a36301bfbee9f333"
     },
     "data/team_config.csv": {
       "checksum": "3a93224a97b08028d104cc093d1b1c42"
@@ -3909,10 +3909,10 @@
       "checksum": "4586bb2320843d028ea2c07354139274"
     },
     "precomputed/body_map_desktop.rds": {
-      "checksum": "2affbdfe4b5ffda7bda766e2fc4005cf"
+      "checksum": "3f142c17036592b09cc9c130f8ae3da0"
     },
     "precomputed/body_map_phone.rds": {
-      "checksum": "c32312169edeba7b2e15219f33f042ef"
+      "checksum": "73c05f4daaba4e11053d87352409f21d"
     },
     "precomputed/dna_desktop.rds": {
       "checksum": "92452282c64a3a7433a5b20610c09c6d"
@@ -3927,7 +3927,7 @@
       "checksum": "38fcfe09536f2de682d7ac7c66d779bd"
     },
     "precomputed/meta.rds": {
-      "checksum": "62e8391a9d42f99e89ea740ede770169"
+      "checksum": "2bf760fc8dc4ee3e9bd52d58f40886b8"
     },
     "R/coach_eras.R": {
       "checksum": "71a3165f3e33e52cea86f1e933d1fcdb"
@@ -4095,7 +4095,7 @@
       "checksum": "513d353c0120c078cc0c24c870ce707c"
     },
     "www/pipeline-status.json": {
-      "checksum": "0c09355f8fa5adc04be616b97615c9c5"
+      "checksum": "9c44d9034aab9320de2384840fa21d08"
     },
     "www/pittsburgh.png": {
       "checksum": "04f5199a5f4256e882e5e5a4a30ff425"
